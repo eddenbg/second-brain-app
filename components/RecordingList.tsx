@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import type { AnyMemory, VoiceMemory, WebMemory, PhysicalItemMemory, VideoItemMemory } from '../types';
-import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, BrainCircuitIcon, MicIcon, GlobeIcon, CameraIcon, VideoIcon, MapPinIcon } from './Icons';
+import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, MicIcon, GlobeIcon, CameraIcon, VideoIcon, MapPinIcon } from './Icons';
 
 interface MemoryListProps {
   memories: AnyMemory[];
   onDelete: (id: string) => void;
   onUpdateTitle: (id: string, newTitle: string) => void;
-  onStartQASession: () => void;
 }
 
 const MemoryItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; onUpdateTitle: (id: string, newTitle: string) => void; }> = ({ memory, onDelete, onUpdateTitle }) => {
@@ -141,7 +140,7 @@ const MemoryItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; 
 }
 
 
-const MemoryList: React.FC<MemoryListProps> = ({ memories, onDelete, onUpdateTitle, onStartQASession }) => {
+const MemoryList: React.FC<MemoryListProps> = ({ memories, onDelete, onUpdateTitle }) => {
   const [filter, setFilter] = useState<'all' | 'voice' | 'web' | 'item' | 'video'>('all');
 
   const filteredMemories = useMemo(() => {
@@ -153,22 +152,22 @@ const MemoryList: React.FC<MemoryListProps> = ({ memories, onDelete, onUpdateTit
     return (
       <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
         <h2 className="text-2xl font-semibold text-white">No Memories Yet</h2>
-        <p className="mt-2 text-gray-400">Tap the record button or add a web clip to start.</p>
+        <p className="mt-2 text-gray-400">Tap the 'Add' button below to start building your second brain.</p>
       </div>
     );
   }
 
-  // FIX: Refactored TabButton props to a type alias to avoid potential TS parsing issues.
+  // FIX: Refactored TabButton to use an explicit `label` prop instead of `children` to avoid potential TS parsing issues.
   type TabButtonProps = {
     afilter: 'all' | 'voice' | 'web' | 'item' | 'video';
     currentFilter: 'all' | 'voice' | 'web' | 'item' | 'video';
-    children: React.ReactNode;
+    label: string;
     count: number;
   };
 
-  const TabButton = ({ afilter, currentFilter, children, count }: TabButtonProps) => (
+  const TabButton = ({ afilter, currentFilter, label, count }: TabButtonProps) => (
     <button onClick={() => setFilter(afilter)} className={`px-4 py-2 text-lg font-semibold rounded-md transition-colors flex-shrink-0 ${currentFilter === afilter ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
-        {children} <span className="text-sm opacity-75">{count}</span>
+        {label} <span className="text-sm opacity-75">{count}</span>
     </button>
   );
 
@@ -177,28 +176,11 @@ const MemoryList: React.FC<MemoryListProps> = ({ memories, onDelete, onUpdateTit
         <h2 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">My Memories</h2>
         
         <div className="flex space-x-2 sm:space-x-4 pb-2 overflow-x-auto">
-            <TabButton afilter="all" currentFilter={filter} count={memories.length}>All</TabButton>
-            <TabButton afilter="voice" currentFilter={filter} count={memories.filter(m => m.type === 'voice').length}>Voice</TabButton>
-            <TabButton afilter="web" currentFilter={filter} count={memories.filter(m => m.type === 'web').length}>Web</TabButton>
-            <TabButton afilter="item" currentFilter={filter} count={memories.filter(m => m.type === 'item').length}>Items</TabButton>
-            <TabButton afilter="video" currentFilter={filter} count={memories.filter(m => m.type === 'video').length}>Video</TabButton>
-        </div>
-
-        <div className="bg-gray-800 p-4 rounded-lg border border-blue-500/50 shadow-lg">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-semibold text-white">Unlock Insights from Your Memories</h3>
-              <p className="text-gray-300 mt-1">Ask questions and get answers instantly from all your saved content.</p>
-            </div>
-            <button
-              onClick={onStartQASession}
-              className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition-colors w-full sm:w-auto flex-shrink-0"
-              aria-label="Ask AI about your memories"
-            >
-              <BrainCircuitIcon className="w-5 h-5" />
-              <span>Ask AI</span>
-            </button>
-          </div>
+            <TabButton afilter="all" currentFilter={filter} count={memories.length} label="All" />
+            <TabButton afilter="voice" currentFilter={filter} count={memories.filter(m => m.type === 'voice').length} label="Voice" />
+            <TabButton afilter="web" currentFilter={filter} count={memories.filter(m => m.type === 'web').length} label="Web" />
+            <TabButton afilter="item" currentFilter={filter} count={memories.filter(m => m.type === 'item').length} label="Items" />
+            <TabButton afilter="video" currentFilter={filter} count={memories.filter(m => m.type === 'video').length} label="Video" />
         </div>
 
         {filteredMemories.length > 0 ? (
