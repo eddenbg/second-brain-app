@@ -1,72 +1,69 @@
-import React, { useState, useCallback, useMemo } from 'react';
-import { useMemories } from './hooks/useRecordings';
-import VoiceNotesView from './components/RecordingList';
-import QASession from './components/QASession';
-import CollegeView from './components/AddView';
-import PhysicalItemsView from './components/VisionView';
+import React, { useState, useMemo } from 'react';
 import BottomNavBar from './components/BottomNavBar';
-import type { AnyMemory } from './types';
+import CollegeView from './components/AddView';
+import QASession from './components/QASession';
+import VisionView from './components/VisionView';
+import WebClipsView from './components/WebClipsView';
+import RecordingList from './components/RecordingList';
+import UpdateNotification from './components/UpdateNotification';
+import { useRecordings } from './hooks/useRecordings';
+import { useServiceWorker } from './hooks/useServiceWorker';
+import type { AnyMemory, WebMemory } from './types';
+
+type View = 'physical' | 'college' | 'webclips' | 'askai' | 'voicenotes';
+
+const viewTitles: Record<View, string> = {
+    physical: 'Physical Items',
+    college: 'College',
+    webclips: 'Web Clips',
+    askai: 'Ask AI',
+    voicenotes: 'Voice Notes',
+};
 
 function App() {
-  const { memories, addMemory, deleteMemory, updateMemoryTitle } = useMemories();
-  const [view, setView] = useState<'physical' | 'college' | 'askai' | 'voicenotes'>('voicenotes');
-
-  const handleSaveMemory = useCallback((newMemory: Omit<AnyMemory, 'id' | 'date'>) => {
-    const memoryWithMetadata: AnyMemory = {
-      ...newMemory,
-      id: Date.now().toString(),
-      date: new Date().toISOString(),
-    } as AnyMemory;
-    addMemory(memoryWithMetadata);
-  }, [addMemory]);
+  const [view, setView] = useState<View>('voicenotes');
+  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount } = useRecordings();
+  const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
-  const personalVoiceMemos = useMemo(() => memories.filter(m => m.category === 'personal' && m.type === 'voice'), [memories]);
-  const physicalItems = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
+  const physicalMemories = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
+  const webClipMemories = useMemo(() => memories.filter(m => m.type === 'web'), [memories]);
 
-  const header = (
-    <header className="w-full max-w-4xl mx-auto p-4 sm:p-6 bg-gray-900 sticky top-0 z-10 border-b border-gray-700">
-      <div className="flex justify-between items-center gap-4">
-        <h1 className="text-3xl sm:text-4xl font-bold text-white">
-          My Second Brain
-        </h1>
-      </div>
-    </header>
-  );
+  const handleUpdateTitle = (id: string, newTitle: string) => {
+    updateMemory(id, { title: newTitle });
+  };
+  
+  const handleUpdateWebClip = (id: string, updates: Partial<WebMemory>) => {
+    updateMemory(id, updates);
+  }
+
+  const renderView = () => {
+    switch (view) {
+      case 'physical':
+        return <VisionView memories={physicalMemories} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} onSave={addMemory} />;
+      case 'college':
+        return <CollegeView lectures={collegeMemories} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} onSave={addMemory} />;
+      case 'webclips':
+        return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={addMemory} syncSharedClips={syncSharedClips} pendingClipsCount={pendingClipsCount}/>;
+      case 'askai':
+        return <QASession memories={memories} />;
+      case 'voicenotes':
+        return <RecordingList onSave={addMemory} />;
+      default:
+        return <QASession memories={memories} />;
+    }
+  };
 
   return (
-    <div className="h-full w-full text-gray-100 font-sans flex flex-col relative">
-      {header}
-      <main className="w-full max-w-4xl mx-auto p-4 sm:p-6 flex-grow pb-28 overflow-y-auto">
-        {view === 'voicenotes' && (
-          <VoiceNotesView 
-            memories={personalVoiceMemos} 
-            onDelete={deleteMemory} 
-            onUpdateTitle={updateMemoryTitle}
-            onSave={handleSaveMemory}
-          />
-        )}
-        {view === 'college' && (
-           <CollegeView
-            lectures={collegeMemories}
-            onSave={handleSaveMemory}
-            onDelete={deleteMemory}
-            onUpdateTitle={updateMemoryTitle}
-          />
-        )}
-        {view === 'askai' && (
-          <QASession memories={memories} />
-        )}
-        {view === 'physical' && (
-          <PhysicalItemsView 
-            memories={physicalItems}
-            onDelete={deleteMemory}
-            onUpdateTitle={updateMemoryTitle}
-            onSave={handleSaveMemory}
-          />
-        )}
+    <div className="flex flex-col h-full bg-gray-900 text-white">
+      <header className="flex-shrink-0 p-4 text-center bg-gray-800 border-b border-gray-700">
+        <h1 className="text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
+      </header>
+      <main className="flex-grow p-4 sm:p-6 overflow-y-auto">
+        {renderView()}
       </main>
       <BottomNavBar view={view} setView={setView} />
+      {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
     </div>
   );
 }

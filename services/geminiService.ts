@@ -1,16 +1,13 @@
-import { GoogleGenAI } from "@google/genai";
 import type { AnyMemory } from '../types';
+import { getGeminiInstance } from '../utils/gemini';
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 const model = "gemini-2.5-flash";
+const UNAVAILABLE_ERROR_MESSAGE = "AI features are unavailable. Please check your API key configuration.";
 
 export async function answerQuestionFromContext(memories: AnyMemory[], question: string): Promise<string> {
+  const ai = getGeminiInstance();
+  if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+
   if (memories.length === 0) {
     return "There are no memories to search for an answer.";
   }
@@ -29,7 +26,11 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
         return `--- Personal Voice Note: "${mem.title}" (Recorded on: ${date}${locationString}) ---\n${mem.transcript}\n--- End of Personal Voice Note: "${mem.title}" ---`;
       }
     } else if (mem.type === 'web') {
-      let webContext = `--- Web Clip: "${mem.title}" (Saved on: ${date}${locationString}, From: ${mem.url || 'N/A'}) ---\nContent:\n${mem.content}`;
+      let webContext = `--- Web Clip: "${mem.title}" (Saved on: ${date}${locationString}, From: ${mem.url || 'N/A'}) ---`;
+      if (mem.tags && mem.tags.length > 0) {
+        webContext += `\nTags: [${mem.tags.join(', ')}]`;
+      }
+      webContext += `\nContent:\n${mem.content}`;
       if (mem.voiceNote) {
         webContext += `\nMy Note: ${mem.voiceNote.transcript}`;
       }
@@ -50,7 +51,7 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
     return '';
   }).join('\n\n');
 
-  const systemInstruction = `You are a helpful personal assistant. Your task is to answer the user's question based ONLY on the provided context from their saved memories, which include college lectures, voice notes, web clippings, physical items, and video recordings with transcripts. Analyze the content and location data carefully. Do not use any external knowledge. If the answer cannot be found, you MUST respond with: "I could not find an answer in your memories." Be concise and directly answer the question.`;
+  const systemInstruction = `You are a helpful personal assistant. Your task is to answer the user's question based ONLY on the provided context from their saved memories, which include college lectures, voice notes, web clippings, physical items, and video recordings with transcripts. Analyze the content and location data carefully. Do not use any external knowledge. If the anwer cannot be found, you MUST respond with: "I could not find an answer in your memories." Be concise and directly answer the question.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -68,6 +69,9 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
 }
 
 export async function answerFromImage(base64Data: string, mimeType: string, question: string): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+
     const imagePart = {
       inlineData: {
         mimeType,
@@ -92,6 +96,9 @@ export async function answerFromImage(base64Data: string, mimeType: string, ques
 
 
 export async function generateTitleForContent(content: string): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return "Untitled";
+
     if (!content.trim()) {
         return '';
     }

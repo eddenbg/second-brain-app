@@ -22,6 +22,7 @@ export interface WebMemory extends BaseMemory {
   type: 'web';
   url: string;
   content: string;
+  tags?: string[];
 }
 
 export interface PhysicalItemMemory extends BaseMemory {

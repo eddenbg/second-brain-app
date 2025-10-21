@@ -4,19 +4,14 @@ import type { PhysicalItemMemory, VideoItemMemory, AnyMemory } from '../types';
 import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon } from './Icons';
 import MiniRecorder from './MiniRecorder';
 import { getCurrentLocation } from '../utils/location';
-import { GoogleGenAI, Modality, LiveSession } from '@google/genai';
+import { Modality, LiveSession } from '@google/genai';
+import { getGeminiInstance } from '../utils/gemini';
 
 
 interface AddPhysicalItemModalProps {
     onClose: () => void;
     onSave: (memory: Omit<PhysicalItemMemory | VideoItemMemory, 'id' | 'date' | 'category'>) => void;
 }
-
-const API_KEY = process.env.API_KEY;
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, onSave }) => {
     const [mode, setMode] = useState<'photo' | 'video'>('photo');
@@ -101,6 +96,13 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     
     const startRecording = async () => {
         if (!stream) return;
+        
+        const ai = getGeminiInstance();
+        if (!ai) {
+          setError("AI features are not available. Please check API Key configuration.");
+          return;
+        }
+
         setIsRecording(true);
         setVideoDataUrl(null);
         liveTranscriptRef.current = '';
@@ -175,14 +177,12 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         const location = await getCurrentLocation();
         
         if (mode === 'video' && videoDataUrl) {
-            // FIX: Removed `category` property to match the Omit type. The parent component is responsible for adding it.
             const newMemory: Omit<VideoItemMemory, 'id' | 'date' | 'category'> = {
                 type: 'video', title, description,
                 videoDataUrl, transcript, ...(location && { location }),
             };
             onSave(newMemory);
         } else if (mode === 'photo' && imageDataUrl) {
-            // FIX: Removed `category` property to match the Omit type. The parent component is responsible for adding it.
             const newMemory: Omit<PhysicalItemMemory, 'id' | 'date' | 'category'> = {
                 type: 'item', title, description,
                 imageDataUrl, ...(location && { location }),

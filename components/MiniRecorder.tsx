@@ -1,13 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { GoogleGenAI, Modality, LiveSession } from '@google/genai';
+import { LiveSession, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon } from './Icons';
-
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+import { getGeminiInstance } from '../utils/gemini';
 
 const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}> = ({ onTranscriptChange }) => {
     const [isRecording, setIsRecording] = useState(false);
@@ -22,6 +16,13 @@ const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}>
         liveTranscriptRef.current = '';
         onTranscriptChange('');
         setError(null);
+        
+        const ai = getGeminiInstance();
+        if (!ai) {
+          setError("AI client not available.");
+          return;
+        }
+
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaStreamRef.current = stream;

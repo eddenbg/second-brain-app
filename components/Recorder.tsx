@@ -1,8 +1,9 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { GoogleGenAI, Modality, LiveSession } from '@google/genai';
+import { LiveSession, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon, SaveIcon } from './Icons';
 import type { VoiceMemory } from '../types';
 import { getCurrentLocation } from '../utils/location';
+import { getGeminiInstance } from '../utils/gemini';
 
 interface RecorderProps {
   onSave: (recording: Omit<VoiceMemory, 'id' | 'date'>) => void;
@@ -10,14 +11,6 @@ interface RecorderProps {
   titlePlaceholder: string;
   saveButtonText: string;
 }
-
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-    throw new Error("API_KEY environment variable not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
 
 const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText }) => {
   const [isRecording, setIsRecording] = useState(false);
@@ -37,6 +30,12 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     setError(null);
     setLiveTranscript('');
     finalTranscriptRef.current = '';
+
+    const ai = getGeminiInstance();
+    if (!ai) {
+      setError("AI features are not available. Please check API Key configuration.");
+      return;
+    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });

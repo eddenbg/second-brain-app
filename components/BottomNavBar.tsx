@@ -1,7 +1,7 @@
 import React from 'react';
-import { MicIcon, BookOpenIcon, BrainCircuitIcon, CameraIcon } from './Icons';
+import { MicIcon, BookOpenIcon, BrainCircuitIcon, CameraIcon, GlobeIcon } from './Icons';
 
-type View = 'physical' | 'college' | 'askai' | 'voicenotes';
+type View = 'physical' | 'college' | 'webclips' | 'askai' | 'voicenotes';
 
 interface BottomNavBarProps {
   view: View;
@@ -28,7 +28,7 @@ const NavButton: React.FC<{
 
 const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
   return (
-    <nav className="absolute bottom-0 left-0 right-0 h-20 bg-gray-900 border-t border-gray-700 flex items-center justify-around z-20">
+    <nav className="flex-shrink-0 w-full h-20 bg-gray-900 border-t border-gray-700 flex items-center justify-around z-20">
         <NavButton
             label="Physical Items"
             icon={<CameraIcon className="w-7 h-7" />}
@@ -40,6 +40,12 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
             icon={<BookOpenIcon className="w-7 h-7" />}
             isActive={view === 'college'}
             onClick={() => setView('college')}
+        />
+        <NavButton
+            label="Web Clips"
+            icon={<GlobeIcon className="w-7 h-7" />}
+            isActive={view === 'webclips'}
+            onClick={() => setView('webclips')}
         />
         <NavButton
             label="AskAI"
