@@ -1,14 +1,16 @@
-import React, { useState, useMemo } from 'react';
-import type { AnyMemory, VoiceMemory, WebMemory, PhysicalItemMemory, VideoItemMemory } from '../types';
-import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, MicIcon, GlobeIcon, CameraIcon, VideoIcon, MapPinIcon } from './Icons';
+import React, { useState } from 'react';
+import type { AnyMemory, VoiceMemory } from '../types';
+import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, MicIcon, MapPinIcon } from './Icons';
+import Recorder from './Recorder';
 
-interface MemoryListProps {
+interface VoiceNotesViewProps {
   memories: AnyMemory[];
   onDelete: (id: string) => void;
   onUpdateTitle: (id: string, newTitle: string) => void;
+  onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
 }
 
-const MemoryItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; onUpdateTitle: (id: string, newTitle: string) => void; }> = ({ memory, onDelete, onUpdateTitle }) => {
+const MemoItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; onUpdateTitle: (id: string, newTitle: string) => void; }> = ({ memory, onDelete, onUpdateTitle }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
@@ -25,20 +27,10 @@ const MemoryItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; 
         setIsEditing(false);
     };
     
-    const getIcon = () => {
-        switch (memory.type) {
-            case 'voice': return <MicIcon className="w-6 h-6 text-blue-400"/>;
-            case 'web': return <GlobeIcon className="w-6 h-6 text-green-400"/>;
-            case 'item': return <CameraIcon className="w-6 h-6 text-purple-400"/>;
-            case 'video': return <VideoIcon className="w-6 h-6 text-orange-400"/>;
-            default: return null;
-        }
-    }
-
     return (
         <div className="bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-700">
             <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={() => setIsExpanded(!isExpanded)}>
-                <div className="flex-shrink-0">{getIcon()}</div>
+                <div className="flex-shrink-0"><MicIcon className="w-6 h-6 text-blue-400"/></div>
                 <div className="flex-grow">
                     {isEditing ? (
                         <input
@@ -83,56 +75,9 @@ const MemoryItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; 
                         </div>
                     )}
 
-                    {memory.type === 'voice' && (
-                         <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                            <p className="text-gray-200 whitespace-pre-wrap">{(memory as VoiceMemory).transcript}</p>
-                        </div>
-                    )}
-                     {memory.type === 'web' && (
-                        <div className="space-y-4">
-                            {(memory as WebMemory).url && <p className="text-sm text-blue-400 break-all">Source: <a href={(memory as WebMemory).url} target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-300">{(memory as WebMemory).url}</a></p>}
-                            <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                                <p className="text-gray-200 whitespace-pre-wrap">{(memory as WebMemory).content}</p>
-                            </div>
-                        </div>
-                    )}
-                     {memory.type === 'item' && (
-                        <div className="space-y-4">
-                            <img src={(memory as PhysicalItemMemory).imageDataUrl} alt={memory.title} className="rounded-lg max-h-80 w-full object-contain bg-gray-900"/>
-                            {(memory as PhysicalItemMemory).description && (
-                                <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                                    <h4 className="text-lg font-semibold text-gray-300 mb-2">Description:</h4>
-                                    <p className="text-gray-200 whitespace-pre-wrap">{(memory as PhysicalItemMemory).description}</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {memory.type === 'video' && (
-                        <div className="space-y-4">
-                            <video src={(memory as VideoItemMemory).videoDataUrl} controls className="rounded-lg max-h-80 w-full bg-gray-900"/>
-                            {(memory as VideoItemMemory).description && (
-                                <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                                    <h4 className="text-lg font-semibold text-gray-300 mb-2">Description:</h4>
-                                    <p className="text-gray-200 whitespace-pre-wrap">{(memory as VideoItemMemory).description}</p>
-                                </div>
-                            )}
-                             {(memory as VideoItemMemory).transcript && (
-                                <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                                    <h4 className="text-lg font-semibold text-gray-300 mb-2">Transcript:</h4>
-                                    <p className="text-gray-200 whitespace-pre-wrap">{(memory as VideoItemMemory).transcript}</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {memory.voiceNote && (
-                        <div>
-                            <h4 className="text-lg font-semibold text-gray-300 mb-2">My Note:</h4>
-                                <div className="bg-gray-900 p-4 rounded-md max-h-40 overflow-y-auto border border-gray-600">
-                                <p className="text-gray-200 whitespace-pre-wrap">{memory.voiceNote.transcript}</p>
-                            </div>
-                        </div>
-                    )}
+                    <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
+                        <p className="text-gray-200 whitespace-pre-wrap">{(memory as VoiceMemory).transcript}</p>
+                    </div>
                 </div>
             )}
         </div>
@@ -140,61 +85,51 @@ const MemoryItem: React.FC<{ memory: AnyMemory; onDelete: (id: string) => void; 
 }
 
 
-const MemoryList: React.FC<MemoryListProps> = ({ memories, onDelete, onUpdateTitle }) => {
-  const [filter, setFilter] = useState<'all' | 'voice' | 'web' | 'item' | 'video'>('all');
+const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onDelete, onUpdateTitle, onSave }) => {
+  const [isRecording, setIsRecording] = useState(false);
 
-  const filteredMemories = useMemo(() => {
-      if (filter === 'all') return memories;
-      return memories.filter(mem => mem.type === filter);
-  }, [memories, filter]);
-
-  if (memories.length === 0) {
-    return (
-      <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
-        <h2 className="text-2xl font-semibold text-white">No Memories Yet</h2>
-        <p className="mt-2 text-gray-400">Tap the 'Add' button below to start building your second brain.</p>
-      </div>
-    );
+  const handleSave = (memory: Omit<VoiceMemory, 'id' | 'date'| 'category'>) => {
+      onSave({
+        ...memory,
+        category: 'personal'
+      });
+      setIsRecording(false);
   }
 
-  // FIX: Refactored TabButton to use an explicit `label` prop instead of `children` to avoid potential TS parsing issues.
-  type TabButtonProps = {
-    afilter: 'all' | 'voice' | 'web' | 'item' | 'video';
-    currentFilter: 'all' | 'voice' | 'web' | 'item' | 'video';
-    label: string;
-    count: number;
-  };
-
-  const TabButton = ({ afilter, currentFilter, label, count }: TabButtonProps) => (
-    <button onClick={() => setFilter(afilter)} className={`px-4 py-2 text-lg font-semibold rounded-md transition-colors flex-shrink-0 ${currentFilter === afilter ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}>
-        {label} <span className="text-sm opacity-75">{count}</span>
-    </button>
-  );
+  if (isRecording) {
+    return (
+        <Recorder 
+            onSave={handleSave} 
+            onCancel={() => setIsRecording(false)}
+            titlePlaceholder={`My Memo - ${new Date().toLocaleString()}`}
+            saveButtonText="Save Memo"
+        />
+    )
+  }
 
   return (
-    <div className="space-y-4">
-        <h2 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">My Memories</h2>
-        
-        <div className="flex space-x-2 sm:space-x-4 pb-2 overflow-x-auto">
-            <TabButton afilter="all" currentFilter={filter} count={memories.length} label="All" />
-            <TabButton afilter="voice" currentFilter={filter} count={memories.filter(m => m.type === 'voice').length} label="Voice" />
-            <TabButton afilter="web" currentFilter={filter} count={memories.filter(m => m.type === 'web').length} label="Web" />
-            <TabButton afilter="item" currentFilter={filter} count={memories.filter(m => m.type === 'item').length} label="Items" />
-            <TabButton afilter="video" currentFilter={filter} count={memories.filter(m => m.type === 'video').length} label="Video" />
-        </div>
+    <div className="space-y-8">
+      <button onClick={() => setIsRecording(true)} className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-blue-600 rounded-lg hover:bg-blue-700 border-2 border-dashed border-blue-400 hover:border-blue-300 transition-colors">
+          <MicIcon className="w-10 h-10 text-white"/>
+          <span className="text-xl font-semibold text-white">Record New Voice Memo</span>
+      </button>
 
-        {filteredMemories.length > 0 ? (
-            filteredMemories.map(mem => (
-                <MemoryItem key={mem.id} memory={mem} onDelete={onDelete} onUpdateTitle={onUpdateTitle}/>
-            ))
-        ) : (
-             <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
-                <h2 className="text-2xl font-semibold text-white">No memories of this type</h2>
-                <p className="mt-2 text-gray-400">Try selecting another category or adding a new memory.</p>
-            </div>
-        )}
+      <div className="space-y-4">
+          <h2 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">My Memos</h2>
+          
+          {memories.length > 0 ? (
+              memories.map(mem => (
+                  <MemoItem key={mem.id} memory={mem} onDelete={onDelete} onUpdateTitle={onUpdateTitle}/>
+              ))
+          ) : (
+               <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
+                  <h2 className="text-2xl font-semibold text-white">No Memos Yet</h2>
+                  <p className="mt-2 text-gray-400">Tap the button above to record your first voice memo.</p>
+              </div>
+          )}
+      </div>
     </div>
   );
 };
 
-export default MemoryList;
+export default VoiceNotesView;

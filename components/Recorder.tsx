@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveSession } from '@google/genai';
 import { MicIcon, StopCircleIcon, SaveIcon } from './Icons';
@@ -6,7 +5,10 @@ import type { VoiceMemory } from '../types';
 import { getCurrentLocation } from '../utils/location';
 
 interface RecorderProps {
-  onSave: (recording: VoiceMemory) => void;
+  onSave: (recording: Omit<VoiceMemory, 'id' | 'date'>) => void;
+  onCancel: () => void;
+  titlePlaceholder: string;
+  saveButtonText: string;
 }
 
 const API_KEY = process.env.API_KEY;
@@ -17,7 +19,7 @@ if (!API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-const Recorder: React.FC<RecorderProps> = ({ onSave }) => {
+const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
@@ -128,11 +130,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave }) => {
 
     if (shouldSave && finalTranscriptRef.current.trim()) {
       setIsSaving(true);
-      setRecordingTitle(`Voice Note - ${new Date().toLocaleString()}`);
+      setRecordingTitle(titlePlaceholder);
     } else {
-        setLiveTranscript('');
+      onCancel();
     }
-  }, [isRecording]);
+  }, [isRecording, onCancel, titlePlaceholder]);
 
   const handleSave = async () => {
     if (!recordingTitle.trim() || !finalTranscriptRef.current.trim()) {
@@ -142,34 +144,19 @@ const Recorder: React.FC<RecorderProps> = ({ onSave }) => {
     
     const location = await getCurrentLocation();
 
-    const newRecording: VoiceMemory = {
-      id: Date.now().toString(),
+    const newRecording: Omit<VoiceMemory, 'id' | 'date'> = {
       type: 'voice',
       title: recordingTitle,
       transcript: finalTranscriptRef.current,
-      date: new Date().toISOString(),
       ...(location && { location }),
-    };
+    } as Omit<VoiceMemory, 'id'|'date'>;
     onSave(newRecording);
-    resetState();
-  };
-  
-  const resetState = () => {
-    setIsSaving(false);
-    setLiveTranscript('');
-    setRecordingTitle('');
-    setError(null);
-    finalTranscriptRef.current = '';
-  }
-
-  const handleCancelSave = () => {
-    resetState();
   };
 
   if (isSaving) {
     return (
       <div className="bg-gray-800 p-6 rounded-lg shadow-lg space-y-4 border border-blue-500">
-        <h2 className="text-2xl font-bold text-white">Save Voice Note</h2>
+        <h2 className="text-2xl font-bold text-white">Save Recording</h2>
         <div>
           <label htmlFor="recording-title" className="block text-lg font-medium text-gray-300 mb-2">Title</label>
           <input
@@ -184,10 +171,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave }) => {
           <p className="text-gray-300 whitespace-pre-wrap">{finalTranscriptRef.current}</p>
         </div>
         <div className="flex justify-end gap-4 mt-4">
-          <button onClick={handleCancelSave} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">Cancel</button>
+          <button onClick={onCancel} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">Cancel</button>
           <button onClick={handleSave} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">
             <SaveIcon className="w-6 h-6"/>
-            Save
+            {saveButtonText}
           </button>
         </div>
       </div>
@@ -213,7 +200,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave }) => {
           )}
         </button>
         <p className="text-xl text-gray-300 font-semibold h-8">
-          {isRecording ? 'Recording...' : 'Tap to record a voice note'}
+          {isRecording ? 'Recording...' : 'Tap to start recording'}
         </p>
         {error && <p className="text-red-400 text-center">{error}</p>}
       </div>

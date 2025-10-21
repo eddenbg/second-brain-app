@@ -2,6 +2,8 @@ export interface BaseMemory {
   id: string;
   date: string;
   title: string;
+  category: 'college' | 'personal';
+  course?: string;
   voiceNote?: {
     transcript: string;
   };

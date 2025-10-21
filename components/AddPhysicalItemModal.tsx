@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { generateTitleForContent } from '../services/geminiService';
-import type { PhysicalItemMemory, VideoItemMemory } from '../types';
+import type { PhysicalItemMemory, VideoItemMemory, AnyMemory } from '../types';
 import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon } from './Icons';
 import MiniRecorder from './MiniRecorder';
 import { getCurrentLocation } from '../utils/location';
@@ -9,7 +9,7 @@ import { GoogleGenAI, Modality, LiveSession } from '@google/genai';
 
 interface AddPhysicalItemModalProps {
     onClose: () => void;
-    onSave: (memory: PhysicalItemMemory | VideoItemMemory) => void;
+    onSave: (memory: Omit<PhysicalItemMemory | VideoItemMemory, 'id' | 'date' | 'category'>) => void;
 }
 
 const API_KEY = process.env.API_KEY;
@@ -175,16 +175,18 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         const location = await getCurrentLocation();
         
         if (mode === 'video' && videoDataUrl) {
-            const newMemory: VideoItemMemory = {
-                id: Date.now().toString(), type: 'video', date: new Date().toISOString(), title, description,
-                videoDataUrl, transcript, ...(location && { location })
+            // FIX: Removed `category` property to match the Omit type. The parent component is responsible for adding it.
+            const newMemory: Omit<VideoItemMemory, 'id' | 'date' | 'category'> = {
+                type: 'video', title, description,
+                videoDataUrl, transcript, ...(location && { location }),
             };
             onSave(newMemory);
         } else if (mode === 'photo' && imageDataUrl) {
-            const newMemory: PhysicalItemMemory = {
-                id: Date.now().toString(), type: 'item', date: new Date().toISOString(), title, description,
+            // FIX: Removed `category` property to match the Omit type. The parent component is responsible for adding it.
+            const newMemory: Omit<PhysicalItemMemory, 'id' | 'date' | 'category'> = {
+                type: 'item', title, description,
                 imageDataUrl, ...(location && { location }),
-                ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote.trim() } })
+                ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote.trim() } }),
             };
             onSave(newMemory);
         }

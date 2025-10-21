@@ -8,13 +8,12 @@ if (!API_KEY) {
 }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
+const model = "gemini-2.5-flash";
 
 export async function answerQuestionFromContext(memories: AnyMemory[], question: string): Promise<string> {
   if (memories.length === 0) {
     return "There are no memories to search for an answer.";
   }
-
-  const model = "gemini-2.5-flash";
 
   const context = memories.map(mem => {
     const date = new Date(mem.date).toLocaleString();
@@ -23,7 +22,12 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
       : '';
 
     if (mem.type === 'voice') {
-      return `--- Voice Note: "${mem.title}" (Recorded on: ${date}${locationString}) ---\n${mem.transcript}\n--- End of Voice Note: "${mem.title}" ---`;
+      if (mem.category === 'college') {
+        const courseInfo = mem.course ? ` for course "${mem.course}"` : '';
+        return `--- College Lecture${courseInfo}: "${mem.title}" (Recorded on: ${date}${locationString}) ---\n${mem.transcript}\n--- End of College Lecture: "${mem.title}" ---`;
+      } else {
+        return `--- Personal Voice Note: "${mem.title}" (Recorded on: ${date}${locationString}) ---\n${mem.transcript}\n--- End of Personal Voice Note: "${mem.title}" ---`;
+      }
     } else if (mem.type === 'web') {
       let webContext = `--- Web Clip: "${mem.title}" (Saved on: ${date}${locationString}, From: ${mem.url || 'N/A'}) ---\nContent:\n${mem.content}`;
       if (mem.voiceNote) {
@@ -46,7 +50,7 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
     return '';
   }).join('\n\n');
 
-  const systemInstruction = `You are a helpful personal assistant. Your task is to answer the user's question based ONLY on the provided context from their saved memories, which include voice notes, web clippings, physical items, and video recordings with transcripts. Analyze the content and location data carefully. Do not use any external knowledge. If the answer cannot be found, you MUST respond with: "I could not find an answer in your memories." Be concise and directly answer the question.`;
+  const systemInstruction = `You are a helpful personal assistant. Your task is to answer the user's question based ONLY on the provided context from their saved memories, which include college lectures, voice notes, web clippings, physical items, and video recordings with transcripts. Analyze the content and location data carefully. Do not use any external knowledge. If the answer cannot be found, you MUST respond with: "I could not find an answer in your memories." Be concise and directly answer the question.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -63,11 +67,34 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
   }
 }
 
+export async function answerFromImage(base64Data: string, mimeType: string, question: string): Promise<string> {
+    const imagePart = {
+      inlineData: {
+        mimeType,
+        data: base64Data,
+      },
+    };
+    const textPart = {
+      text: question,
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: { parts: [imagePart, textPart] },
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error calling Gemini API for image question:", error);
+        return "Sorry, I encountered an error while analyzing the image.";
+    }
+}
+
+
 export async function generateTitleForContent(content: string): Promise<string> {
     if (!content.trim()) {
         return '';
     }
-    const model = "gemini-2.5-flash";
     const systemInstruction = "You are a title generator. Your task is to create a short, concise, and descriptive title for the provided text. The title should be 10 words or less. Respond only with the title itself, nothing else.";
     
     try {
