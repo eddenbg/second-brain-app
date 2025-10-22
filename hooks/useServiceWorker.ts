@@ -12,10 +12,11 @@ export const useServiceWorker = () => {
     }, []);
 
     useEffect(() => {
-        const registerSW = () => {
-            if ('serviceWorker' in navigator) {
-                // Use the simplest, most robust relative path.
-                navigator.serviceWorker.register('./sw.js').then(registration => {
+        if ('serviceWorker' in navigator) {
+            const handleRegistration = () => {
+                // Construct an absolute URL for the service worker to avoid cross-origin issues.
+                const swUrl = `${window.location.origin}/sw.js`;
+                navigator.serviceWorker.register(swUrl).then(registration => {
                     if (registration.waiting) {
                         onUpdate(registration);
                     }
@@ -32,20 +33,24 @@ export const useServiceWorker = () => {
                 }).catch(error => {
                     console.error('Service Worker registration failed:', error);
                 });
+            };
 
-                let refreshing = false;
-                navigator.serviceWorker.addEventListener('controllerchange', () => {
-                    if (!refreshing) {
-                        window.location.reload();
-                        refreshing = true;
-                    }
-                });
-            }
-        };
+            // Wait until the page is fully loaded before trying to register the service worker.
+            window.addEventListener('load', handleRegistration);
 
-        window.addEventListener('load', registerSW);
-        return () => window.removeEventListener('load', registerSW);
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!refreshing) {
+                    window.location.reload();
+                    refreshing = true;
+                }
+            });
 
+            // Cleanup the event listener when the component unmounts.
+            return () => {
+                window.removeEventListener('load', handleRegistration);
+            };
+        }
     }, [onUpdate]);
 
     const updateServiceWorker = useCallback(() => {

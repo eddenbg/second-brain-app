@@ -8,10 +8,8 @@ const MobilePreview: React.FC<{ children: React.ReactNode }> = ({ children }) =>
       <div 
         className="w-full max-w-sm h-[85vh] max-h-[896px] bg-gray-900 rounded-3xl shadow-2xl overflow-hidden border-4 border-gray-700 relative"
       >
-        {/* The actual app content, with scrolling enabled */}
-        <div className="w-full h-full overflow-y-auto">
-          {children}
-        </div>
+        {/* The actual app content, now a direct child */}
+        {children}
       </div>
     </div>
   );

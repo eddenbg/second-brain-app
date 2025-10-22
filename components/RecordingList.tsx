@@ -34,7 +34,7 @@ const RecordingList: React.FC<VoiceNotesViewProps> = ({ onSave }) => {
                 className="flex items-center justify-center w-48 h-48 rounded-full transition-all duration-300 ease-in-out bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-400"
                 aria-label={'Start Recording'}
             >
-                <MicIcon className="w-24 h-24 text-white" />
+                <MicIcon className="w-28 h-28 text-white" />
             </button>
         </div>
     );

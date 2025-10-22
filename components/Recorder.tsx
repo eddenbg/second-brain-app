@@ -193,9 +193,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
           aria-label={isRecording ? 'Stop Recording' : 'Start Recording'}
         >
           {isRecording ? (
-            <StopCircleIcon className="w-12 h-12 sm:w-16 sm:h-16 text-white" />
+            <StopCircleIcon className="w-14 h-14 sm:w-20 sm:h-20 text-white" />
           ) : (
-            <MicIcon className="w-12 h-12 sm:w-16 sm:h-16 text-white" />
+            <MicIcon className="w-14 h-14 sm:w-20 sm:h-20 text-white" />
           )}
         </button>
         <p className="text-xl text-gray-300 font-semibold h-8">

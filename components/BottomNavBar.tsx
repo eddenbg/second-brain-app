@@ -28,34 +28,34 @@ const NavButton: React.FC<{
 
 const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
   return (
-    <nav className="flex-shrink-0 w-full h-20 bg-gray-900 border-t border-gray-700 flex items-center justify-around z-20">
+    <nav className="w-full h-20 bg-gray-900 border-t border-gray-700 flex items-center justify-around z-20">
         <NavButton
             label="Physical Items"
-            icon={<CameraIcon className="w-7 h-7" />}
+            icon={<CameraIcon className="w-8 h-8" />}
             isActive={view === 'physical'}
             onClick={() => setView('physical')}
         />
         <NavButton
             label="College"
-            icon={<BookOpenIcon className="w-7 h-7" />}
+            icon={<BookOpenIcon className="w-8 h-8" />}
             isActive={view === 'college'}
             onClick={() => setView('college')}
         />
         <NavButton
             label="Web Clips"
-            icon={<GlobeIcon className="w-7 h-7" />}
+            icon={<GlobeIcon className="w-8 h-8" />}
             isActive={view === 'webclips'}
             onClick={() => setView('webclips')}
         />
         <NavButton
             label="AskAI"
-            icon={<BrainCircuitIcon className="w-7 h-7" />}
+            icon={<BrainCircuitIcon className="w-8 h-8" />}
             isActive={view === 'askai'}
             onClick={() => setView('askai')}
         />
         <NavButton
             label="Voice Notes"
-            icon={<MicIcon className="w-7 h-7" />}
+            icon={<MicIcon className="w-8 h-8" />}
             isActive={view === 'voicenotes'}
             onClick={() => setView('voicenotes')}
         />

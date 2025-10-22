@@ -55,11 +55,11 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 text-white">
-      <header className="flex-shrink-0 p-4 text-center bg-gray-800 border-b border-gray-700">
+    <div className="grid grid-rows-[auto_1fr_auto] h-full bg-gray-900 text-white">
+      <header className="p-4 text-center bg-gray-800 border-b border-gray-700">
         <h1 className="text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
       </header>
-      <main className="flex-grow p-4 sm:p-6 overflow-y-auto">
+      <main className="p-4 sm:p-6 overflow-y-auto">
         {renderView()}
       </main>
       <BottomNavBar view={view} setView={setView} />
