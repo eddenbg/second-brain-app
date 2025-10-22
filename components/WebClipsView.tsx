@@ -8,12 +8,20 @@ interface WebClipsViewProps {
   onDelete: (id: string) => void;
   onUpdate: (id: string, updates: Partial<WebMemory>) => void;
   onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
-  syncSharedClips: () => Promise<void>;
+  syncSharedClips: () => Promise<number>;
   pendingClipsCount: number;
+  bulkDelete: (ids: string[]) => void;
 }
 
 // ... (ClipItem component remains the same)
-const ClipItem: React.FC<{ memory: WebMemory; onDelete: (id: string) => void; onUpdate: (id: string, updates: Partial<WebMemory>) => void; }> = ({ memory, onDelete, onUpdate }) => {
+const ClipItem: React.FC<{ 
+    memory: WebMemory; 
+    onDelete: (id: string) => void; 
+    onUpdate: (id: string, updates: Partial<WebMemory>) => void;
+    isSelectMode: boolean;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
+}> = ({ memory, onDelete, onUpdate, isSelectMode, isSelected, onToggleSelect }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
@@ -29,10 +37,23 @@ const ClipItem: React.FC<{ memory: WebMemory; onDelete: (id: string) => void; on
         setTitle(memory.title);
         setIsEditing(false);
     };
+
+    const handleHeaderClick = () => {
+        if (isSelectMode) {
+            onToggleSelect(memory.id);
+        } else {
+            setIsExpanded(!isExpanded);
+        }
+    };
     
     return (
-        <div className="bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-700">
-            <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={() => setIsExpanded(!isExpanded)}>
+        <div className={`bg-gray-800 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-blue-500' : 'border-gray-700'}`}>
+            <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={handleHeaderClick}>
+                {isSelectMode && (
+                     <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-400' : 'border-gray-500'}`}>
+                        {isSelected && <CheckIcon className="w-4 h-4 text-white"/>}
+                    </div>
+                )}
                 <div className="flex-shrink-0"><GlobeIcon className="w-6 h-6 text-green-400"/></div>
                 <div className="flex-grow">
                     {isEditing ? (
@@ -53,9 +74,9 @@ const ClipItem: React.FC<{ memory: WebMemory; onDelete: (id: string) => void; on
                     )}
                     <p className="text-sm text-gray-400">{new Date(memory.date).toLocaleString()}</p>
                 </div>
-                <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+                {!isSelectMode && <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />}
             </div>
-            {isExpanded && (
+            {isExpanded && !isSelectMode && (
                 <div className="p-4 border-t border-gray-700 space-y-4">
                     <div className="flex items-center justify-end space-x-2">
                         {isEditing ? (
@@ -111,14 +132,19 @@ const ClipItem: React.FC<{ memory: WebMemory; onDelete: (id: string) => void; on
     )
 }
 
-const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete, onUpdate, syncSharedClips, pendingClipsCount }) => {
+const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete, onUpdate, syncSharedClips, pendingClipsCount, bulkDelete }) => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const handleSync = async () => {
     setIsSyncing(true);
-    await syncSharedClips();
+    const count = await syncSharedClips();
     setIsSyncing(false);
+    setSyncMessage(count > 0 ? `Synced ${count} new clip(s)!` : 'No new clips to sync.');
+    setTimeout(() => setSyncMessage(null), 3000);
   }
 
   const handleSave = (memory: Omit<WebMemory, 'id' | 'date'| 'category'>) => {
@@ -129,6 +155,24 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete,
       setShowAddModal(false);
   }
 
+  const toggleSelection = (id: string) => {
+    setSelectedIds(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
+        }
+        return newSet;
+    });
+  };
+
+  const handleBulkDelete = () => {
+      bulkDelete(Array.from(selectedIds));
+      setIsSelectMode(false);
+      setSelectedIds(new Set());
+  };
+
   return (
     <div className="space-y-8">
       {showAddModal && <AddWebMemoryModal onSave={handleSave} onClose={() => setShowAddModal(false)} />}
@@ -138,21 +182,48 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete,
             <LinkIcon className="w-10 h-10 text-white"/>
             <span className="text-xl font-semibold text-white">Add New Web Clip</span>
         </button>
-        <button onClick={handleSync} disabled={isSyncing || pendingClipsCount === 0} className="relative w-full flex flex-col items-center justify-center gap-2 p-6 bg-indigo-600 rounded-lg hover:bg-indigo-700 border-2 border-dashed border-indigo-400 hover:border-indigo-300 transition-colors disabled:bg-gray-600 disabled:border-gray-500 disabled:cursor-not-allowed">
-            {pendingClipsCount > 0 && (
+        <button onClick={handleSync} disabled={isSyncing} className="relative w-full flex flex-col items-center justify-center gap-2 p-6 bg-indigo-600 rounded-lg hover:bg-indigo-700 border-2 border-dashed border-indigo-400 hover:border-indigo-300 transition-colors disabled:bg-gray-600 disabled:border-gray-500 disabled:cursor-not-allowed">
+            {pendingClipsCount > 0 && !isSyncing && (
               <span className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingClipsCount}</span>
             )}
             <UploadIcon className="w-10 h-10 text-white"/>
             <span className="text-xl font-semibold text-white">{isSyncing ? 'Syncing...' : 'Sync New Clips'}</span>
         </button>
       </div>
+      
+      {syncMessage && (
+        <div className="text-center p-2 bg-gray-700 rounded-lg text-white animate-fade-in-up">
+            {syncMessage}
+        </div>
+      )}
 
       <div className="space-y-4">
-          <h2 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">My Web Clips</h2>
+          <div className="flex justify-between items-center border-b border-gray-700 pb-2">
+            <h2 className="text-2xl font-bold text-white">My Web Clips</h2>
+            {memories.length > 0 && (
+                <button 
+                    onClick={() => {
+                        setIsSelectMode(!isSelectMode);
+                        setSelectedIds(new Set());
+                    }} 
+                    className="px-4 py-2 text-lg font-semibold rounded-md bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                >
+                    {isSelectMode ? 'Cancel' : 'Select'}
+                </button>
+            )}
+          </div>
           
           {memories.length > 0 ? (
               memories.map(mem => (
-                  <ClipItem key={mem.id} memory={mem as WebMemory} onDelete={onDelete} onUpdate={onUpdate}/>
+                  <ClipItem 
+                    key={mem.id} 
+                    memory={mem as WebMemory} 
+                    onDelete={onDelete} 
+                    onUpdate={onUpdate}
+                    isSelectMode={isSelectMode}
+                    isSelected={selectedIds.has(mem.id)}
+                    onToggleSelect={toggleSelection}
+                />
               ))
           ) : (
                <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
@@ -161,6 +232,13 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete,
               </div>
           )}
       </div>
+      {isSelectMode && selectedIds.size > 0 && (
+          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-sm">
+              <button onClick={handleBulkDelete} className="w-full bg-red-600 text-white font-bold py-4 px-4 rounded-lg shadow-lg flex items-center justify-center gap-2">
+                  <TrashIcon className="w-6 h-6"/> Delete ({selectedIds.size})
+              </button>
+          </div>
+      )}
     </div>
   );
 };

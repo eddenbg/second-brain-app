@@ -17,6 +17,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     const [mode, setMode] = useState<'photo' | 'video'>('photo');
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
+    const [tags, setTags] = useState('');
     const [voiceNote, setVoiceNote] = useState(''); // For photo mode
     const [transcript, setTranscript] = useState(''); // For video mode
     const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
@@ -175,11 +176,12 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         if (!hasMedia || !title.trim()) return;
         
         const location = await getCurrentLocation();
+        const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
         
         if (mode === 'video' && videoDataUrl) {
             const newMemory: Omit<VideoItemMemory, 'id' | 'date' | 'category'> = {
                 type: 'video', title, description,
-                videoDataUrl, transcript, ...(location && { location }),
+                videoDataUrl, transcript, ...(location && { location }), tags: tagList,
             };
             onSave(newMemory);
         } else if (mode === 'photo' && imageDataUrl) {
@@ -187,6 +189,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                 type: 'item', title, description,
                 imageDataUrl, ...(location && { location }),
                 ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote.trim() } }),
+                tags: tagList,
             };
             onSave(newMemory);
         }
@@ -261,6 +264,11 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                                <BrainCircuitIcon className="w-5 h-5"/> {isGeneratingTitle ? 'Generating...' : 'Generate'}
                            </button>
                         </div>
+                    </div>
+                    <div>
+                        <label htmlFor="tags" className="block text-lg font-medium text-gray-300 mb-2">Tags</label>
+                        <input id="tags" type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g., kitchen, documents, sentimental" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
+                        <p className="text-sm text-gray-400 mt-1">Separate tags with commas.</p>
                     </div>
                      <div>
                         {mode === 'photo' && <MiniRecorder onTranscriptChange={setVoiceNote} />}

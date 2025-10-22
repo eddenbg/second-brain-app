@@ -34,9 +34,13 @@ export const useServiceWorker = () => {
                     console.error('Service Worker registration failed:', error);
                 });
             };
-
-            // Wait until the page is fully loaded before trying to register the service worker.
-            window.addEventListener('load', handleRegistration);
+            
+            // The 'load' event may have already fired.
+            if (document.readyState === 'complete') {
+                handleRegistration();
+            } else {
+                window.addEventListener('load', handleRegistration);
+            }
 
             let refreshing = false;
             navigator.serviceWorker.addEventListener('controllerchange', () => {

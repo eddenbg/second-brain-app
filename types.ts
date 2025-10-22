@@ -3,6 +3,7 @@ export interface BaseMemory {
   date: string;
   title: string;
   category: 'college' | 'personal';
+  tags?: string[];
   course?: string;
   voiceNote?: {
     transcript: string;
@@ -22,7 +23,6 @@ export interface WebMemory extends BaseMemory {
   type: 'web';
   url: string;
   content: string;
-  tags?: string[];
 }
 
 export interface PhysicalItemMemory extends BaseMemory {

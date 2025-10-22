@@ -4,7 +4,7 @@ import CollegeView from './components/AddView';
 import QASession from './components/QASession';
 import VisionView from './components/VisionView';
 import WebClipsView from './components/WebClipsView';
-import RecordingList from './components/RecordingList';
+import VoiceNotesView from './components/RecordingList';
 import UpdateNotification from './components/UpdateNotification';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
@@ -22,12 +22,13 @@ const viewTitles: Record<View, string> = {
 
 function App() {
   const [view, setView] = useState<View>('voicenotes');
-  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount } = useRecordings();
+  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories } = useRecordings();
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const physicalMemories = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
   const webClipMemories = useMemo(() => memories.filter(m => m.type === 'web'), [memories]);
+  const voiceNoteMemories = useMemo(() => memories.filter(m => m.type === 'voice' && m.category === 'personal'), [memories]);
 
   const handleUpdateTitle = (id: string, newTitle: string) => {
     updateMemory(id, { title: newTitle });
@@ -40,15 +41,15 @@ function App() {
   const renderView = () => {
     switch (view) {
       case 'physical':
-        return <VisionView memories={physicalMemories} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} onSave={addMemory} />;
+        return <VisionView memories={physicalMemories} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} onSave={addMemory} bulkDelete={bulkDeleteMemories} />;
       case 'college':
-        return <CollegeView lectures={collegeMemories} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} onSave={addMemory} />;
+        return <CollegeView lectures={collegeMemories} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} onSave={addMemory} bulkDelete={bulkDeleteMemories} />;
       case 'webclips':
-        return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={addMemory} syncSharedClips={syncSharedClips} pendingClipsCount={pendingClipsCount}/>;
+        return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={addMemory} syncSharedClips={syncSharedClips} pendingClipsCount={pendingClipsCount} bulkDelete={bulkDeleteMemories}/>;
       case 'askai':
         return <QASession memories={memories} />;
       case 'voicenotes':
-        return <RecordingList onSave={addMemory} />;
+        return <VoiceNotesView memories={voiceNoteMemories} onSave={addMemory} onDelete={deleteMemory} onUpdateTitle={handleUpdateTitle} bulkDelete={bulkDeleteMemories} />;
       default:
         return <QASession memories={memories} />;
     }

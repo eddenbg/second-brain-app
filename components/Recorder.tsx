@@ -18,6 +18,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
   const [liveTranscript, setLiveTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [recordingTitle, setRecordingTitle] = useState('');
+  const [tags, setTags] = useState('');
   
   const finalTranscriptRef = useRef<string>('');
   const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
@@ -147,6 +148,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       type: 'voice',
       title: recordingTitle,
       transcript: finalTranscriptRef.current,
+      tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
       ...(location && { location }),
     } as Omit<VoiceMemory, 'id'|'date'>;
     onSave(newRecording);
@@ -165,6 +167,18 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             onChange={(e) => setRecordingTitle(e.target.value)}
             className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
+        </div>
+        <div>
+            <label htmlFor="recording-tags" className="block text-lg font-medium text-gray-300 mb-2">Tags</label>
+            <input
+                id="recording-tags"
+                type="text"
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+                placeholder="e.g. work, ideas, urgent"
+                className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <p className="text-sm text-gray-400 mt-1">Separate tags with commas.</p>
         </div>
         <div className="bg-gray-900 p-4 rounded-md max-h-48 overflow-y-auto border border-gray-700">
           <p className="text-gray-300 whitespace-pre-wrap">{finalTranscriptRef.current}</p>

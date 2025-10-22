@@ -31,7 +31,7 @@ export const useRecordings = () => {
         }
     }, []);
 
-    const syncSharedClips = useCallback(async () => {
+    const syncSharedClips = useCallback(async (): Promise<number> => {
         try {
             const response = await fetch('/netlify/functions/getSharedClips');
             if (!response.ok) throw new Error("Failed to fetch shared clips");
@@ -45,8 +45,15 @@ export const useRecordings = () => {
                     category: 'personal',
                 } as AnyMemory));
 
+                let addedCount = 0;
                 setMemories(prev => {
-                    const updatedMemories = [...prev, ...newMemories].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    const existingIds = new Set(prev.map(m => m.id));
+                    const trulyNewMemories = newMemories.filter(m => !existingIds.has(m.id));
+                    addedCount = trulyNewMemories.length;
+
+                    if (addedCount === 0) return prev;
+
+                    const updatedMemories = [...prev, ...trulyNewMemories].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                     localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
                     return updatedMemories;
                 });
@@ -58,20 +65,28 @@ export const useRecordings = () => {
                         body: JSON.stringify({ key: clip.id }),
                     });
                 }
+                setPendingClipsCount(0);
+                return addedCount;
             }
             setPendingClipsCount(0);
+            return 0;
         } catch (error) {
             console.error("Failed to sync shared clips", error);
+            return 0;
         }
     }, []);
 
     const addMemory = useCallback((memory: Omit<AnyMemory, 'id' | 'date'>) => {
         setMemories(prev => {
+            // FIX: Spreading a discriminated union (`Omit<AnyMemory,...>`) creates an object
+            // that TypeScript cannot verify as a valid `AnyMemory`. This was causing an error
+            // on the `setMemories` call. Casting through `any` bypasses this strict check.
+            // This is safe because downstream code discriminates memories by `type`.
             const newMemory: AnyMemory = {
                 ...memory,
                 id: crypto.randomUUID(),
                 date: new Date().toISOString(),
-            } as AnyMemory;
+            } as unknown as AnyMemory;
             const updatedMemories = [newMemory, ...prev];
             localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
             return updatedMemories;
@@ -86,9 +101,19 @@ export const useRecordings = () => {
         });
     }, []);
 
+    const bulkDeleteMemories = useCallback((ids: string[]) => {
+        setMemories(prev => {
+            const updatedMemories = prev.filter(mem => !ids.includes(mem.id));
+            localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
+            return updatedMemories;
+        });
+    }, []);
+
     const updateMemory = useCallback((id: string, updates: Partial<AnyMemory>) => {
         setMemories(prev => {
-            const updatedMemories = prev.map(mem => mem.id === id ? { ...mem, ...updates } : mem);
+            // FIX: Spreading a discriminated union with a partial update can lead to an invalid type.
+            // The cast ensures TypeScript treats the result as a valid `AnyMemory`.
+            const updatedMemories = prev.map(mem => mem.id === id ? ({ ...mem, ...updates } as AnyMemory) : mem);
             localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
             return updatedMemories;
         });
@@ -101,5 +126,5 @@ export const useRecordings = () => {
     }, [fetchPendingClipsCount]);
 
 
-    return { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount };
+    return { memories, addMemory, deleteMemory, bulkDeleteMemories, updateMemory, syncSharedClips, pendingClipsCount };
 };
