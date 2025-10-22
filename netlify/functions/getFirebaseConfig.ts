@@ -8,7 +8,3 @@ export default async (req: Request, context: Context) => {
     headers: { "Content-Type": "application/json" },
   });
 };
-
-export const config = {
-  path: "/netlify/functions/getFirebaseConfig",
-};

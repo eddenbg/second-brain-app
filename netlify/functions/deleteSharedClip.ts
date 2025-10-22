@@ -18,7 +18,3 @@ export default async (req: Request, context: Context) => {
         return new Response("Internal Server Error", { status: 500 });
     }
 };
-
-export const config = {
-  path: "/netlify/functions/deleteSharedClip",
-};
