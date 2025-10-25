@@ -14,7 +14,10 @@ export const useServiceWorker = () => {
     useEffect(() => {
         if ('serviceWorker' in navigator) {
             const registerAndListen = () => {
-                navigator.serviceWorker.register('sw.js').then(registration => {
+                // Explicitly create a URL for the service worker based on the current location.
+                // This resolves origin mismatch errors in sandboxed environments.
+                const swUrl = new URL('sw.js', window.location.href).href;
+                navigator.serviceWorker.register(swUrl).then(registration => {
                     if (registration.waiting) {
                         onUpdate(registration);
                     }
