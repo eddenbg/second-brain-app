@@ -1,26 +1,33 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { LiveSession, Modality } from '@google/genai';
-import { MicIcon, StopCircleIcon, SaveIcon } from './Icons';
-import type { VoiceMemory } from '../types';
+import { MicIcon, StopCircleIcon, SaveIcon, BrainCircuitIcon } from './Icons';
+import type { VoiceMemory, TranscriptSegment } from '../types';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
+import { generateTitleForContent } from '../services/geminiService';
 
 interface RecorderProps {
   onSave: (recording: Omit<VoiceMemory, 'id' | 'date'>) => void;
   onCancel: () => void;
   titlePlaceholder: string;
   saveButtonText: string;
+  enableDiarization?: boolean;
 }
 
-const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText }) => {
+const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText, enableDiarization }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [recordingTitle, setRecordingTitle] = useState('');
   const [tags, setTags] = useState('');
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
   
   const finalTranscriptRef = useRef<string>('');
+  const structuredTranscriptRef = useRef<TranscriptSegment[]>([]);
+  const speakerIdMap = useRef(new Map<number, number>());
+  const lastSpeakerIdRef = useRef<number | null>(null);
+  const speakerCounterRef = useRef(1);
   const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -31,6 +38,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     setError(null);
     setLiveTranscript('');
     finalTranscriptRef.current = '';
+    structuredTranscriptRef.current = [];
+    speakerIdMap.current.clear();
+    lastSpeakerIdRef.current = null;
+    speakerCounterRef.current = 1;
 
     const ai = getGeminiInstance();
     if (!ai) {
@@ -45,6 +56,15 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
       const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = context;
+      
+      const config: any = {
+        responseModalities: [Modality.AUDIO], // Required but we only use transcription
+        inputAudioTranscription: {},
+      };
+
+      if (enableDiarization) {
+        config.inputAudioTranscription.enableSpeakerId = true;
+      }
 
       sessionPromiseRef.current = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -78,9 +98,37 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
           },
           onmessage: (message) => {
             if (message.serverContent?.inputTranscription) {
-              const text = message.serverContent.inputTranscription.text;
-              finalTranscriptRef.current += text;
-              setLiveTranscript(prev => prev + text);
+              const transcriptionPart = message.serverContent.inputTranscription;
+              const text = transcriptionPart.text;
+              let transcriptChunk = '';
+
+              if (enableDiarization && typeof transcriptionPart.speakerId === 'number') {
+                  const speakerId = transcriptionPart.speakerId;
+                  if (!speakerIdMap.current.has(speakerId)) {
+                      speakerIdMap.current.set(speakerId, speakerCounterRef.current++);
+                  }
+                  const speakerLabel = `Speaker ${speakerIdMap.current.get(speakerId)}`;
+  
+                  if (lastSpeakerIdRef.current !== speakerId) {
+                      const prefix = finalTranscriptRef.current.length > 0 ? '\n\n' : '';
+                      transcriptChunk = `${prefix}${speakerLabel}: ${text}`;
+                  } else {
+                      transcriptChunk = text;
+                  }
+                  lastSpeakerIdRef.current = speakerId;
+                  
+                  const lastSegment = structuredTranscriptRef.current[structuredTranscriptRef.current.length - 1];
+                  if (lastSegment && lastSegment.speakerId === speakerId) {
+                    lastSegment.text += text;
+                  } else {
+                    structuredTranscriptRef.current.push({ speakerId, text });
+                  }
+              } else {
+                  transcriptChunk = text;
+              }
+              
+              finalTranscriptRef.current += transcriptChunk;
+              setLiveTranscript(prev => prev + transcriptChunk);
             }
           },
           onerror: (e: ErrorEvent) => {
@@ -92,10 +140,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
              // Closed
           },
         },
-        config: {
-          responseModalities: [Modality.AUDIO], // Required but we only use transcription
-          inputAudioTranscription: {},
-        },
+        config,
       });
 
     } catch (err) {
@@ -127,10 +172,19 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     audioContextRef.current = null;
     scriptProcessorRef.current = null;
 
-
     if (shouldSave && finalTranscriptRef.current.trim()) {
       setIsSaving(true);
-      setRecordingTitle(titlePlaceholder);
+      // Automatically generate title when saving
+      setIsGeneratingTitle(true);
+      try {
+        const generatedTitle = await generateTitleForContent(finalTranscriptRef.current);
+        setRecordingTitle(generatedTitle || titlePlaceholder);
+      } catch (error) {
+        console.error("Error auto-generating title:", error);
+        setRecordingTitle(titlePlaceholder); // Fallback to placeholder
+      } finally {
+        setIsGeneratingTitle(false);
+      }
     } else {
       onCancel();
     }
@@ -144,14 +198,43 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     
     const location = await getCurrentLocation();
 
-    const newRecording: Omit<VoiceMemory, 'id' | 'date'> = {
+    const newRecordingBase: Omit<VoiceMemory, 'id' | 'date'> = {
       type: 'voice',
       title: recordingTitle,
       transcript: finalTranscriptRef.current,
       tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
       ...(location && { location }),
     } as Omit<VoiceMemory, 'id'|'date'>;
-    onSave(newRecording);
+
+    if (enableDiarization && structuredTranscriptRef.current.length > 0) {
+        const speakerMappings: { [key: number]: string } = {};
+        for (const [rawId, sequentialId] of speakerIdMap.current.entries()) {
+            speakerMappings[rawId] = `Speaker ${sequentialId}`;
+        }
+        
+        onSave({
+          ...newRecordingBase,
+          structuredTranscript: structuredTranscriptRef.current,
+          speakerMappings,
+        });
+    } else {
+        onSave(newRecordingBase);
+    }
+  };
+  
+  const handleGenerateTitle = async () => {
+    if (!finalTranscriptRef.current.trim()) return;
+    setIsGeneratingTitle(true);
+    setError(null);
+    try {
+        const generatedTitle = await generateTitleForContent(finalTranscriptRef.current);
+        setRecordingTitle(generatedTitle);
+    } catch (error) {
+        console.error("Error generating title:", error);
+        setError("Failed to generate title.");
+    } finally {
+        setIsGeneratingTitle(false);
+    }
   };
 
   if (isSaving) {
@@ -160,13 +243,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         <h2 className="text-2xl font-bold text-white">Save Recording</h2>
         <div>
           <label htmlFor="recording-title" className="block text-lg font-medium text-gray-300 mb-2">Title</label>
-          <input
-            id="recording-title"
-            type="text"
-            value={recordingTitle}
-            onChange={(e) => setRecordingTitle(e.target.value)}
-            className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
+          <div className="flex gap-2">
+            <input
+                id="recording-title"
+                type="text"
+                value={recordingTitle}
+                onChange={(e) => setRecordingTitle(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <button 
+                onClick={handleGenerateTitle} 
+                disabled={isGeneratingTitle || !finalTranscriptRef.current.trim()} 
+                className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2"
+                aria-label="Generate title"
+            >
+               <BrainCircuitIcon className="w-5 h-5"/> {isGeneratingTitle ? '...' : 'Generate'}
+            </button>
+          </div>
         </div>
         <div>
             <label htmlFor="recording-tags" className="block text-lg font-medium text-gray-300 mb-2">Tags</label>
@@ -183,6 +277,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         <div className="bg-gray-900 p-4 rounded-md max-h-48 overflow-y-auto border border-gray-700">
           <p className="text-gray-300 whitespace-pre-wrap">{finalTranscriptRef.current}</p>
         </div>
+        {error && <p className="text-red-400 text-center">{error}</p>}
         <div className="flex justify-end gap-4 mt-4">
           <button onClick={onCancel} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 transition-colors">Cancel</button>
           <button onClick={handleSave} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors">

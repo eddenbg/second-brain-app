@@ -1,130 +1,161 @@
 import { useState, useEffect, useCallback } from 'react';
+import { User } from 'firebase/auth';
+import { getFirebase } from '../utils/firebase';
+import { collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch, query, orderBy, setDoc } from 'firebase/firestore';
 import type { AnyMemory, WebMemory } from '../types';
 
-const MEMORIES_STORAGE_KEY = 'second-brain-memories';
-
-export const useRecordings = () => {
+export const useRecordings = (user: User | null) => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
+    const [courses, setCourses] = useState<string[]>([]);
     const [pendingClipsCount, setPendingClipsCount] = useState(0);
 
-    useEffect(() => {
-        try {
-            const storedMemories = localStorage.getItem(MEMORIES_STORAGE_KEY);
-            if (storedMemories) {
-                setMemories(JSON.parse(storedMemories));
-            }
-        } catch (error) {
-            console.error("Failed to load memories from localStorage", error);
-        }
-        fetchPendingClipsCount();
-    }, []);
-
+    // This part for Netlify share target is disabled as it's not supported in this environment.
     const fetchPendingClipsCount = useCallback(async () => {
-        try {
-            const response = await fetch('/netlify/functions/getSharedClips');
-            if (response.ok) {
-                const clips = await response.json();
-                setPendingClipsCount(clips.length);
-            }
-        } catch (error) {
-            console.error("Failed to fetch pending clips count", error);
-        }
+        // This feature relies on Netlify functions which are not available.
+        setPendingClipsCount(0);
     }, []);
 
-    const syncSharedClips = useCallback(async (): Promise<number> => {
-        try {
-            const response = await fetch('/netlify/functions/getSharedClips');
-            if (!response.ok) throw new Error("Failed to fetch shared clips");
+    useEffect(() => {
+        // Disabled polling for pending clips.
+        fetchPendingClipsCount();
+    }, [fetchPendingClipsCount]);
+
+
+    // Firebase logic
+    useEffect(() => {
+        if (!user) {
+            setMemories([]);
+            setCourses([]);
+            return;
+        }
+
+        let memoriesUnsubscribe: (() => void) | undefined;
+        let coursesUnsubscribe: (() => void) | undefined;
+
+        const setupListeners = async () => {
+            const { db } = await getFirebase();
+            if (!db) return;
             
-            const sharedClips: (Omit<WebMemory, 'id' | 'date' | 'category'> & { id: string, date: string })[] = await response.json();
+            // Memories listener
+            const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
+            const q = query(memoriesCollectionRef, orderBy('date', 'desc'));
+            memoriesUnsubscribe = onSnapshot(q, (snapshot) => {
+                const memoriesData = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data(),
+                })) as AnyMemory[];
+                setMemories(memoriesData);
+            }, (error) => {
+                console.error("Error listening to memories:", error);
+            });
 
-            if (sharedClips.length > 0) {
-                const newMemories = sharedClips.map(clip => ({
-                    ...clip,
-                    type: 'web',
-                    category: 'personal',
-                } as AnyMemory));
-
-                let addedCount = 0;
-                setMemories(prev => {
-                    const existingIds = new Set(prev.map(m => m.id));
-                    const trulyNewMemories = newMemories.filter(m => !existingIds.has(m.id));
-                    addedCount = trulyNewMemories.length;
-
-                    if (addedCount === 0) return prev;
-
-                    const updatedMemories = [...prev, ...trulyNewMemories].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                    localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
-                    return updatedMemories;
-                });
-
-                // Delete them from the server after syncing
-                for (const clip of sharedClips) {
-                    await fetch('/netlify/functions/deleteSharedClip', {
-                        method: 'POST',
-                        body: JSON.stringify({ key: clip.id }),
-                    });
+            // Courses listener
+            const userDocRef = doc(db, 'users', user.uid);
+            coursesUnsubscribe = onSnapshot(userDocRef, (doc) => {
+                if (doc.exists()) {
+                    setCourses(doc.data().manualCourses || []);
+                } else {
+                    setCourses([]);
                 }
-                setPendingClipsCount(0);
-                return addedCount;
-            }
-            setPendingClipsCount(0);
-            return 0;
-        } catch (error) {
-            console.error("Failed to sync shared clips", error);
-            return 0;
-        }
-    }, []);
+            }, (error) => {
+                 console.error("Error listening to courses:", error);
+            });
+        };
 
-    const addMemory = useCallback((memory: Omit<AnyMemory, 'id' | 'date'>) => {
-        setMemories(prev => {
+        setupListeners();
+
+        return () => {
+            if (memoriesUnsubscribe) memoriesUnsubscribe();
+            if (coursesUnsubscribe) coursesUnsubscribe();
+        };
+    }, [user]);
+
+    const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
+        if (!user) return;
+        try {
+            const { db } = await getFirebase();
+            if (!db) throw new Error("Firestore not available");
+            const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
+            
             // FIX: Spreading a discriminated union (`Omit<AnyMemory,...>`) creates an object
             // that TypeScript cannot verify as a valid `AnyMemory`. This was causing an error
             // on the `setMemories` call. Casting through `any` bypasses this strict check.
             // This is safe because downstream code discriminates memories by `type`.
             const newMemory: AnyMemory = {
                 ...memory,
-                id: crypto.randomUUID(),
+                id: crypto.randomUUID(), // Temp client-side id, Firestore will generate its own.
                 date: new Date().toISOString(),
             } as unknown as AnyMemory;
-            const updatedMemories = [newMemory, ...prev];
-            localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
-            return updatedMemories;
-        });
-    }, []);
+            
+            const { id, ...memoryData } = newMemory;
 
-    const deleteMemory = useCallback((id: string) => {
-        setMemories(prev => {
-            const updatedMemories = prev.filter(mem => mem.id !== id);
-            localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
-            return updatedMemories;
-        });
-    }, []);
-
-    const bulkDeleteMemories = useCallback((ids: string[]) => {
-        setMemories(prev => {
-            const updatedMemories = prev.filter(mem => !ids.includes(mem.id));
-            localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
-            return updatedMemories;
-        });
-    }, []);
-
-    const updateMemory = useCallback((id: string, updates: Partial<AnyMemory>) => {
-        setMemories(prev => {
-            // FIX: Spreading a discriminated union with a partial update can lead to an invalid type.
-            // The cast ensures TypeScript treats the result as a valid `AnyMemory`.
-            const updatedMemories = prev.map(mem => mem.id === id ? ({ ...mem, ...updates } as AnyMemory) : mem);
-            localStorage.setItem(MEMORIES_STORAGE_KEY, JSON.stringify(updatedMemories));
-            return updatedMemories;
-        });
-    }, []);
+            await addDoc(memoriesCollectionRef, memoryData);
+        } catch (error) {
+            console.error("Error adding memory:", error);
+        }
+    }, [user]);
     
-    useEffect(() => {
-        fetchPendingClipsCount();
-        const interval = setInterval(fetchPendingClipsCount, 30000); // Check for new clips every 30s
-        return () => clearInterval(interval);
-    }, [fetchPendingClipsCount]);
+    // syncSharedClips is disabled as it relies on Netlify functions.
+    const syncSharedClips = useCallback(async (): Promise<number> => {
+        if (!user) return 0;
+        console.warn("Web clip syncing is disabled in this environment.");
+        setPendingClipsCount(0);
+        return 0;
+    }, [user]);
 
 
-    return { memories, addMemory, deleteMemory, bulkDeleteMemories, updateMemory, syncSharedClips, pendingClipsCount };
+    const deleteMemory = useCallback(async (id: string) => {
+        if (!user) return;
+        try {
+            const { db } = await getFirebase();
+            if (!db) throw new Error("Firestore not available");
+            const docRef = doc(db, 'users', user.uid, 'memories', id);
+            await deleteDoc(docRef);
+        } catch (error) {
+            console.error("Error deleting memory:", error);
+        }
+    }, [user]);
+
+    const bulkDeleteMemories = useCallback(async (ids: string[]) => {
+        if (!user || ids.length === 0) return;
+        try {
+            const { db } = await getFirebase();
+            if (!db) throw new Error("Firestore not available");
+            const batch = writeBatch(db);
+            ids.forEach(id => {
+                const docRef = doc(db, 'users', user.uid, 'memories', id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+        } catch (error) {
+            console.error("Error bulk deleting memories:", error);
+        }
+    }, [user]);
+
+    const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
+        if (!user) return;
+        try {
+            const { db } = await getFirebase();
+            if (!db) throw new Error("Firestore not available");
+            const docRef = doc(db, 'users', user.uid, 'memories', id);
+            await updateDoc(docRef, updates);
+        } catch (error) {
+            console.error("Error updating memory:", error);
+        }
+    }, [user]);
+
+    const addCourse = useCallback(async (courseName: string) => {
+        if (!user || !courseName.trim()) return;
+        const newCourses = [...new Set([...courses, courseName.trim()])];
+        try {
+            const { db } = await getFirebase();
+            if (!db) throw new Error("Firestore not available");
+            const userDocRef = doc(db, 'users', user.uid);
+            await setDoc(userDocRef, { manualCourses: newCourses }, { merge: true });
+        } catch (error) {
+            console.error("Error adding course:", error);
+        }
+    }, [user, courses]);
+
+    return { memories, addMemory, deleteMemory, bulkDeleteMemories, updateMemory, syncSharedClips, pendingClipsCount, courses, addCourse };
 };

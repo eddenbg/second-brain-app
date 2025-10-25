@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { AnyMemory, WebMemory } from '../types';
-import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, GlobeIcon, MapPinIcon, LinkIcon, MicIcon, UploadIcon } from './Icons';
-import AddWebMemoryModal from './AddWebMemoryModal';
+import { TrashIcon, CheckIcon, RefreshCwIcon } from './Icons';
 
 interface WebClipsViewProps {
   memories: AnyMemory[];
@@ -13,146 +12,30 @@ interface WebClipsViewProps {
   bulkDelete: (ids: string[]) => void;
 }
 
-// ... (ClipItem component remains the same)
-const ClipItem: React.FC<{ 
-    memory: WebMemory; 
-    onDelete: (id: string) => void; 
-    onUpdate: (id: string, updates: Partial<WebMemory>) => void;
-    isSelectMode: boolean;
-    isSelected: boolean;
-    onToggleSelect: (id: string) => void;
-}> = ({ memory, onDelete, onUpdate, isSelectMode, isSelected, onToggleSelect }) => {
-    const [isExpanded, setIsExpanded] = useState(false);
-    const [isEditing, setIsEditing] = useState(false);
-    const [title, setTitle] = useState(memory.title);
-
-    const handleUpdate = () => {
-        if (title.trim()) {
-            onUpdate(memory.id, { title: title.trim() });
-            setIsEditing(false);
-        }
-    };
-    
-    const handleCancel = () => {
-        setTitle(memory.title);
-        setIsEditing(false);
-    };
-
-    const handleHeaderClick = () => {
-        if (isSelectMode) {
-            onToggleSelect(memory.id);
-        } else {
-            setIsExpanded(!isExpanded);
-        }
-    };
-    
-    return (
-        <div className={`bg-gray-800 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-blue-500' : 'border-gray-700'}`}>
-            <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={handleHeaderClick}>
-                {isSelectMode && (
-                     <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-400' : 'border-gray-500'}`}>
-                        {isSelected && <CheckIcon className="w-4 h-4 text-white"/>}
-                    </div>
-                )}
-                <div className="flex-shrink-0"><GlobeIcon className="w-6 h-6 text-green-400"/></div>
-                <div className="flex-grow">
-                    {isEditing ? (
-                        <input
-                           type="text"
-                           value={title}
-                           onChange={(e) => setTitle(e.target.value)}
-                           onClick={(e) => e.stopPropagation()}
-                           className="w-full bg-gray-700 text-white text-lg p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"
-                           autoFocus
-                           onKeyDown={(e) => {
-                               if (e.key === 'Enter') handleUpdate();
-                               if (e.key === 'Escape') handleCancel();
-                           }}
-                        />
-                    ) : (
-                        <h3 className="text-xl font-semibold text-white">{memory.title}</h3>
-                    )}
-                    <p className="text-sm text-gray-400">{new Date(memory.date).toLocaleString()}</p>
-                </div>
-                {!isSelectMode && <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />}
-            </div>
-            {isExpanded && !isSelectMode && (
-                <div className="p-4 border-t border-gray-700 space-y-4">
-                    <div className="flex items-center justify-end space-x-2">
-                        {isEditing ? (
-                             <>
-                                <button onClick={handleUpdate} aria-label="Save title" className="p-2 text-green-400 hover:text-green-300 focus:outline-none focus:ring-2 focus:ring-green-500 rounded-full"><CheckIcon className="w-6 h-6"/></button>
-                                <button onClick={handleCancel} aria-label="Cancel edit" className="p-2 text-gray-400 hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-full"><XIcon className="w-6 h-6"/></button>
-                            </>
-                        ) : (
-                            <button onClick={() => setIsEditing(true)} aria-label="Edit title" className="p-2 text-blue-400 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full"><EditIcon className="w-6 h-6"/></button>
-                        )}
-                        <button onClick={() => onDelete(memory.id)} aria-label="Delete memory" className="p-2 text-red-500 hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full"><TrashIcon className="w-6 h-6"/></button>
-                    </div>
-
-                    {memory.location && (
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                            <MapPinIcon className="w-5 h-5" />
-                            <a href={`https://www.google.com/maps?q=${memory.location.latitude},${memory.location.longitude}`} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 underline">
-                                View Location
-                            </a>
-                        </div>
-                    )}
-                    
-                    {memory.url && (
-                        <div className="flex items-center gap-2 text-sm text-gray-400">
-                            <LinkIcon className="w-5 h-5" />
-                            <a href={memory.url} target="_blank" rel="noopener noreferrer" className="hover:text-blue-400 underline truncate">
-                                {memory.url}
-                            </a>
-                        </div>
-                    )}
-                    
-                    {memory.tags && memory.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {memory.tags.map(tag => <span key={tag} className="bg-gray-700 text-gray-300 text-xs font-semibold px-2.5 py-0.5 rounded-full">{tag}</span>)}
-                      </div>
-                    )}
-
-                    <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                        <p className="text-gray-200 whitespace-pre-wrap">{memory.content}</p>
-                    </div>
-
-                    {memory.voiceNote && (
-                        <div>
-                            <h4 className="flex items-center gap-2 text-lg font-semibold text-gray-300 mb-2"><MicIcon className="w-5 h-5"/> My Note:</h4>
-                                <div className="bg-gray-900 p-4 rounded-md max-h-40 overflow-y-auto border border-gray-600">
-                                <p className="text-gray-200 whitespace-pre-wrap">{memory.voiceNote.transcript}</p>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
-    )
-}
-
-const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete, onUpdate, syncSharedClips, pendingClipsCount, bulkDelete }) => {
-  const [showAddModal, setShowAddModal] = useState(false);
+const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdate, syncSharedClips, pendingClipsCount, bulkDelete }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
+  const [editingCell, setEditingCell] = useState<{ memoryId: string; field: 'title' | 'contentType' | 'tags' } | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingCell && inputRef.current) {
+        inputRef.current.focus();
+    }
+  }, [editingCell]);
+
 
   const handleSync = async () => {
     setIsSyncing(true);
+    setSyncMessage(null);
     const count = await syncSharedClips();
     setIsSyncing(false);
     setSyncMessage(count > 0 ? `Synced ${count} new clip(s)!` : 'No new clips to sync.');
     setTimeout(() => setSyncMessage(null), 3000);
-  }
-
-  const handleSave = (memory: Omit<WebMemory, 'id' | 'date'| 'category'>) => {
-      onSave({
-        ...memory,
-        category: 'personal'
-      });
-      setShowAddModal(false);
   }
 
   const toggleSelection = (id: string) => {
@@ -173,26 +56,68 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete,
       setSelectedIds(new Set());
   };
 
+  const startEditing = (memory: WebMemory, field: 'title' | 'contentType' | 'tags') => {
+    if (isSelectMode) return;
+    setEditingCell({ memoryId: memory.id, field });
+    if (field === 'tags') {
+        setEditValue(memory.tags?.join(', ') || '');
+    } else {
+        setEditValue(memory[field] || '');
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingCell) return;
+    const { memoryId, field } = editingCell;
+    
+    const updates: Partial<WebMemory> = {};
+    if (field === 'tags') {
+        updates.tags = editValue.split(',').map(t => t.trim()).filter(Boolean);
+    } else {
+        updates[field] = editValue;
+    }
+
+    onUpdate(memoryId, updates);
+    setEditingCell(null);
+  };
+  
+  const renderCell = (memory: WebMemory, field: 'title' | 'contentType' | 'tags') => {
+    const isEditing = editingCell?.memoryId === memory.id && editingCell?.field === field;
+    if (isEditing) {
+        return (
+            <input
+                ref={inputRef}
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={handleSaveEdit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveEdit();
+                    if (e.key === 'Escape') setEditingCell(null);
+                }}
+                className="w-full bg-gray-600 text-white p-1 rounded-md border border-blue-500 focus:outline-none"
+            />
+        );
+    }
+    
+    let displayValue: string;
+    if (field === 'tags') {
+        displayValue = memory.tags?.join(', ') || '';
+    } else {
+        displayValue = memory[field] || '';
+    }
+    
+    return (
+        <span onClick={() => startEditing(memory, field)} className="cursor-pointer hover:bg-gray-700 p-1 rounded-md min-h-[24px] block">
+           {displayValue || <span className="text-gray-500">empty</span>}
+        </span>
+    );
+  }
+
   return (
-    <div className="space-y-8">
-      {showAddModal && <AddWebMemoryModal onSave={handleSave} onClose={() => setShowAddModal(false)} />}
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <button onClick={() => setShowAddModal(true)} className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-green-600 rounded-lg hover:bg-green-700 border-2 border-dashed border-green-400 hover:border-green-300 transition-colors">
-            <LinkIcon className="w-10 h-10 text-white"/>
-            <span className="text-xl font-semibold text-white">Add New Web Clip</span>
-        </button>
-        <button onClick={handleSync} disabled={isSyncing} className="relative w-full flex flex-col items-center justify-center gap-2 p-6 bg-indigo-600 rounded-lg hover:bg-indigo-700 border-2 border-dashed border-indigo-400 hover:border-indigo-300 transition-colors disabled:bg-gray-600 disabled:border-gray-500 disabled:cursor-not-allowed">
-            {pendingClipsCount > 0 && !isSyncing && (
-              <span className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingClipsCount}</span>
-            )}
-            <UploadIcon className="w-10 h-10 text-white"/>
-            <span className="text-xl font-semibold text-white">{isSyncing ? 'Syncing...' : 'Sync New Clips'}</span>
-        </button>
-      </div>
-      
+    <div className="space-y-4">
       {syncMessage && (
-        <div className="text-center p-2 bg-gray-700 rounded-lg text-white animate-fade-in-up">
+        <div className="text-center p-2 bg-gray-700 rounded-lg text-white animate-fade-in-up fixed top-20 left-1/2 -translate-x-1/2 z-40 w-11/12 max-w-sm">
             {syncMessage}
         </div>
       )}
@@ -200,35 +125,66 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onSave, onDelete,
       <div className="space-y-4">
           <div className="flex justify-between items-center border-b border-gray-700 pb-2">
             <h2 className="text-2xl font-bold text-white">My Web Clips</h2>
-            {memories.length > 0 && (
-                <button 
-                    onClick={() => {
-                        setIsSelectMode(!isSelectMode);
-                        setSelectedIds(new Set());
-                    }} 
-                    className="px-4 py-2 text-lg font-semibold rounded-md bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-                >
-                    {isSelectMode ? 'Cancel' : 'Select'}
+            <div className="flex items-center gap-4">
+                {memories.length > 0 && (
+                    <button 
+                        onClick={() => {
+                            setIsSelectMode(!isSelectMode);
+                            setSelectedIds(new Set());
+                        }} 
+                        className="px-4 py-2 text-md font-semibold rounded-md bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                    >
+                        {isSelectMode ? 'Cancel' : 'Select'}
+                    </button>
+                )}
+                <button onClick={handleSync} disabled={isSyncing} className="relative p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-50">
+                    <RefreshCwIcon className={`w-6 h-6 ${isSyncing ? 'animate-spin' : ''}`} />
+                    {pendingClipsCount > 0 && !isSyncing && (
+                        <span className="absolute top-0 right-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingClipsCount}</span>
+                    )}
                 </button>
-            )}
+            </div>
           </div>
           
           {memories.length > 0 ? (
-              memories.map(mem => (
-                  <ClipItem 
-                    key={mem.id} 
-                    memory={mem as WebMemory} 
-                    onDelete={onDelete} 
-                    onUpdate={onUpdate}
-                    isSelectMode={isSelectMode}
-                    isSelected={selectedIds.has(mem.id)}
-                    onToggleSelect={toggleSelection}
-                />
-              ))
+                <div className="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700">
+                    <table className="w-full text-left table-auto">
+                        <thead className="border-b border-gray-700">
+                            <tr>
+                                {isSelectMode && <th className="p-3 w-12"></th>}
+                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Title</th>
+                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Date</th>
+                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Type</th>
+                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Tags</th>
+                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider w-20">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {(memories as WebMemory[]).map((mem, index) => (
+                                <tr key={mem.id} className={`border-b border-gray-700 last:border-b-0 ${selectedIds.has(mem.id) ? 'bg-blue-900 bg-opacity-50' : ''}`}>
+                                    {isSelectMode && (
+                                        <td className="p-3 align-top" onClick={() => toggleSelection(mem.id)}>
+                                            <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center cursor-pointer ${selectedIds.has(mem.id) ? 'bg-blue-500 border-blue-400' : 'border-gray-500'}`}>
+                                                {selectedIds.has(mem.id) && <CheckIcon className="w-4 h-4 text-white" />}
+                                            </div>
+                                        </td>
+                                    )}
+                                    <td className="p-2 text-white align-top min-w-[200px]">{renderCell(mem, 'title')}</td>
+                                    <td className="p-3 text-gray-400 text-sm align-top whitespace-nowrap">{new Date(mem.date).toLocaleDateString()}</td>
+                                    <td className="p-2 text-gray-300 align-top min-w-[120px]">{renderCell(mem, 'contentType')}</td>
+                                    <td className="p-2 text-gray-300 align-top min-w-[150px]">{renderCell(mem, 'tags')}</td>
+                                    <td className="p-2 align-top text-center">
+                                        <button onClick={() => onDelete(mem.id)} aria-label="Delete memory" className="p-2 text-gray-500 hover:text-red-500 focus:outline-none rounded-full"><TrashIcon className="w-5 h-5"/></button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
           ) : (
                <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
                   <h2 className="text-2xl font-semibold text-white">No Clips Yet</h2>
-                  <p className="mt-2 text-gray-400">Add a clip manually or share one from your browser.</p>
+                  <p className="mt-2 text-gray-400">Share content from other apps to see it here.</p>
               </div>
           )}
       </div>

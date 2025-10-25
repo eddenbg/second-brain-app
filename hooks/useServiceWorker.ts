@@ -13,10 +13,8 @@ export const useServiceWorker = () => {
 
     useEffect(() => {
         if ('serviceWorker' in navigator) {
-            const handleRegistration = () => {
-                // Construct an absolute URL for the service worker to avoid cross-origin issues.
-                const swUrl = `${window.location.origin}/sw.js`;
-                navigator.serviceWorker.register(swUrl).then(registration => {
+            const registerAndListen = () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
                     if (registration.waiting) {
                         onUpdate(registration);
                     }
@@ -35,12 +33,8 @@ export const useServiceWorker = () => {
                 });
             };
             
-            // The 'load' event may have already fired.
-            if (document.readyState === 'complete') {
-                handleRegistration();
-            } else {
-                window.addEventListener('load', handleRegistration);
-            }
+            // Register the service worker once the page is fully loaded.
+            window.addEventListener('load', registerAndListen);
 
             let refreshing = false;
             navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -52,7 +46,7 @@ export const useServiceWorker = () => {
 
             // Cleanup the event listener when the component unmounts.
             return () => {
-                window.removeEventListener('load', handleRegistration);
+                window.removeEventListener('load', registerAndListen);
             };
         }
     }, [onUpdate]);

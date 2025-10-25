@@ -39,47 +39,15 @@ self.addEventListener('activate', event => {
 
 // The 'fetch' event intercepts all network requests.
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // First, check if this is a share target request.
-  if (event.request.method === 'POST' && url.pathname === '/share-target') {
-    event.respondWith((async () => {
-      try {
-        const formData = await event.request.formData();
-        const clip = {
-          title: formData.get('title') || 'Untitled',
-          text: formData.get('text') || '',
-          url: formData.get('url') || '',
-        };
-
-        const response = await fetch('/netlify/functions/addSharedClip', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(clip),
-        });
-
-        if (!response.ok) {
-           console.error('Failed to save clip:', response.statusText);
-        }
-        
-        // Redirect back to the main app after sharing is complete.
-        return Response.redirect('/', 303);
-      } catch (error) {
-        console.error('Error in share target:', error);
-        return Response.redirect('/', 303);
+  // For all other requests, use a "cache-first" strategy.
+  event.respondWith(
+    caches.match(event.request).then(response => {
+      // If we have a copy in the cache, return it.
+      if (response) {
+        return response;
       }
-    })());
-  } else {
-    // For all other requests, use a "cache-first" strategy.
-    event.respondWith(
-      caches.match(event.request).then(response => {
-        // If we have a copy in the cache, return it.
-        if (response) {
-          return response;
-        }
-        // Otherwise, fetch it from the network.
-        return fetch(event.request);
-      })
-    );
-  }
+      // Otherwise, fetch it from the network.
+      return fetch(event.request);
+    })
+  );
 });

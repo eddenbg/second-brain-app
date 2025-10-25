@@ -14,15 +14,24 @@ export interface BaseMemory {
   };
 }
 
+export interface TranscriptSegment {
+  speakerId: number;
+  text: string;
+}
+
 export interface VoiceMemory extends BaseMemory {
   type: 'voice';
   transcript: string;
+  summary?: string;
+  structuredTranscript?: TranscriptSegment[];
+  speakerMappings?: { [key: number]: string };
 }
 
 export interface WebMemory extends BaseMemory {
   type: 'web';
   url: string;
   content: string;
+  contentType?: string;
 }
 
 export interface PhysicalItemMemory extends BaseMemory {

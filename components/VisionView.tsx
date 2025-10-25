@@ -6,7 +6,7 @@ import AddPhysicalItemModal from './AddPhysicalItemModal';
 interface PhysicalItemsViewProps {
   memories: AnyMemory[];
   onDelete: (id: string) => void;
-  onUpdateTitle: (id: string, newTitle: string) => void;
+  onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
   onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
   bulkDelete: (ids: string[]) => void;
 }
@@ -14,18 +14,18 @@ interface PhysicalItemsViewProps {
 const Item: React.FC<{ 
     memory: AnyMemory; 
     onDelete: (id: string) => void; 
-    onUpdateTitle: (id: string, newTitle: string) => void;
+    onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     isSelectMode: boolean;
     isSelected: boolean;
     onToggleSelect: (id: string) => void;
-}> = ({ memory, onDelete, onUpdateTitle, isSelectMode, isSelected, onToggleSelect }) => {
+}> = ({ memory, onDelete, onUpdate, isSelectMode, isSelected, onToggleSelect }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
 
     const handleUpdate = () => {
         if (title.trim()) {
-            onUpdateTitle(memory.id, title.trim());
+            onUpdate(memory.id, { title: title.trim() });
             setIsEditing(false);
         }
     };
@@ -152,7 +152,7 @@ const Item: React.FC<{
     )
 }
 
-const PhysicalItemsView: React.FC<PhysicalItemsViewProps> = ({ memories, onSave, onDelete, onUpdateTitle, bulkDelete }) => {
+const VisionView: React.FC<PhysicalItemsViewProps> = ({ memories, onSave, onDelete, onUpdate, bulkDelete }) => {
     const [showAddModal, setShowAddModal] = useState(false);
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -212,7 +212,7 @@ const PhysicalItemsView: React.FC<PhysicalItemsViewProps> = ({ memories, onSave,
                             key={mem.id} 
                             memory={mem} 
                             onDelete={onDelete} 
-                            onUpdateTitle={onUpdateTitle}
+                            onUpdate={onUpdate}
                             isSelectMode={isSelectMode}
                             isSelected={selectedIds.has(mem.id)}
                             onToggleSelect={toggleSelection}
@@ -234,4 +234,4 @@ const PhysicalItemsView: React.FC<PhysicalItemsViewProps> = ({ memories, onSave,
     );
 };
 
-export default PhysicalItemsView;
+export default VisionView;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Recorder from './Recorder';
 import type { AnyMemory, VoiceMemory } from '../types';
 import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, MicIcon, MapPinIcon } from './Icons';
@@ -7,25 +7,32 @@ interface VoiceNotesViewProps {
     memories: AnyMemory[];
     onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
     onDelete: (id: string) => void;
-    onUpdateTitle: (id: string, newTitle: string) => void;
+    onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDelete: (ids: string[]) => void;
 }
 
 const VoiceNoteItem: React.FC<{ 
     memory: AnyMemory; 
     onDelete: (id: string) => void; 
-    onUpdateTitle: (id: string, newTitle: string) => void; 
+    onUpdate: (id: string, updates: Partial<AnyMemory>) => void; 
     isSelectMode: boolean;
     isSelected: boolean;
     onToggleSelect: (id: string) => void;
-}> = ({ memory, onDelete, onUpdateTitle, isSelectMode, isSelected, onToggleSelect }) => {
+}> = ({ memory, onDelete, onUpdate, isSelectMode, isSelected, onToggleSelect }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
+    const titleInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing && titleInputRef.current) {
+            titleInputRef.current.select();
+        }
+    }, [isEditing]);
 
     const handleUpdate = () => {
         if (title.trim()) {
-            onUpdateTitle(memory.id, title.trim());
+            onUpdate(memory.id, { title: title.trim() });
             setIsEditing(false);
         }
     };
@@ -55,6 +62,7 @@ const VoiceNoteItem: React.FC<{
                 <div className="flex-grow">
                     {isEditing ? (
                         <input
+                           ref={titleInputRef}
                            type="text"
                            value={title}
                            onChange={(e) => setTitle(e.target.value)}
@@ -110,7 +118,7 @@ const VoiceNoteItem: React.FC<{
     );
 }
 
-const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDelete, onUpdateTitle, bulkDelete }) => {
+const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDelete, onUpdate, bulkDelete }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -121,8 +129,8 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
             category: 'personal',
         });
         setIsRecording(false);
-    }
-    
+    };
+
     const toggleSelection = (id: string) => {
         setSelectedIds(prev => {
             const newSet = new Set(prev);
@@ -144,7 +152,7 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
     if (isRecording) {
         return <Recorder 
             onSave={handleSaveNote} 
-            onCancel={() => setIsRecording(false)} 
+            onCancel={() => setIsRecording(false)}
             titlePlaceholder={`Voice Note - ${new Date().toLocaleDateString()}`}
             saveButtonText="Save Note"
         />;
@@ -154,12 +162,12 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
         <div className="space-y-8">
             <button onClick={() => setIsRecording(true)} className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-blue-600 rounded-lg hover:bg-blue-700 border-2 border-dashed border-blue-400 hover:border-blue-300 transition-colors">
                 <MicIcon className="w-10 h-10 text-white"/>
-                <span className="text-xl font-semibold text-white">Record New Note</span>
+                <span className="text-xl font-semibold text-white">Record New Voice Note</span>
             </button>
             <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-gray-700 pb-2">
-                    <h2 className="text-2xl font-bold text-white">My Notes</h2>
-                    {memories.length > 0 && (
+                    <h2 className="text-2xl font-bold text-white">My Voice Notes</h2>
+                     {memories.length > 0 && (
                         <button 
                             onClick={() => {
                                 setIsSelectMode(!isSelectMode);
@@ -174,7 +182,9 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
                 
                 {memories.length === 0 ? (
                     <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
-                        <p className="mt-2 text-gray-400">Tap the button above to record your first voice note.</p>
+                        <p className="mt-2 text-gray-400">
+                            Tap the button above to record your first voice note.
+                        </p>
                     </div>
                 ) : (
                     memories.map(mem => (
@@ -182,7 +192,7 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
                             key={mem.id} 
                             memory={mem} 
                             onDelete={onDelete} 
-                            onUpdateTitle={onUpdateTitle}
+                            onUpdate={onUpdate}
                             isSelectMode={isSelectMode}
                             isSelected={selectedIds.has(mem.id)}
                             onToggleSelect={toggleSelection}

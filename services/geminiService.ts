@@ -49,7 +49,7 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
     return memoryString;
   }).join('\n\n');
 
-  const systemInstruction = `You are a helpful personal assistant. Your task is to answer the user's question based ONLY on the provided context from their saved memories, which include college lectures, voice notes, web clippings, physical items, and video recordings with transcripts. Analyze the content, tags, and location data carefully. Do not use any external knowledge. If the anwer cannot be found, you MUST respond with: "I could not find an answer in your memories." Be concise and directly answer the question.`;
+  const systemInstruction = `You are a helpful, bilingual personal assistant fluent in both English and Hebrew. Your task is to answer the user's question based ONLY on the provided context from their saved memories. The memories can be in English, Hebrew, or a mix of both. It is crucial that you respond in the same language as the user's question. For example, if the question is in Hebrew, your answer must be in Hebrew. If the question is in English, your answer must be in English. Do not use any external knowledge. If the answer cannot be found, you MUST respond with: "I could not find an answer in your memories." (or the Hebrew equivalent if the question was in Hebrew). Be concise and directly answer the question.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -100,7 +100,7 @@ export async function generateTitleForContent(content: string): Promise<string> 
     if (!content.trim()) {
         return '';
     }
-    const systemInstruction = "You are a title generator. Your task is to create a short, concise, and descriptive title for the provided text. The title should be 10 words or less. Respond only with the title itself, nothing else.";
+    const systemInstruction = "You are an expert title generator. Your task is to create a short, concise, and descriptive title for the provided text. The title should be in the same language as the majority of the text (either English or Hebrew). The title should be 10 words or less. Respond with the title only, nothing else.";
     
     try {
         const response = await ai.models.generateContent({
@@ -115,5 +115,29 @@ export async function generateTitleForContent(content: string): Promise<string> 
     } catch (error) {
         console.error("Error generating title:", error);
         return "Untitled";
+    }
+}
+
+export async function generateSummaryForContent(content: string): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return "Could not generate summary.";
+
+    if (!content.trim()) {
+        return '';
+    }
+    const systemInstruction = "You are an expert at summarizing text. Your task is to create a short and concise summary for the provided lecture transcript. The summary MUST be in Hebrew. Focus on the main points and key topics. The summary should be 2-4 sentences long. Respond with the summary only, nothing else.";
+    
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Summarize this lecture transcript:\n\n${content.substring(0, 8000)}`, // Truncate for safety
+            config: {
+                systemInstruction,
+            },
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating summary:", error);
+        return "Could not generate summary.";
     }
 }
