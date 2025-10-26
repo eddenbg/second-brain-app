@@ -8,8 +8,7 @@ export function getGeminiInstance(): GoogleGenAI | null {
         return aiInstance;
     }
 
-    // Moved the API key access inside the function.
-    // This prevents a crash on startup if process.env is not ready.
+    // FIX: Use process.env for environment variables. This resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''.
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
         console.error("API_KEY environment variable not set. AI features will be disabled.");

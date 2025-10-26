@@ -1,20 +1,1 @@
-# Netlify configuration file for a Vite single-page application.
-
-[build]
-  # This command tells Netlify how to build your site.
-  command = "npm run build"
-
-  # This is the directory where the built site files are located.
-  # Vite places its output in the 'dist' folder by default.
-  publish = "dist"
-
-  # This specifies the directory for your serverless functions.
-  functions = "netlify/functions"
-
-# This rule is crucial for single-page applications (SPAs) like yours.
-# It ensures that any direct navigation to a URL like /college or /askai
-# is handled by your index.html file, allowing your React router to work correctly.
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+~�er��z{l��޶X��h�

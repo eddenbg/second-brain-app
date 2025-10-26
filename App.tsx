@@ -42,7 +42,11 @@ function App() {
         });
     }).catch(err => {
         console.error("Failed to init Firebase for auth", err);
-        setFirebaseError("Could not initialize Firebase. Please check that your API keys are set correctly in the Secrets panel (🔑).");
+        if (err instanceof Error) {
+            setFirebaseError(err.message);
+        } else {
+            setFirebaseError("An unknown error occurred during Firebase initialization.");
+        }
         setAuthLoading(false);
     });
 
