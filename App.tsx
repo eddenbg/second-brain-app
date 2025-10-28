@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { User, onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import QASession from './components/QASession';
@@ -35,20 +35,35 @@ function App() {
   
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-    getFirebase().then(({ auth }) => {
-        unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
+    
+    const checkAuth = async () => {
+        try {
+            const { auth } = await getFirebase();
+
+            // It's important to set up the observer *before* checking the redirect result.
+            // This ensures we don't miss any auth state changes.
+            unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+                setUser(currentUser);
+                setAuthLoading(false);
+            });
+            
+            // Check for the result of a redirect sign-in. This will not affect
+            // an already signed-in user who is just visiting the page.
+            // This call triggers the onAuthStateChanged listener if a user signed in.
+            await getRedirectResult(auth);
+
+        } catch (err) {
+            console.error("Failed to init Firebase for auth", err);
+            if (err instanceof Error) {
+                setFirebaseError(err.message);
+            } else {
+                setFirebaseError("An unknown error occurred during Firebase initialization.");
+            }
             setAuthLoading(false);
-        });
-    }).catch(err => {
-        console.error("Failed to init Firebase for auth", err);
-        if (err instanceof Error) {
-            setFirebaseError(err.message);
-        } else {
-            setFirebaseError("An unknown error occurred during Firebase initialization.");
         }
-        setAuthLoading(false);
-    });
+    };
+
+    checkAuth();
 
     return () => unsubscribe && unsubscribe();
   }, []);

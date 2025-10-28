@@ -9,35 +9,26 @@ let initialized = false;
 
 export const provider = new GoogleAuthProvider();
 
-async function fetchFirebaseConfig() {
-    try {
-        const response = await fetch('/.netlify/functions/getFirebaseConfig');
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: 'Failed to fetch Firebase config' }));
-            throw new Error(errorData.error || `Failed to fetch Firebase config, server returned status ${response.status}.`);
-        }
-        const config = await response.json();
-        if (config.error) {
-            throw new Error(config.error);
-        }
-        return config;
-    } catch (error) {
-        console.error('Error fetching Firebase config:', error);
-        throw new Error(`Could not fetch Firebase configuration. ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-}
-
-
 export const getFirebase = async () => {
     if (initialized) {
         return { firebaseApp, auth, db };
     }
 
     try {
-        const firebaseConfig = await fetchFirebaseConfig();
+        // FIX: The application was previously trying to read configuration with a 'VITE_' prefix,
+        // which is specific to the Vite build tool. This has been changed to use standard
+        // environment variable names to match the deployment environment's conventions.
+        const firebaseConfig = {
+            apiKey: process.env.FIREBASE_API_KEY,
+            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: process.env.FIREBASE_APP_ID,
+        };
 
-        if (!firebaseConfig.apiKey) {
-            throw new Error('API Key is missing from fetched Firebase configuration.');
+        if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+            throw new Error('Firebase configuration is missing. Please set the FIREBASE_* environment variables.');
         }
     
         firebaseApp = initializeApp(firebaseConfig);
