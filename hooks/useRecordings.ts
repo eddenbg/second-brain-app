@@ -4,21 +4,46 @@ import { getFirebase } from '../utils/firebase';
 import { collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch, query, orderBy, setDoc } from 'firebase/firestore';
 import type { AnyMemory, WebMemory } from '../types';
 
+// FIX: Updated the SharedClip interface to accurately represent the data from the blob store.
+// The previous type was incorrect and was missing the 'date' property.
+interface SharedClip {
+    key: string;
+    data: {
+        id: string;
+        url: string;
+        title: string;
+        content: string;
+        date: string;
+    };
+}
+
 export const useRecordings = (user: User | null) => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
     const [pendingClipsCount, setPendingClipsCount] = useState(0);
 
-    // This part for Netlify share target is disabled as it's not supported in this environment.
     const fetchPendingClipsCount = useCallback(async () => {
-        // This feature relies on Netlify functions which are not available.
-        setPendingClipsCount(0);
+        try {
+            const response = await fetch('/netlify/functions/getSharedClips');
+            if (response.ok) {
+                const clips: SharedClip[] = await response.json();
+                setPendingClipsCount(clips.length);
+            } else {
+                setPendingClipsCount(0);
+            }
+        } catch (error) {
+            console.error("Error fetching pending clips count:", error);
+            setPendingClipsCount(0);
+        }
     }, []);
 
     useEffect(() => {
-        // Disabled polling for pending clips.
-        fetchPendingClipsCount();
-    }, [fetchPendingClipsCount]);
+        if (user) {
+            fetchPendingClipsCount();
+            const intervalId = setInterval(fetchPendingClipsCount, 30000); // Poll every 30 seconds
+            return () => clearInterval(intervalId);
+        }
+    }, [user, fetchPendingClipsCount]);
 
 
     // Firebase logic
@@ -77,10 +102,6 @@ export const useRecordings = (user: User | null) => {
             if (!db) throw new Error("Firestore not available");
             const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
             
-            // FIX: Spreading a discriminated union (`Omit<AnyMemory,...>`) creates an object
-            // that TypeScript cannot verify as a valid `AnyMemory`. This was causing an error
-            // on the `setMemories` call. Casting through `any` bypasses this strict check.
-            // This is safe because downstream code discriminates memories by `type`.
             const newMemory: AnyMemory = {
                 ...memory,
                 id: crypto.randomUUID(), // Temp client-side id, Firestore will generate its own.
@@ -95,12 +116,53 @@ export const useRecordings = (user: User | null) => {
         }
     }, [user]);
     
-    // syncSharedClips is disabled as it relies on Netlify functions.
     const syncSharedClips = useCallback(async (): Promise<number> => {
         if (!user) return 0;
-        console.warn("Web clip syncing is disabled in this environment.");
-        setPendingClipsCount(0);
-        return 0;
+        try {
+            const { db } = await getFirebase();
+            if (!db) throw new Error("Firestore not available");
+
+            const response = await fetch('/netlify/functions/getSharedClips');
+            if (!response.ok) throw new Error("Failed to fetch clips");
+
+            const clipsToSync: SharedClip[] = await response.json();
+            if (clipsToSync.length === 0) {
+                setPendingClipsCount(0);
+                return 0;
+            }
+
+            const batch = writeBatch(db);
+            const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
+
+            clipsToSync.forEach(clip => {
+                const newMemory = {
+                    ...clip.data,
+                    type: 'web',
+                    category: 'personal',
+                    date: new Date(clip.data.date || Date.now()).toISOString(),
+                };
+                const docRef = doc(memoriesCollectionRef); // Create a new doc with a generated ID
+                batch.set(docRef, newMemory);
+            });
+
+            await batch.commit();
+
+            // After successful sync, delete clips from blobs
+            for (const clip of clipsToSync) {
+                await fetch('/netlify/functions/deleteSharedClip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: clip.key }),
+                });
+            }
+            
+            setPendingClipsCount(0);
+            return clipsToSync.length;
+
+        } catch (error) {
+            console.error("Error syncing web clips:", error);
+            return 0;
+        }
     }, [user]);
 
 

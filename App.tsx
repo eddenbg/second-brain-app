@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { User, onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import QASession from './components/QASession';
@@ -40,17 +40,12 @@ function App() {
         try {
             const { auth } = await getFirebase();
 
-            // It's important to set up the observer *before* checking the redirect result.
-            // This ensures we don't miss any auth state changes.
+            // The onAuthStateChanged listener handles sign-in state changes from all methods,
+            // including the popup flow.
             unsubscribe = onAuthStateChanged(auth, (currentUser) => {
                 setUser(currentUser);
                 setAuthLoading(false);
             });
-            
-            // Check for the result of a redirect sign-in. This will not affect
-            // an already signed-in user who is just visiting the page.
-            // This call triggers the onAuthStateChanged listener if a user signed in.
-            await getRedirectResult(auth);
 
         } catch (err) {
             console.error("Failed to init Firebase for auth", err);

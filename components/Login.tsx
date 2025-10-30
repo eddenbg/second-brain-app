@@ -1,6 +1,6 @@
 import React from 'react';
 import { getFirebase, provider } from '../utils/firebase';
-import { signInWithRedirect } from 'firebase/auth';
+import { signInWithPopup } from 'firebase/auth';
 
 const GoogleIcon = () => (
     <svg className="w-6 h-6 mr-3" viewBox="0 0 48 48">
@@ -20,7 +20,7 @@ const Login: React.FC<LoginProps> = ({ error }) => {
     const handleSignIn = async () => {
         try {
             const { auth } = await getFirebase();
-            await signInWithRedirect(auth, provider);
+            await signInWithPopup(auth, provider);
         } catch (error) {
             console.error("Sign in failed", error);
         }

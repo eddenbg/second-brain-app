@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { AnyMemory, WebMemory } from '../types';
-import { TrashIcon, CheckIcon, RefreshCwIcon } from './Icons';
+import { TrashIcon, CheckIcon, RefreshCwIcon, PlusCircleIcon } from './Icons';
+import AddWebMemoryModal from './AddWebMemoryModal';
 
 interface WebClipsViewProps {
   memories: AnyMemory[];
@@ -12,11 +13,12 @@ interface WebClipsViewProps {
   bulkDelete: (ids: string[]) => void;
 }
 
-const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdate, syncSharedClips, pendingClipsCount, bulkDelete }) => {
+const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdate, onSave, syncSharedClips, pendingClipsCount, bulkDelete }) => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showAddModal, setShowAddModal] = useState(false);
   
   const [editingCell, setEditingCell] = useState<{ memoryId: string; field: 'title' | 'contentType' | 'tags' } | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -54,6 +56,14 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
       bulkDelete(Array.from(selectedIds));
       setIsSelectMode(false);
       setSelectedIds(new Set());
+  };
+  
+  const handleSaveClip = (mem: Omit<WebMemory, 'id'|'date'|'category'>) => {
+    onSave({
+        ...mem,
+        category: 'personal',
+    });
+    setShowAddModal(false);
   };
 
   const startEditing = (memory: WebMemory, field: 'title' | 'contentType' | 'tags') => {
@@ -116,6 +126,7 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
 
   return (
     <div className="space-y-4">
+      {showAddModal && <AddWebMemoryModal onClose={() => setShowAddModal(false)} onSave={handleSaveClip} />}
       {syncMessage && (
         <div className="text-center p-2 bg-gray-700 rounded-lg text-white animate-fade-in-up fixed top-20 left-1/2 -translate-x-1/2 z-40 w-11/12 max-w-sm">
             {syncMessage}
@@ -125,7 +136,10 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
       <div className="space-y-4">
           <div className="flex justify-between items-center border-b border-gray-700 pb-2">
             <h2 className="text-2xl font-bold text-white">My Web Clips</h2>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+                <button onClick={() => setShowAddModal(true)} className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300">
+                    <PlusCircleIcon className="w-6 h-6" />
+                </button>
                 {memories.length > 0 && (
                     <button 
                         onClick={() => {
@@ -184,7 +198,7 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
           ) : (
                <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
                   <h2 className="text-2xl font-semibold text-white">No Clips Yet</h2>
-                  <p className="mt-2 text-gray-400">Share content from other apps to see it here.</p>
+                  <p className="mt-2 text-gray-400">Add a new clip manually or share content from other apps to see it here.</p>
               </div>
           )}
       </div>

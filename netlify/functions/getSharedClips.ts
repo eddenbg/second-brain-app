@@ -6,12 +6,14 @@ export default async (req: Request, context: Context) => {
     const store = getStore("shared-clips");
     const { blobs } = await store.list();
     
-    // Note: This can be slow for many blobs. For production, consider a more robust database.
-    const clips = await Promise.all(
-      blobs.map(blob => store.get(blob.key, { type: "json" }))
+    const clipsWithKeys = await Promise.all(
+      blobs.map(async (blob) => {
+        const data = await store.get(blob.key, { type: "json" });
+        return { key: blob.key, data };
+      })
     );
 
-    return new Response(JSON.stringify(clips), {
+    return new Response(JSON.stringify(clipsWithKeys), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
