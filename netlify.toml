@@ -1,1 +1,54 @@
-~�er��z{l��޶X��h�
+# Netlify.toml configuration for Second Brain App
+# Single-Page Application (SPA) with Netlify Functions
+
+[build]
+  # Build command
+  command = "npm run build"
+  # Build output directory
+  publish = "dist"
+  # Functions directory for Netlify serverless functions
+  functions = "netlify/functions"
+
+[dev]
+  # Local development settings
+  command = "npm run dev"
+  # Port for local development
+  port = 3000
+
+# Redirect rules for SPA routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers configuration
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+
+# Cache control headers
+[[headers]]
+  for = "/dist/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# API function routing
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
