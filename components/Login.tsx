@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getFirebase, provider } from '../utils/firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithRedirect } from 'firebase/auth';
 
 const GoogleIcon = () => (
     <svg className="w-6 h-6 mr-3" viewBox="0 0 48 48">
@@ -16,13 +16,19 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ error }) => {
+    const [isSigningIn, setIsSigningIn] = useState(false);
     
     const handleSignIn = async () => {
+        setIsSigningIn(true);
         try {
             const { auth } = await getFirebase();
-            await signInWithPopup(auth, provider);
+            // Using signInWithRedirect is more robust in sandboxed environments like iframes
+            // where popups can be blocked.
+            await signInWithRedirect(auth, provider);
         } catch (error) {
-            console.error("Sign in failed", error);
+            console.error("Sign in with redirect failed", error);
+            // This might not be reached if redirect happens, but good for immediate errors.
+            setIsSigningIn(false);
         }
     };
 
@@ -32,11 +38,11 @@ const Login: React.FC<LoginProps> = ({ error }) => {
             <p className="text-lg text-gray-400 mb-12">Sign in to sync your memories across all devices.</p>
             <button
                 onClick={handleSignIn}
-                disabled={!!error}
+                disabled={!!error || isSigningIn}
                 className="flex items-center justify-center px-6 py-3 bg-white text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-200 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
                 <GoogleIcon />
-                Sign in with Google
+                {isSigningIn ? 'Redirecting...' : 'Sign in with Google'}
             </button>
             {error && (
                 <div className="mt-8 text-red-400 bg-red-900 bg-opacity-50 p-4 rounded-lg max-w-sm">
