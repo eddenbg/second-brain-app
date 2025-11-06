@@ -38,8 +38,7 @@ const Login: React.FC<LoginProps> = ({ error }) => {
             <p className="text-lg text-gray-400 mb-12">Sign in to sync your memories across all devices.</p>
             <button
                 onClick={handleSignIn}
-                disabled={!!error || isSigningIn}
-                className="flex items-center justify-center px-6 py-3 bg-white text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-200 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+      disabled={!!error || isSigningIn}                className="flex items-center justify-center px-6 py-3 bg-white text-gray-800 font-semibold rounded-lg shadow-md hover:bg-gray-200 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
                 <GoogleIcon />
                 {isSigningIn ? 'Redirecting...' : 'Sign in with Google'}
