@@ -1,1 +1,8 @@
-~�er��z{l��޶X��h�
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
