@@ -16,8 +16,7 @@ export const getFirebase = async () => {
 
     try {
         // Use a standard root-relative path to fetch the config from the Netlify function.
-        const response = await fetch('https://eddenbg-second-brain.netlify.app/.netlify/functions/getFirebaseConfig');
-
+ const response = await fetch('/.netlify/functions/getFirebaseConfig');
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: 'Failed to fetch or parse Firebase config.' }));
             throw new Error(errorData.error || 'Failed to fetch Firebase config.');
