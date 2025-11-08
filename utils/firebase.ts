@@ -15,7 +15,8 @@ export const getFirebase = async () => {
     }
 
     try {
-        // Use a standard root-relative path to fetch the config from the Netlify function.
+        // Fetch the config from the Netlify function using a relative path.
+        // This works for both local development (with Netlify Dev) and production.
         const response = await fetch('/.netlify/functions/getFirebaseConfig');
 
         if (!response.ok) {
