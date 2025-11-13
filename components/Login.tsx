@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { getFirebase, provider } from '../utils/firebase';
-import { signInWithRedirect } from 'firebase/auth';
-
+import { signInWithPopup } from 'firebase/auth';
 const GoogleIcon = () => (
     <svg className="w-6 h-6 mr-3" viewBox="0 0 48 48">
         <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039L38.802 9.92C34.553 6.184 29.654 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"></path>
@@ -24,7 +23,7 @@ const Login: React.FC<LoginProps> = ({ error }) => {
             const { auth } = await getFirebase();
             // Using signInWithRedirect is more robust in sandboxed environments like iframes
             // where popups can be blocked.
-            await signInWithRedirect(auth, provider);
+            await signInWithPopup(auth, provider);
         } catch (error) {
             console.error("Sign in with redirect failed", error);
             // This might not be reached if redirect happens, but good for immediate errors.
