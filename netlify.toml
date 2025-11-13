@@ -1,1 +1,4 @@
-~�er��z{l��޶X��h�
+[build]
+  command = "npm run build"
+  functions = "netlify/functions"
+  publish = "dist"
