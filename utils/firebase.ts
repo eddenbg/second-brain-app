@@ -35,8 +35,12 @@ export const getFirebase = async () => {
         db = getFirestore(firebaseApp);
 
         // This enables offline data persistence and sync across tabs.
-        await enableMultiTabIndexedDbPersistence(db);
-
+ // Try to enable persistence, but don't block if it fails (common in some environments)
+ try {
+ await enableMultiTabIndexedDbPersistence(db);
+ } catch (persistenceError) {
+ console.warn("Multi-tab persistence not available, continuing without it", persistenceError);
+ }
         initialized = true;
         return { firebaseApp, auth, db };
     } catch (error) {
