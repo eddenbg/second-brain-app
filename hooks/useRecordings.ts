@@ -1,11 +1,19 @@
-import { useState, useEffect, useCallback } from 'react';
-import { User } from 'firebase/auth';
-import { getFirebase } from '../utils/firebase';
-import { collection, doc, onSnapshot, addDoc, deleteDoc, updateDoc, writeBatch, query, orderBy, setDoc } from 'firebase/firestore';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AnyMemory, WebMemory } from '../types';
 
-// FIX: Updated the SharedClip interface to accurately represent the data from the blob store.
-// The previous type was incorrect and was missing the 'date' property.
+// Debounce hook
+const useDebounce = (callback: (...args: any[]) => void, delay: number) => {
+    const timeoutRef = useRef<number | null>(null);
+    return (...args: any[]) => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = window.setTimeout(() => {
+            callback(...args);
+        }, delay);
+    };
+};
+
 interface SharedClip {
     key: string;
     data: {
@@ -17,10 +25,87 @@ interface SharedClip {
     };
 }
 
-export const useRecordings = (user: User | null) => {
+interface StoredData {
+    memories: AnyMemory[];
+    courses: string[];
+}
+const LOCAL_STORAGE_KEY = 'second-brain-data';
+
+export const useRecordings = (syncId: string | null) => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [pendingClipsCount, setPendingClipsCount] = useState(0);
+
+    // Load initial data from local storage
+    useEffect(() => {
+        try {
+            const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (localData) {
+                const parsed: StoredData = JSON.parse(localData);
+                setMemories(parsed.memories || []);
+                setCourses(parsed.courses || []);
+            }
+        } catch (error) {
+            console.error("Failed to load data from local storage", error);
+        }
+    }, []);
+
+    // Persist to local storage whenever data changes
+    useEffect(() => {
+        try {
+            const data: StoredData = { memories, courses };
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+        } catch (error) {
+            console.error("Failed to save data to local storage", error);
+        }
+    }, [memories, courses]);
+
+    const pushToRemote = useCallback(async (data: StoredData) => {
+        if (!syncId || isSyncing) return;
+        setIsSyncing(true);
+        try {
+            await fetch(`/netlify/functions/sync?syncId=${syncId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+        } catch (error) {
+            console.error("Failed to push data to remote", error);
+        } finally {
+            setIsSyncing(false);
+        }
+    }, [syncId, isSyncing]);
+
+    const debouncedPush = useDebounce(pushToRemote, 2000);
+
+    // Effect to trigger debounced push when data changes
+    useEffect(() => {
+        if (syncId) {
+            debouncedPush({ memories, courses });
+        }
+    }, [memories, courses, syncId, debouncedPush]);
+
+    // Pull from remote when syncId is available
+    useEffect(() => {
+        const pullFromRemote = async () => {
+            if (!syncId) return;
+            setIsSyncing(true);
+            try {
+                const response = await fetch(`/netlify/functions/sync?syncId=${syncId}`);
+                if (response.ok) {
+                    const data: StoredData = await response.json();
+                    setMemories(data.memories || []);
+                    setCourses(data.courses || []);
+                }
+            } catch (error) {
+                console.error("Failed to pull data from remote", error);
+            } finally {
+                setIsSyncing(false);
+            }
+        };
+        pullFromRemote();
+    }, [syncId]);
 
     const fetchPendingClipsCount = useCallback(async () => {
         try {
@@ -38,90 +123,22 @@ export const useRecordings = (user: User | null) => {
     }, []);
 
     useEffect(() => {
-        if (user) {
-            fetchPendingClipsCount();
-            const intervalId = setInterval(fetchPendingClipsCount, 30000); // Poll every 30 seconds
-            return () => clearInterval(intervalId);
-        }
-    }, [user, fetchPendingClipsCount]);
-
-
-    // Firebase logic
-    useEffect(() => {
-        if (!user) {
-            setMemories([]);
-            setCourses([]);
-            return;
-        }
-
-        let memoriesUnsubscribe: (() => void) | undefined;
-        let coursesUnsubscribe: (() => void) | undefined;
-
-        const setupListeners = async () => {
-            const { db } = await getFirebase();
-            if (!db) return;
-            
-            // Memories listener
-            const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
-            const q = query(memoriesCollectionRef, orderBy('date', 'desc'));
-            memoriesUnsubscribe = onSnapshot(q, (snapshot) => {
-                const memoriesData = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                })) as AnyMemory[];
-                setMemories(memoriesData);
-            }, (error) => {
-                console.error("Error listening to memories:", error);
-            });
-
-            // Courses listener
-            const userDocRef = doc(db, 'users', user.uid);
-            coursesUnsubscribe = onSnapshot(userDocRef, (doc) => {
-                if (doc.exists()) {
-                    setCourses(doc.data().manualCourses || []);
-                } else {
-                    setCourses([]);
-                }
-            }, (error) => {
-                 console.error("Error listening to courses:", error);
-            });
-        };
-
-        setupListeners();
-
-        return () => {
-            if (memoriesUnsubscribe) memoriesUnsubscribe();
-            if (coursesUnsubscribe) coursesUnsubscribe();
-        };
-    }, [user]);
+        fetchPendingClipsCount();
+        const intervalId = setInterval(fetchPendingClipsCount, 30000); // Poll every 30 seconds
+        return () => clearInterval(intervalId);
+    }, [fetchPendingClipsCount]);
 
     const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
-        if (!user) return;
-        try {
-            const { db } = await getFirebase();
-            if (!db) throw new Error("Firestore not available");
-            const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
-            
-            const newMemory: AnyMemory = {
-                ...memory,
-                id: crypto.randomUUID(), // Temp client-side id, Firestore will generate its own.
-                date: new Date().toISOString(),
-            } as unknown as AnyMemory;
-            
-            const { id, ...memoryData } = newMemory;
+        const newMemory: AnyMemory = {
+            ...memory,
+            id: crypto.randomUUID(),
+            date: new Date().toISOString(),
+        } as unknown as AnyMemory;
+        setMemories(prev => [newMemory, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    }, []);
 
-            await addDoc(memoriesCollectionRef, memoryData);
-        } catch (error) {
-            console.error("Error adding memory:", error);
-        }
-    }, [user]);
-    
     const syncSharedClips = useCallback(async (): Promise<number> => {
-        if (!user) return 0;
         try {
-            const { db } = await getFirebase();
-            if (!db) throw new Error("Firestore not available");
-
             const response = await fetch('/netlify/functions/getSharedClips');
             if (!response.ok) throw new Error("Failed to fetch clips");
 
@@ -131,21 +148,20 @@ export const useRecordings = (user: User | null) => {
                 return 0;
             }
 
-            const batch = writeBatch(db);
-            const memoriesCollectionRef = collection(db, 'users', user.uid, 'memories');
-
-            clipsToSync.forEach(clip => {
-                const newMemory = {
-                    ...clip.data,
+            const newMemories = clipsToSync.map(clip => {
+                const newMemory: WebMemory = {
                     type: 'web',
                     category: 'personal',
+                    id: crypto.randomUUID(),
                     date: new Date(clip.data.date || Date.now()).toISOString(),
+                    url: clip.data.url,
+                    title: clip.data.title,
+                    content: clip.data.content,
                 };
-                const docRef = doc(memoriesCollectionRef); // Create a new doc with a generated ID
-                batch.set(docRef, newMemory);
+                return newMemory;
             });
-
-            await batch.commit();
+            
+            setMemories(prev => [...newMemories, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
             // After successful sync, delete clips from blobs
             for (const clip of clipsToSync) {
@@ -158,66 +174,29 @@ export const useRecordings = (user: User | null) => {
             
             setPendingClipsCount(0);
             return clipsToSync.length;
-
         } catch (error) {
             console.error("Error syncing web clips:", error);
             return 0;
         }
-    }, [user]);
-
+    }, []);
 
     const deleteMemory = useCallback(async (id: string) => {
-        if (!user) return;
-        try {
-            const { db } = await getFirebase();
-            if (!db) throw new Error("Firestore not available");
-            const docRef = doc(db, 'users', user.uid, 'memories', id);
-            await deleteDoc(docRef);
-        } catch (error) {
-            console.error("Error deleting memory:", error);
-        }
-    }, [user]);
+        setMemories(prev => prev.filter(m => m.id !== id));
+    }, []);
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
-        if (!user || ids.length === 0) return;
-        try {
-            const { db } = await getFirebase();
-            if (!db) throw new Error("Firestore not available");
-            const batch = writeBatch(db);
-            ids.forEach(id => {
-                const docRef = doc(db, 'users', user.uid, 'memories', id);
-                batch.delete(docRef);
-            });
-            await batch.commit();
-        } catch (error) {
-            console.error("Error bulk deleting memories:", error);
-        }
-    }, [user]);
+        const idSet = new Set(ids);
+        setMemories(prev => prev.filter(m => !idSet.has(m.id)));
+    }, []);
 
     const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
-        if (!user) return;
-        try {
-            const { db } = await getFirebase();
-            if (!db) throw new Error("Firestore not available");
-            const docRef = doc(db, 'users', user.uid, 'memories', id);
-            await updateDoc(docRef, updates);
-        } catch (error) {
-            console.error("Error updating memory:", error);
-        }
-    }, [user]);
+        setMemories(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+    }, []);
 
     const addCourse = useCallback(async (courseName: string) => {
-        if (!user || !courseName.trim()) return;
-        const newCourses = [...new Set([...courses, courseName.trim()])];
-        try {
-            const { db } = await getFirebase();
-            if (!db) throw new Error("Firestore not available");
-            const userDocRef = doc(db, 'users', user.uid);
-            await setDoc(userDocRef, { manualCourses: newCourses }, { merge: true });
-        } catch (error) {
-            console.error("Error adding course:", error);
-        }
-    }, [user, courses]);
+        if (!courseName.trim()) return;
+        setCourses(prev => [...new Set([...prev, courseName.trim()])]);
+    }, []);
 
-    return { memories, addMemory, deleteMemory, bulkDeleteMemories, updateMemory, syncSharedClips, pendingClipsCount, courses, addCourse };
+    return { memories, addMemory, deleteMemory, bulkDeleteMemories, updateMemory, syncSharedClips, pendingClipsCount, courses, addCourse, isSyncing };
 };

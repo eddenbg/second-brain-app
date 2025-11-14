@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import React, { useState, useMemo } from 'react';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import QASession from './components/QASession';
@@ -7,12 +6,12 @@ import VisionView from './components/VisionView';
 import WebClipsView from './components/WebClipsView';
 import VoiceNotesView from './components/RecordingList';
 import UpdateNotification from './components/UpdateNotification';
-import Login from './components/Login';
+import SyncSetup from './components/SyncSetup';
+import SettingsModal from './components/SettingsModal';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import type { AnyMemory, WebMemory } from './types';
-import { getFirebase } from './utils/firebase';
-import { LogOutIcon } from './components/Icons';
+import { SettingsIcon, RefreshCwIcon } from './components/Icons';
 
 type View = 'physical' | 'college' | 'webclips' | 'askai' | 'voicenotes';
 
@@ -26,51 +25,24 @@ const viewTitles: Record<View, string> = {
 
 function App() {
   const [view, setView] = useState<View>('college');
-  const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [firebaseError, setFirebaseError] = useState<string | null>(null);
+  const [syncId, setSyncId] = useState<string | null>(() => localStorage.getItem('syncId'));
+  const [showSettings, setShowSettings] = useState(false);
 
-  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse } = useRecordings(user);
+  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing } = useRecordings(syncId);
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
-  
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-    
-    const checkAuth = async () => {
-        try {
-            const { auth } = await getFirebase();
 
-            // The onAuthStateChanged listener handles sign-in state changes from all methods,
-            // including the popup flow.
-            unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-                setUser(currentUser);
-                setAuthLoading(false);
-            });
-
-        } catch (err) {
-            console.error("Failed to init Firebase for auth", err);
-            if (err instanceof Error) {
-                setFirebaseError(err.message);
-            } else {
-                setFirebaseError("An unknown error occurred during Firebase initialization.");
-            }
-            setAuthLoading(false);
-        }
-    };
-
-    checkAuth();
-
-    return () => unsubscribe && unsubscribe();
-  }, []);
-
-  const handleSignOut = async () => {
-    try {
-        const { auth } = await getFirebase();
-        await signOut(auth);
-    } catch (error) {
-        console.error("Sign out failed", error);
-    }
+  const handleSetSyncId = (id: string) => {
+      localStorage.setItem('syncId', id);
+      setSyncId(id);
   };
+  
+  const handleResetSync = () => {
+      if(window.confirm("Are you sure? This will disconnect this device. You can reconnect later by entering the same Sync ID.")) {
+        localStorage.removeItem('syncId');
+        setSyncId(null);
+        setShowSettings(false);
+      }
+  }
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const physicalMemories = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
@@ -85,16 +57,8 @@ function App() {
     updateMemory(id, updates);
   }
 
-  if (authLoading) {
-    return (
-        <div className="flex items-center justify-center h-full bg-gray-900 text-white">
-            <p>Loading...</p>
-        </div>
-    );
-  }
-
-  if (!user) {
-    return <Login error={firebaseError} />;
+  if (!syncId) {
+    return <SyncSetup onSyncIdSet={handleSetSyncId} />;
   }
 
   const renderView = () => {
@@ -116,11 +80,14 @@ function App() {
 
   return (
     <div className="grid grid-rows-[auto_1fr_auto] h-full bg-gray-900 text-white">
+      {showSettings && <SettingsModal syncId={syncId} onClose={() => setShowSettings(false)} onReset={handleResetSync} />}
       <header className="p-4 text-center bg-gray-800 border-b border-gray-700 flex justify-between items-center">
-        <div className="w-10"></div> {/* Spacer */}
+        <div className="w-10">
+          {isSyncing && <RefreshCwIcon className="w-6 h-6 text-gray-400 animate-spin" />}
+        </div>
         <h1 className="text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
-        <button onClick={handleSignOut} className="p-2 rounded-full hover:bg-gray-700" aria-label="Sign out">
-            <LogOutIcon className="w-6 h-6 text-gray-400" />
+        <button onClick={() => setShowSettings(true)} className="p-2 rounded-full hover:bg-gray-700" aria-label="Settings">
+            <SettingsIcon className="w-6 h-6 text-gray-400" />
         </button>
       </header>
       <main className="p-4 sm:p-6 overflow-y-auto">
