@@ -4,6 +4,7 @@ import { generateSummaryForContent, extractTextFromImage, generateTitleForConten
 import { decode, decodeAudioData } from '../utils/audio';
 import Recorder from './Recorder';
 import QASession from './QASession';
+import TemporaryScanView from './TemporaryScanView';
 import { FolderIcon, MicIcon, PlusCircleIcon, ArrowLeftIcon, BrainCircuitIcon, BookOpenIcon, TrashIcon, FileTextIcon, CameraIcon, UploadIcon, Volume2Icon, Loader2Icon } from './Icons';
 import { getCurrentLocation } from '../utils/location';
 
@@ -361,7 +362,7 @@ const AddDocumentView: React.FC<{
 };
 
 const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, onUpdate, bulkDelete, courses, addCourse }) => {
-    type View = 'courses' | 'lectures' | 'lectureDetail' | 'documentDetail' | 'qa' | 'record' | 'addDocument';
+    type View = 'courses' | 'lectures' | 'lectureDetail' | 'documentDetail' | 'qa' | 'record' | 'addDocument' | 'temporaryScan';
     const [view, setView] = useState<View>('courses');
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
     const [selectedLecture, setSelectedLecture] = useState<VoiceMemory | null>(null);
@@ -427,6 +428,10 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
         }
     };
     
+    if (view === 'temporaryScan') {
+        return <TemporaryScanView onClose={() => setView('courses')} />;
+    }
+    
     if (view === 'addDocument' && selectedCourse) {
         return <AddDocumentView course={selectedCourse} onSave={handleSaveMemory} onCancel={() => setView('lectures')} />;
     }
@@ -446,7 +451,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
     if (view === 'qa') {
         return (
             <div className="flex flex-col h-full">
-                <header className="flex items-center mb-4"><button onClick={() => setView('courses')} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button><h2 className="text-xl font-bold">Ask About All Lectures</h2></header>
+                <header className="flex items-center mb-4"><button onClick={() => setView('courses')} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button><h2 className="text-xl font-bold">Ask About All College Notes</h2></header>
                 <div className="flex-grow border border-gray-700 rounded-lg"><QASession memories={lectures} /></div>
             </div>
         );
@@ -495,8 +500,24 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
                 {allCourses.length === 0 ? <div className="text-center py-10 px-6 bg-gray-800 rounded-lg"><FolderIcon className="w-12 h-12 mx-auto text-gray-500"/><p className="mt-2 text-gray-400">Create your first course folder above.</p></div>
                 : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{allCourses.map(course => (<div key={course} onClick={() => handleSelectCourse(course)} className="bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 cursor-pointer hover:border-blue-500 transition-colors flex flex-col items-center justify-center aspect-square"><FolderIcon className="w-12 h-12 text-blue-400 mb-2"/><span className="text-lg font-semibold text-center text-white">{course}</span><span className="text-sm text-gray-400">{(memoriesByCourse[course]?.length || 0)} items</span></div>))}</div>}
             </div>
-             <div className="border-t border-gray-700 pt-6">
-                 <button onClick={() => setView('qa')} className="w-full flex flex-col items-center justify-center gap-2 p-4 bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors"><BrainCircuitIcon className="w-10 h-10 text-white"/><span className="text-xl font-semibold text-white">Ask AI about College</span></button>
+             <div className="border-t border-gray-700 pt-6 space-y-4">
+                <h2 className="text-2xl font-bold text-white">Tools</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button onClick={() => setView('qa')} className="text-left p-4 bg-purple-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-colors flex flex-col justify-between h-32">
+                        <div>
+                            <BrainCircuitIcon className="w-8 h-8 text-purple-300 mb-2"/>
+                            <span className="text-xl font-semibold text-white">Ask AI about College</span>
+                        </div>
+                        <p className="text-sm font-normal text-purple-200">Chat with all your saved notes.</p>
+                    </button>
+                    <button onClick={() => setView('temporaryScan')} className="text-left p-4 bg-cyan-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-colors flex flex-col justify-between h-32">
+                        <div>
+                            <CameraIcon className="w-8 h-8 text-cyan-300 mb-2"/>
+                            <span className="text-xl font-semibold text-white">Quick Scan</span>
+                        </div>
+                        <p className="text-sm font-normal text-cyan-200">Scan, listen, and chat without saving.</p>
+                    </button>
+                </div>
             </div>
         </div>
     );
