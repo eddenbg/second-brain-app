@@ -1,5 +1,6 @@
 import type { AnyMemory } from '../types';
 import { getGeminiInstance } from '../utils/gemini';
+import { Modality } from '@google/genai';
 
 const model = "gemini-2.5-flash";
 const UNAVAILABLE_ERROR_MESSAGE = "AI features are unavailable. Please check your API key configuration.";
@@ -45,6 +46,9 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
     } else if (mem.type === 'video') {
         memoryString = `--- Video Item: "${mem.title}" (Recorded on: ${date}${locationString}) ---${tagsString}\nDescription: ${mem.description}\nTranscript of audio from video: ${mem.transcript}`;
         memoryString += `\n--- End of Video Item: "${mem.title}" ---`;
+    } else if (mem.type === 'document') {
+      const courseInfo = mem.course ? ` for course "${mem.course}"` : '';
+      memoryString = `--- Scanned Document${courseInfo}: "${mem.title}" (Scanned on: ${date}${locationString}) ---${tagsString}\nExtracted Text:\n${mem.extractedText}\n--- End of Scanned Document: "${mem.title}" ---`;
     }
     return memoryString;
   }).join('\n\n');
@@ -139,5 +143,57 @@ export async function generateSummaryForContent(content: string): Promise<string
     } catch (error) {
         console.error("Error generating summary:", error);
         return "Could not generate summary.";
+    }
+}
+
+export async function extractTextFromImage(base64Data: string, mimeType: string): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+
+    const imagePart = {
+      inlineData: {
+        mimeType,
+        data: base64Data,
+      },
+    };
+    const textPart = {
+      text: "Extract all text from this image, including text in both English and Hebrew. Preserve the original line breaks and structure as much as possible.",
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: { parts: [imagePart, textPart] },
+        });
+        return response.text;
+    } catch (error) {
+        console.error("Error calling Gemini API for image text extraction:", error);
+        return "Sorry, I encountered an error while extracting text from the image.";
+    }
+}
+
+export async function generateSpeechFromText(text: string): Promise<string | null> {
+    const ai = getGeminiInstance();
+    if (!ai) return null;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts",
+            contents: [{ parts: [{ text }] }],
+            config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: 'Kore' }, // A neutral voice
+                    },
+                },
+            },
+        });
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        return base64Audio || null;
+
+    } catch (error) {
+        console.error("Error generating speech:", error);
+        return null;
     }
 }

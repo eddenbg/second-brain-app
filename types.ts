@@ -47,4 +47,10 @@ export interface VideoItemMemory extends BaseMemory {
   transcript: string;
 }
 
-export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory;
+export interface DocumentMemory extends BaseMemory {
+  type: 'document';
+  extractedText: string;
+  imageDataUrl: string;
+}
+
+export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory;
