@@ -7,7 +7,7 @@ interface UpdateNotificationProps {
 
 const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onUpdate }) => {
     return (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white py-3 px-6 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up">
+        <div className="fixed bottom-40 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white py-3 px-6 rounded-lg shadow-lg flex items-center gap-4 animate-fade-in-up">
             <p className="font-semibold">A new version is available!</p>
             <button
                 onClick={onUpdate}

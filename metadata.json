@@ -1,5 +1,5 @@
 {
-  "name": "Copy of My Second Brain",
+  "name": "My Second Brain",
   "description": "An accessible app to capture voice notes, save web content, and remember physical items, with an AI assistant to help you recall information.",
   "requestFramePermissions": [
     "microphone",

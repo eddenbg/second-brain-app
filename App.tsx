@@ -8,6 +8,7 @@ import VoiceNotesView from './components/RecordingList';
 import UpdateNotification from './components/UpdateNotification';
 import SyncSetup from './components/SyncSetup';
 import SettingsModal from './components/SettingsModal';
+import AddToHomeScreenPrompt from './components/AddToHomeScreenPrompt';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import type { AnyMemory, WebMemory } from './types';
@@ -95,6 +96,7 @@ function App() {
       </main>
       <BottomNavBar view={view} setView={setView} />
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
+      <AddToHomeScreenPrompt />
     </div>
   );
 }
