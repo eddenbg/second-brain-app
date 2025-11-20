@@ -484,9 +484,10 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
                             </div>
                         </div>
                     ))
-</div>
-        }
-                )
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

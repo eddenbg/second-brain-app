@@ -190,7 +190,7 @@ export const useRecordings = (syncId: string | null) => {
     }, []);
 
     const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
-        setMemories(prev => prev.map(m => m.id === id ? { ...m, ...updates } as AnyMemory : m));
+        setMemories(prev => prev.map(m => m.id === id ? { ...m, ...updates } as unknown as AnyMemory : m));
     }, []);
 
     const addCourse = useCallback(async (courseName: string) => {
