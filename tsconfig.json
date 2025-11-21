@@ -14,8 +14,9 @@
     "strict": true,
     "unusedLocals": false,
     "unusedParameters": false,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "types": ["vite/client", "node"]
   },
   "include": ["./**/*.ts", "./**/*.tsx"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "netlify"]
 }
