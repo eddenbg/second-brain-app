@@ -1,27 +1,59 @@
+
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>My Second Brain</title>
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1f2937">
-    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- iOS PWA settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Second Brain">
+    <link rel="apple-touch-icon" href="/icon-192.png">
+
     <style>
-      body { margin: 0; font-family: sans-serif; background-color: #111827; }
-      /* For the 'Update Available' notification */
-      @keyframes fade-in-up {
-        from { opacity: 0; transform: translate(-50%, 20px); }
-        to { opacity: 1; transform: translate(-50%, 0); }
-      }
-      .animate-fade-in-up {
-        animation: fade-in-up 0.5s ease-out forwards;
-      }
+        /* Ensure the app takes up the full screen height */
+        html, body, #root {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent body scroll, let the app handle scrolling */
+            background-color: #111827;
+        }
     </style>
-  </head>
-  <body>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Safety shim for the browser preview to prevent crashes if process is undefined
+        if (typeof process === 'undefined') {
+            window.process = { env: { API_KEY: '' } };
+        }
+    </script>
+<script type="importmap">
+{
+  "imports": {
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "express": "https://aistudiocdn.com/express@^5.1.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "cors": "https://aistudiocdn.com/cors@^2.8.5",
+    "url": "https://aistudiocdn.com/url@^0.11.4",
+    "@netlify/blobs": "https://aistudiocdn.com/@netlify/blobs@^10.4.1",
+    "path": "https://aistudiocdn.com/path@^0.12.7",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "@vercel/kv": "https://aistudiocdn.com/@vercel/kv@^3.0.0",
+    "@netlify/functions": "https://aistudiocdn.com/@netlify/functions@^5.1.0"
+  }
+}
+</script>
+</head>
+<body>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
-  </body>
+</body>
 </html>

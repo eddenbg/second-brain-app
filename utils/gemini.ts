@@ -8,8 +8,15 @@ export function getGeminiInstance(): GoogleGenAI | null {
         return aiInstance;
     }
 
-    // FIX: Use process.env for environment variables. This resolves the TypeScript error 'Property 'env' does not exist on type 'ImportMeta''.
-    const apiKey = process.env.API_KEY;
+    // Safely access process.env. In Vite, this is replaced at build time.
+    // We add a check to ensure we don't crash if accessed in a non-standard env.
+    let apiKey = '';
+    try {
+        apiKey = process.env.API_KEY || '';
+    } catch (e) {
+        console.error("Error accessing process.env:", e);
+    }
+
     if (!apiKey) {
         console.error("API_KEY environment variable not set. AI features will be disabled.");
         return null;

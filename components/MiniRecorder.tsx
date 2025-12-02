@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { LiveSession, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon } from './Icons';
@@ -27,8 +28,11 @@ const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}>
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaStreamRef.current = stream;
             setIsRecording(true);
-            const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+            
+            // Allow browser to choose native sample rate
+            const context = new (window.AudioContext || (window as any).webkitAudioContext)();
             audioContextRef.current = context;
+            const actualSampleRate = context.sampleRate;
             
             sessionPromiseRef.current = ai.live.connect({
                 model: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -43,7 +47,7 @@ const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}>
                       let binary = '';
                       const bytes = new Uint8Array(int16.buffer);
                       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                      sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: 'audio/pcm;rate=16000' } }));
+                      sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: `audio/pcm;rate=${actualSampleRate}` } }));
                     };
                     source.connect(scriptProcessor);
                     scriptProcessor.connect(context.destination);

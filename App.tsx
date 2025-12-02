@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import QASession from './components/QASession';
@@ -29,7 +30,19 @@ function App() {
   const [syncId, setSyncId] = useState<string | null>(() => localStorage.getItem('syncId'));
   const [showSettings, setShowSettings] = useState(false);
 
-  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing } = useRecordings(syncId);
+  // Check for Magic Link / QR Code login (e.g. ?connect=123-abc)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connectId = params.get('connect');
+    if (connectId) {
+        localStorage.setItem('syncId', connectId);
+        setSyncId(connectId);
+        // Clear param from URL so it looks clean
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing, loadBackup } = useRecordings(syncId);
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const handleSetSyncId = (id: string) => {
@@ -81,7 +94,15 @@ function App() {
 
   return (
     <div className="grid grid-rows-[auto_1fr_auto] h-full bg-gray-900 text-white">
-      {showSettings && <SettingsModal syncId={syncId} onClose={() => setShowSettings(false)} onReset={handleResetSync} />}
+      {showSettings && (
+          <SettingsModal 
+            syncId={syncId} 
+            onClose={() => setShowSettings(false)} 
+            onReset={handleResetSync} 
+            data={{ memories, courses }}
+            onImport={loadBackup}
+          />
+      )}
       <header className="p-4 text-center bg-gray-800 border-b border-gray-700 flex justify-between items-center">
         <div className="w-10">
           {isSyncing && <RefreshCwIcon className="w-6 h-6 text-gray-400 animate-spin" />}

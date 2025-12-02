@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AnyMemory, WebMemory } from '../types';
 
@@ -25,7 +26,7 @@ interface SharedClip {
     };
 }
 
-interface StoredData {
+export interface StoredData {
     memories: AnyMemory[];
     courses: string[];
 }
@@ -35,6 +36,7 @@ export const useRecordings = (syncId: string | null) => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isOffline, setIsOffline] = useState(false);
     const [pendingClipsCount, setPendingClipsCount] = useState(0);
 
     // Load initial data from local storage
@@ -62,44 +64,63 @@ export const useRecordings = (syncId: string | null) => {
     }, [memories, courses]);
 
     const pushToRemote = useCallback(async (data: StoredData) => {
-        if (!syncId || isSyncing) return;
+        if (!syncId || isSyncing || isOffline) return;
         setIsSyncing(true);
         try {
-            await fetch(`/netlify/functions/sync?syncId=${syncId}`, {
+            const response = await fetch(`/api/sync?syncId=${syncId}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
+            if (!response.ok) {
+                setIsOffline(true);
+            }
         } catch (error) {
             console.error("Failed to push data to remote", error);
+            setIsOffline(true);
         } finally {
             setIsSyncing(false);
         }
-    }, [syncId, isSyncing]);
+    }, [syncId, isSyncing, isOffline]);
 
     const debouncedPush = useDebounce(pushToRemote, 2000);
 
     // Effect to trigger debounced push when data changes
     useEffect(() => {
-        if (syncId) {
+        if (syncId && !isOffline) {
             debouncedPush({ memories, courses });
         }
-    }, [memories, courses, syncId, debouncedPush]);
+    }, [memories, courses, syncId, debouncedPush, isOffline]);
 
     // Pull from remote when syncId is available
     useEffect(() => {
         const pullFromRemote = async () => {
-            if (!syncId) return;
+            if (!syncId || isOffline) return;
             setIsSyncing(true);
             try {
-                const response = await fetch(`/netlify/functions/sync?syncId=${syncId}`);
-                if (response.ok) {
-                    const data: StoredData = await response.json();
+                const response = await fetch(`/api/sync?syncId=${syncId}`);
+                
+                const contentType = response.headers.get("content-type");
+                if (!response.ok || (contentType && contentType.includes("text/html"))) {
+                    console.log("Backend unavailable, switching to Local Mode.");
+                    setIsOffline(true);
+                    return;
+                }
+
+                const data: StoredData = await response.json();
+                
+                const remoteHasData = data.memories && data.memories.length > 0;
+                const localHasData = memories.length > 0;
+
+                if (remoteHasData) {
                     setMemories(data.memories || []);
                     setCourses(data.courses || []);
+                } else if (localHasData && !remoteHasData) {
+                    pushToRemote({ memories, courses });
                 }
             } catch (error) {
-                console.error("Failed to pull data from remote", error);
+                console.error("Failed to pull data from remote, switching to offline mode", error);
+                setIsOffline(true);
             } finally {
                 setIsSyncing(false);
             }
@@ -108,23 +129,24 @@ export const useRecordings = (syncId: string | null) => {
     }, [syncId]);
 
     const fetchPendingClipsCount = useCallback(async () => {
+        if (isOffline) return;
         try {
-            const response = await fetch('/netlify/functions/getSharedClips');
-            if (response.ok) {
+            const response = await fetch('/api/shared-clips');
+            const contentType = response.headers.get("content-type");
+            if (response.ok && contentType && !contentType.includes("text/html")) {
                 const clips: SharedClip[] = await response.json();
                 setPendingClipsCount(clips.length);
             } else {
                 setPendingClipsCount(0);
             }
         } catch (error) {
-            console.error("Error fetching pending clips count:", error);
             setPendingClipsCount(0);
         }
-    }, []);
+    }, [isOffline]);
 
     useEffect(() => {
         fetchPendingClipsCount();
-        const intervalId = setInterval(fetchPendingClipsCount, 30000); // Poll every 30 seconds
+        const intervalId = setInterval(fetchPendingClipsCount, 30000);
         return () => clearInterval(intervalId);
     }, [fetchPendingClipsCount]);
 
@@ -138,8 +160,9 @@ export const useRecordings = (syncId: string | null) => {
     }, []);
 
     const syncSharedClips = useCallback(async (): Promise<number> => {
+        if (isOffline) return 0;
         try {
-            const response = await fetch('/netlify/functions/getSharedClips');
+            const response = await fetch('/api/shared-clips');
             if (!response.ok) throw new Error("Failed to fetch clips");
 
             const clipsToSync: SharedClip[] = await response.json();
@@ -163,10 +186,9 @@ export const useRecordings = (syncId: string | null) => {
             
             setMemories(prev => [...newMemories, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
-            // After successful sync, delete clips from blobs
             for (const clip of clipsToSync) {
-                await fetch('/netlify/functions/deleteSharedClip', {
-                    method: 'POST',
+                await fetch('/api/shared-clips', {
+                    method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ key: clip.key }),
                 });
@@ -178,7 +200,7 @@ export const useRecordings = (syncId: string | null) => {
             console.error("Error syncing web clips:", error);
             return 0;
         }
-    }, []);
+    }, [isOffline]);
 
     const deleteMemory = useCallback(async (id: string) => {
         setMemories(prev => prev.filter(m => m.id !== id));
@@ -198,5 +220,24 @@ export const useRecordings = (syncId: string | null) => {
         setCourses(prev => [...new Set([...prev, courseName.trim()])]);
     }, []);
 
-    return { memories, addMemory, deleteMemory, bulkDeleteMemories, updateMemory, syncSharedClips, pendingClipsCount, courses, addCourse, isSyncing };
+    const loadBackup = useCallback((data: StoredData) => {
+        if (data.memories) setMemories(data.memories);
+        if (data.courses) setCourses(data.courses);
+        // Force save to local storage immediately
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+    }, []);
+
+    return { 
+        memories, 
+        addMemory, 
+        deleteMemory, 
+        bulkDeleteMemories, 
+        updateMemory, 
+        syncSharedClips, 
+        pendingClipsCount, 
+        courses, 
+        addCourse, 
+        isSyncing, 
+        loadBackup 
+    };
 };

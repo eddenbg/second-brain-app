@@ -1,6 +1,7 @@
-import React, { useState, useRef, useCallback } from 'react';
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { LiveSession, Modality } from '@google/genai';
-import { MicIcon, StopCircleIcon, SaveIcon, BrainCircuitIcon } from './Icons';
+import { MicIcon, StopCircleIcon, SaveIcon, BrainCircuitIcon, EyeIcon } from './Icons';
 import type { VoiceMemory, TranscriptSegment } from '../types';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
@@ -22,6 +23,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
   const [recordingTitle, setRecordingTitle] = useState('');
   const [tags, setTags] = useState('');
   const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+  const [discreetMode, setDiscreetMode] = useState(false);
   
   const finalTranscriptRef = useRef<string>('');
   const structuredTranscriptRef = useRef<TranscriptSegment[]>([]);
@@ -32,6 +34,45 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
+  // Function to request wake lock
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await navigator.wakeLock.request('screen');
+        console.log('Screen Wake Lock acquired');
+      } catch (err) {
+        console.error('Could not acquire wake lock:', err);
+      }
+    }
+  };
+
+  // Function to release wake lock
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        console.log('Screen Wake Lock released');
+      } catch (err) {
+        console.error('Error releasing wake lock', err);
+      }
+    }
+  };
+
+  // Re-acquire wake lock if visibility changes (e.g. user tabs away and comes back)
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+        if (document.visibilityState === 'visible' && isRecording) {
+            await requestWakeLock();
+        }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isRecording]);
 
   const startRecording = async () => {
     if (isRecording) return;
@@ -50,12 +91,26 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     }
 
     try {
+      // 1. Request Wake Lock first
+      await requestWakeLock();
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       setIsRecording(true);
 
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      // Create AudioContext. Note: We do NOT force sampleRate here anymore.
+      // We let the browser choose the native rate (usually 44100 or 48000 on Android).
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = context;
+      
+      // Ensure context is running (needed for some mobile browsers)
+      if (context.state === 'suspended') {
+        await context.resume();
+      }
+
+      // CRITICAL FIX: Use the ACTUAL sample rate of the context
+      const actualSampleRate = context.sampleRate;
+      console.log(`Audio recording at ${actualSampleRate}Hz`);
       
       const config: any = {
         responseModalities: [Modality.AUDIO], // Required but we only use transcription
@@ -90,7 +145,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
               const base64Data = btoa(binary);
 
               sessionPromiseRef.current?.then((session) => {
-                session.sendRealtimeInput({ media: { data: base64Data, mimeType: 'audio/pcm;rate=16000' } });
+                // Send the ACTUAL sample rate to Gemini so it knows how to process the audio
+                session.sendRealtimeInput({ media: { data: base64Data, mimeType: `audio/pcm;rate=${actualSampleRate}` } });
               });
             };
             source.connect(scriptProcessor);
@@ -131,10 +187,15 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
               setLiveTranscript(prev => prev + transcriptChunk);
             }
           },
-          onerror: (e: ErrorEvent) => {
+          onerror: (e: any) => {
             console.error('Live session error:', e);
-            setError('An error occurred during transcription. Please try again.');
-            stopRecording(false);
+            const errorMsg = e.message || e.error?.message || "Unknown error";
+            // Don't alert immediately, try to keep going if possible, or fail gracefully
+            if (errorMsg.includes("rate")) {
+               setError(`Sample rate mismatch. Recording at ${actualSampleRate}Hz.`);
+            } else {
+               setError(`Transcription paused: ${errorMsg}`);
+            }
           },
           onclose: (e: CloseEvent) => {
              // Closed
@@ -147,15 +208,21 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       console.error('Error starting recording:', err);
       setError('Could not access microphone. Please check permissions.');
       setIsRecording(false);
+      releaseWakeLock(); // Release if start failed
     }
   };
 
   const stopRecording = useCallback(async (shouldSave: boolean = true) => {
     if (!isRecording) return;
     
+    // Release resources
     mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     scriptProcessorRef.current?.disconnect();
     audioContextRef.current?.close();
+
+    // Release Wake Lock
+    await releaseWakeLock();
+    setDiscreetMode(false);
 
     if (sessionPromiseRef.current) {
         try {
@@ -186,7 +253,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         setIsGeneratingTitle(false);
       }
     } else {
-      onCancel();
+      if (!shouldSave) {
+          onCancel();
+      }
     }
   }, [isRecording, onCancel, titlePlaceholder]);
 
@@ -236,6 +305,18 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         setIsGeneratingTitle(false);
     }
   };
+
+  if (discreetMode && isRecording) {
+      return (
+          <div 
+            className="fixed inset-0 bg-black z-[100] flex items-center justify-center cursor-pointer touch-none"
+            onClick={() => setDiscreetMode(false)}
+          >
+              {/* Very faint hint, mostly invisible on OLED in dark room */}
+              <div className="text-gray-900 text-sm select-none opacity-5">Tap to wake</div>
+          </div>
+      )
+  }
 
   if (isSaving) {
     return (
@@ -307,9 +388,23 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             <MicIcon className="w-14 h-14 sm:w-20 sm:h-20 text-white" />
           )}
         </button>
-        <p className="text-xl text-gray-300 font-semibold h-8">
-          {isRecording ? 'Recording...' : 'Tap to start recording'}
-        </p>
+        <div className="text-center h-8">
+            <p className="text-xl text-gray-300 font-semibold">
+            {isRecording ? 'Recording...' : 'Tap to start recording'}
+            </p>
+            {isRecording && <p className="text-xs text-green-400 mt-1">Screen will stay awake.</p>}
+        </div>
+        
+        {isRecording && (
+            <button 
+                onClick={() => setDiscreetMode(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-700 rounded-full text-gray-300 hover:bg-gray-600 border border-gray-600"
+            >
+                <EyeIcon className="w-5 h-5" />
+                <span>Discreet Mode (Black Screen)</span>
+            </button>
+        )}
+
         {error && <p className="text-red-400 text-center">{error}</p>}
       </div>
       {(isRecording || liveTranscript) && (

@@ -1,9 +1,11 @@
+
 {
   "name": "My Second Brain",
   "short_name": "Second Brain",
   "description": "An accessible app to capture your thoughts, web clips, and items.",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#111827",
   "theme_color": "#1f2937",
   "icons": [
