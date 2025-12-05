@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { AnyMemory, VoiceMemory, DocumentMemory } from '../types';
 import { generateSummaryForContent, extractTextFromImage, generateTitleForContent, generateSpeechFromText } from '../services/geminiService';
@@ -296,13 +297,17 @@ const AddDocumentView: React.FC<{
         if (extractedText) {
              return (
                 <div className="space-y-4">
-                     <textarea value={extractedText} onChange={e => setExtractedText(e.target.value)} rows={10} className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600"/>
+                     <div className="w-full bg-gray-800 rounded-lg p-2 border border-gray-700 flex justify-center items-center">
+                        <img src={imageDataUrl || ''} alt="Scanned document source" className="max-h-60 object-contain rounded-md"/>
+                     </div>
+                     
                      <div className="flex gap-2">
                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter a title for the document" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600"/>
-                           <button onClick={handleGenerateTitle} disabled={isLoading === 'title'} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2">
+                           <button onClick={handleGenerateTitle} disabled={isLoading === 'title'} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2 flex-shrink-0">
                                <BrainCircuitIcon className="w-5 h-5"/> {isLoading === 'title' ? '...' : 'Generate'}
                            </button>
                     </div>
+                     <textarea value={extractedText} onChange={e => setExtractedText(e.target.value)} rows={8} className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600"/>
                 </div>
             )
         }
@@ -346,22 +351,7 @@ const AddDocumentView: React.FC<{
         )
     };
 
-    return (
-        <div>
-            <header className="flex items-center mb-4">
-                <button onClick={onCancel} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button>
-                <h2 className="text-2xl font-bold">Add Document to {course}</h2>
-            </header>
-            <div className="space-y-4">
-                {renderContent()}
-                {error && <p className="text-center text-red-400">{error}</p>}
-            </div>
-            {extractedText && <button onClick={handleSave} disabled={!title.trim()} className="mt-6 w-full p-4 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:bg-gray-500">Save Document</button>}
-        </div>
-    )
-};
-
-const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, onUpdate, bulkDelete, courses, addCourse }) => {
+    const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, onUpdate, bulkDelete, courses, addCourse }) => {
     type View = 'courses' | 'lectures' | 'lectureDetail' | 'documentDetail' | 'qa' | 'record' | 'addDocument' | 'temporaryScan';
     const [view, setView] = useState<View>('courses');
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
@@ -437,7 +427,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
     }
 
     if (view === 'record') {
-        return <Recorder onSave={(mem) => handleSaveMemory(mem as Omit<VoiceMemory, 'id'|'date'|'category'>)} onCancel={() => setView('lectures')} titlePlaceholder={`${selectedCourse} - ${new Date().toLocaleDateString()}`} saveButtonText="Save Lecture" enableDiarization={true}/>;
+        // REMOVED: enableDiarization={true} to fix crash on Android
+        return <Recorder onSave={(mem) => handleSaveMemory(mem as Omit<VoiceMemory, 'id'|'date'|'category'>)} onCancel={() => setView('lectures')} titlePlaceholder={`${selectedCourse} - ${new Date().toLocaleDateString()}`} saveButtonText="Save Lecture" />;
     }
     
     if (view === 'lectureDetail' && selectedLecture) {
@@ -483,6 +474,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
                                 </div>
                             </div>
                         </div>
+                    ))
+                )}
             </div>
         );
     }
