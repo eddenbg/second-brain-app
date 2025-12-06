@@ -198,7 +198,7 @@ const AddDocumentView: React.FC<{
         setError(null);
         try {
             const base64Data = imageDataUrl.split(',')[1];
-    const mimeType = imageDataUrl.match(/data:([^;]+);/)?.\[1\] || 'image/jpeg';        } catch (e) { setError("Failed to extract text."); }
+    const mimeType = imageDataUrl.match(/data:([^;]+);/)?.[1] || 'image/jpeg';        } catch (e) { setError("Failed to extract text."); }
         finally { setIsLoading(null); }
     };
     
