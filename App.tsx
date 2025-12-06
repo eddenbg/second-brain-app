@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import QASession from './components/QASession';
@@ -13,7 +12,7 @@ import AddToHomeScreenPrompt from './components/AddToHomeScreenPrompt';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import type { AnyMemory, WebMemory } from './types';
-import { SettingsIcon, RefreshCwIcon } from './components/Icons';
+import { SettingsIcon, RefreshCwIcon, Loader2Icon } from './components/Icons';
 
 type View = 'physical' | 'college' | 'webclips' | 'askai' | 'voicenotes';
 
@@ -27,36 +26,10 @@ const viewTitles: Record<View, string> = {
 
 function App() {
   const [view, setView] = useState<View>('college');
-  const [syncId, setSyncId] = useState<string | null>(() => localStorage.getItem('syncId'));
   const [showSettings, setShowSettings] = useState(false);
 
-  // Check for Magic Link / QR Code login (e.g. ?connect=123-abc)
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const connectId = params.get('connect');
-    if (connectId) {
-        localStorage.setItem('syncId', connectId);
-        setSyncId(connectId);
-        // Clear param from URL so it looks clean
-        window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, []);
-
-  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing, loadBackup } = useRecordings(syncId);
+  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing, user, loading } = useRecordings();
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
-
-  const handleSetSyncId = (id: string) => {
-      localStorage.setItem('syncId', id);
-      setSyncId(id);
-  };
-  
-  const handleResetSync = () => {
-      if(window.confirm("Are you sure? This will disconnect this device. You can reconnect later by entering the same Sync ID.")) {
-        localStorage.removeItem('syncId');
-        setSyncId(null);
-        setShowSettings(false);
-      }
-  }
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const physicalMemories = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
@@ -71,8 +44,16 @@ function App() {
     updateMemory(id, updates);
   }
 
-  if (!syncId) {
-    return <SyncSetup onSyncIdSet={handleSetSyncId} />;
+  if (loading) {
+      return (
+          <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
+              <Loader2Icon className="w-12 h-12 animate-spin text-blue-500" />
+          </div>
+      )
+  }
+
+  if (!user) {
+    return <SyncSetup onSyncIdSet={() => {}} />;
   }
 
   const renderView = () => {
@@ -96,11 +77,11 @@ function App() {
     <div className="grid grid-rows-[auto_1fr_auto] h-full bg-gray-900 text-white">
       {showSettings && (
           <SettingsModal 
-            syncId={syncId} 
+            syncId={user.email || 'User'} 
             onClose={() => setShowSettings(false)} 
-            onReset={handleResetSync} 
-            data={{ memories, courses }}
-            onImport={loadBackup}
+            onReset={() => {}} 
+            data={{ memories, courses }} 
+            onImport={() => {}} 
           />
       )}
       <header className="p-4 text-center bg-gray-800 border-b border-gray-700 flex justify-between items-center">

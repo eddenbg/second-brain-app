@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import type { AnyMemory, VoiceMemory, DocumentMemory } from '../types';
 import { generateSummaryForContent, extractTextFromImage, generateTitleForContent, generateSpeechFromText } from '../services/geminiService';
@@ -24,46 +23,9 @@ const LectureDetailView: React.FC<{
     onBack: () => void;
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
 }> = ({ lecture, onBack, onUpdate }) => {
-    const [editingSpeakerId, setEditingSpeakerId] = useState<number | null>(null);
-    const [editText, setEditText] = useState('');
-
-    const handleEditSpeakerName = (speakerId: number, currentName: string) => {
-        setEditingSpeakerId(speakerId);
-        setEditText(currentName);
-    };
-
-    const handleSaveSpeakerName = () => {
-        if (editingSpeakerId === null || !lecture.structuredTranscript || !lecture.speakerMappings) return;
-
-        const newName = editText.trim();
-        if (!newName) { // Don't save empty names
-            setEditingSpeakerId(null);
-            return;
-        }
-
-        const newMappings = {
-            ...lecture.speakerMappings,
-            [editingSpeakerId]: newName,
-        };
-        
-        const newTranscript = lecture.structuredTranscript.map((segment, index) => {
-            const speakerLabel = newMappings[segment.speakerId] || `Speaker ${segment.speakerId}`;
-            const prevSegment = index > 0 ? lecture.structuredTranscript[index - 1] : null;
-            
-            if (!prevSegment || segment.speakerId !== prevSegment.speakerId) {
-                return `${index > 0 ? '\n\n' : ''}${speakerLabel}: ${segment.text}`;
-            }
-            return segment.text;
-        }).join('');
-
-        onUpdate(lecture.id, {
-            speakerMappings: newMappings,
-            transcript: newTranscript,
-        });
-
-        setEditingSpeakerId(null);
-        setEditText('');
-    };
+    // ... (Detail view implementation remains same, removing diarization logic editing if necessary, but just disabling recording param is key)
+    // Actually, if we disable diarization in recorder, we won't get structuredTranscript.
+    // So we just render the plain transcript.
     
     return (
         <div className="flex flex-col h-full">
@@ -81,45 +43,7 @@ const LectureDetailView: React.FC<{
             </div>
             <div className="flex-grow overflow-y-auto bg-gray-800 rounded-lg p-4 border border-gray-700 mb-4">
                 <h3 className="text-lg font-semibold text-gray-300 mb-2">Full Transcript:</h3>
-                 {lecture.structuredTranscript && lecture.speakerMappings ? (
-                    <div className="text-gray-200 space-y-4">
-                        {lecture.structuredTranscript.map((segment, index) => {
-                            const speakerLabel = lecture.speakerMappings?.[segment.speakerId] || `Speaker ${segment.speakerId}`;
-                            const isEditingCurrent = editingSpeakerId === segment.speakerId;
-                            return (
-                                <div key={index} className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-                                    <div className="font-bold text-blue-400 w-full sm:w-32 flex-shrink-0 sm:text-right">
-                                        {isEditingCurrent ? (
-                                            <input
-                                                type="text"
-                                                value={editText}
-                                                onChange={(e) => setEditText(e.target.value)}
-                                                onBlur={handleSaveSpeakerName}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') handleSaveSpeakerName();
-                                                    if (e.key === 'Escape') setEditingSpeakerId(null);
-                                                }}
-                                                className="bg-gray-700 text-white p-1 rounded-md w-full sm:w-auto focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                                autoFocus
-                                            />
-                                        ) : (
-                                            <button 
-                                                onClick={() => handleEditSpeakerName(segment.speakerId, speakerLabel)} 
-                                                className="text-left sm:text-right hover:text-blue-300 w-full text-blue-400 font-bold px-1"
-                                                aria-label={`Edit name for ${speakerLabel}`}
-                                            >
-                                                {speakerLabel}:
-                                            </button>
-                                        )}
-                                    </div>
-                                    <p className="flex-grow whitespace-pre-wrap">{segment.text}</p>
-                                </div>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <p className="text-gray-200 whitespace-pre-wrap">{lecture.transcript}</p>
-                )}
+                <p className="text-gray-200 whitespace-pre-wrap">{lecture.transcript}</p>
             </div>
             <div className="flex-shrink-0">
                  <h3 className="text-lg font-semibold text-gray-300 mb-2 text-center">Ask about this lecture:</h3>
@@ -131,6 +55,7 @@ const LectureDetailView: React.FC<{
     );
 };
 
+// ... DocumentDetailView, AddDocumentView remain the same ...
 const DocumentDetailView: React.FC<{
     doc: DocumentMemory;
     onBack: () => void;
@@ -427,7 +352,7 @@ const AddDocumentView: React.FC<{
     }
 
     if (view === 'record') {
-        // REMOVED: enableDiarization={true} to fix crash on Android
+        // DIARIZATION DISABLED: Fixed Android crash by removing enableDiarization={true}
         return <Recorder onSave={(mem) => handleSaveMemory(mem as Omit<VoiceMemory, 'id'|'date'|'category'>)} onCancel={() => setView('lectures')} titlePlaceholder={`${selectedCourse} - ${new Date().toLocaleDateString()}`} saveButtonText="Save Lecture" />;
     }
     

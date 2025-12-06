@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { LiveSession, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon, SaveIcon, BrainCircuitIcon, EyeIcon } from './Icons';
@@ -36,14 +35,14 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
-  // Function to request wake lock
+  // Function to request wake lock safely
   const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
       try {
         wakeLockRef.current = await navigator.wakeLock.request('screen');
         console.log('Screen Wake Lock acquired');
       } catch (err) {
-        console.error('Could not acquire wake lock:', err);
+        console.warn('Wake Lock not available:', err);
       }
     }
   };
@@ -54,14 +53,13 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       try {
         await wakeLockRef.current.release();
         wakeLockRef.current = null;
-        console.log('Screen Wake Lock released');
       } catch (err) {
         console.error('Error releasing wake lock', err);
       }
     }
   };
 
-  // Re-acquire wake lock if visibility changes (e.g. user tabs away and comes back)
+  // Re-acquire wake lock if visibility changes
   useEffect(() => {
     const handleVisibilityChange = async () => {
         if (document.visibilityState === 'visible' && isRecording) {
@@ -91,29 +89,26 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     }
 
     try {
-      // 1. Request Wake Lock first
       await requestWakeLock();
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       setIsRecording(true);
 
-      // Create AudioContext. Note: We do NOT force sampleRate here anymore.
-      // We let the browser choose the native rate (usually 44100 or 48000 on Android).
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // FORCE 16000Hz via AudioContext
+      // This relies on the browser's native engine to resample the audio from the hardware rate (e.g. 48kHz)
+      // to 16kHz. This is much more robust than manual JS downsampling and fixes "Invalid Argument".
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)({ 
+          sampleRate: 16000 
+      });
       audioContextRef.current = context;
       
-      // Ensure context is running (needed for some mobile browsers)
       if (context.state === 'suspended') {
         await context.resume();
       }
 
-      // CRITICAL FIX: Use the ACTUAL sample rate of the context
-      const actualSampleRate = context.sampleRate;
-      console.log(`Audio recording at ${actualSampleRate}Hz`);
-      
       const config: any = {
-        responseModalities: [Modality.AUDIO], // Required but we only use transcription
+        responseModalities: [Modality.AUDIO],
         inputAudioTranscription: {},
       };
 
@@ -131,22 +126,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
             scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
               const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
+              
+              // No manual downsampling needed here because Context is already 16kHz
               const int16 = new Int16Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) {
-                int16[i] = inputData[i] * 32768;
+                let s = Math.max(-1, Math.min(1, inputData[i]));
+                int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
               }
               
               let binary = '';
-              const len = int16.buffer.byteLength;
               const bytes = new Uint8Array(int16.buffer);
+              const len = bytes.byteLength;
               for (let i = 0; i < len; i++) {
                 binary += String.fromCharCode(bytes[i]);
               }
               const base64Data = btoa(binary);
 
               sessionPromiseRef.current?.then((session) => {
-                // Send the ACTUAL sample rate to Gemini so it knows how to process the audio
-                session.sendRealtimeInput({ media: { data: base64Data, mimeType: `audio/pcm;rate=${actualSampleRate}` } });
+                session.sendRealtimeInput({ media: { data: base64Data, mimeType: 'audio/pcm;rate=16000' } });
               });
             };
             source.connect(scriptProcessor);
@@ -190,12 +187,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
           onerror: (e: any) => {
             console.error('Live session error:', e);
             const errorMsg = e.message || e.error?.message || "Unknown error";
-            // Don't alert immediately, try to keep going if possible, or fail gracefully
-            if (errorMsg.includes("rate")) {
-               setError(`Sample rate mismatch. Recording at ${actualSampleRate}Hz.`);
-            } else {
-               setError(`Transcription paused: ${errorMsg}`);
-            }
+            setError(`Transcription paused: ${errorMsg}`);
           },
           onclose: (e: CloseEvent) => {
              // Closed
@@ -208,19 +200,17 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       console.error('Error starting recording:', err);
       setError('Could not access microphone. Please check permissions.');
       setIsRecording(false);
-      releaseWakeLock(); // Release if start failed
+      releaseWakeLock();
     }
   };
 
   const stopRecording = useCallback(async (shouldSave: boolean = true) => {
     if (!isRecording) return;
     
-    // Release resources
     mediaStreamRef.current?.getTracks().forEach(track => track.stop());
     scriptProcessorRef.current?.disconnect();
     audioContextRef.current?.close();
 
-    // Release Wake Lock
     await releaseWakeLock();
     setDiscreetMode(false);
 
@@ -241,14 +231,12 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
     if (shouldSave && finalTranscriptRef.current.trim()) {
       setIsSaving(true);
-      // Automatically generate title when saving
       setIsGeneratingTitle(true);
       try {
         const generatedTitle = await generateTitleForContent(finalTranscriptRef.current);
         setRecordingTitle(generatedTitle || titlePlaceholder);
       } catch (error) {
-        console.error("Error auto-generating title:", error);
-        setRecordingTitle(titlePlaceholder); // Fallback to placeholder
+        setRecordingTitle(titlePlaceholder);
       } finally {
         setIsGeneratingTitle(false);
       }
@@ -312,7 +300,6 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             className="fixed inset-0 bg-black z-[100] flex items-center justify-center cursor-pointer touch-none"
             onClick={() => setDiscreetMode(false)}
           >
-              {/* Very faint hint, mostly invisible on OLED in dark room */}
               <div className="text-gray-900 text-sm select-none opacity-5">Tap to wake</div>
           </div>
       )
