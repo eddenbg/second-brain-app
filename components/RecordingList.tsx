@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import Recorder from './Recorder';
 import type { AnyMemory, VoiceMemory } from '../types';
@@ -23,6 +24,7 @@ const VoiceNoteItem: React.FC<{
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
     const titleInputRef = useRef<HTMLInputElement>(null);
+    const voiceMemory = memory as VoiceMemory;
 
     useEffect(() => {
         if (isEditing && titleInputRef.current) {
@@ -50,6 +52,15 @@ const VoiceNoteItem: React.FC<{
         }
     };
 
+    const toggleActionItem = (index: number) => {
+        if (!voiceMemory.actionItems) return;
+        const newItems = [...voiceMemory.actionItems];
+        newItems[index].done = !newItems[index].done;
+        onUpdate(memory.id, { actionItems: newItems });
+    };
+
+    const activeTaskCount = voiceMemory.actionItems?.filter(i => !i.done).length || 0;
+
     return (
         <div className={`bg-gray-800 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-blue-500' : 'border-gray-700'}`}>
             <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={handleHeaderClick}>
@@ -58,7 +69,14 @@ const VoiceNoteItem: React.FC<{
                         {isSelected && <CheckIcon className="w-4 h-4 text-white"/>}
                     </div>
                 )}
-                <div className="flex-shrink-0"><MicIcon className="w-6 h-6 text-blue-400"/></div>
+                <div className="flex-shrink-0 relative">
+                    <MicIcon className="w-6 h-6 text-blue-400"/>
+                    {activeTaskCount > 0 && (
+                        <div className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                            {activeTaskCount}
+                        </div>
+                    )}
+                </div>
                 <div className="flex-grow">
                     {isEditing ? (
                         <input
@@ -83,6 +101,37 @@ const VoiceNoteItem: React.FC<{
             </div>
             {isExpanded && !isSelectMode && (
                 <div className="p-4 border-t border-gray-700 space-y-4">
+                     
+                     {/* Audio Player */}
+                     {voiceMemory.audioDataUrl && (
+                        <div className="bg-gray-900 p-3 rounded-lg border border-gray-600">
+                             <h4 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wide">Playback</h4>
+                             <audio controls src={voiceMemory.audioDataUrl} className="w-full h-10" />
+                        </div>
+                     )}
+
+                     {voiceMemory.actionItems && voiceMemory.actionItems.length > 0 && (
+                        <div className="bg-gray-700 bg-opacity-30 rounded-lg p-3 border border-gray-600">
+                            <h4 className="text-sm font-bold text-gray-300 mb-2 uppercase tracking-wide">To-Do List</h4>
+                            <ul className="space-y-2">
+                                {voiceMemory.actionItems.map((item, idx) => (
+                                    <li key={idx} className="flex items-start gap-3 p-1">
+                                        <button 
+                                            onClick={() => toggleActionItem(idx)}
+                                            className={`flex-shrink-0 w-6 h-6 rounded border-2 flex items-center justify-center transition-colors ${item.done ? 'bg-green-600 border-green-600' : 'border-gray-400 hover:border-blue-400'}`}
+                                            aria-label={item.done ? "Mark as not done" : "Mark as done"}
+                                        >
+                                            {item.done && <CheckIcon className="w-4 h-4 text-white"/>}
+                                        </button>
+                                        <span className={`text-gray-200 text-lg ${item.done ? 'line-through text-gray-500' : ''}`}>
+                                            {item.text}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     <div className="flex items-center justify-end space-x-2">
                          {isEditing ? (
                              <>
@@ -110,7 +159,7 @@ const VoiceNoteItem: React.FC<{
                     )}
                     <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
                         <h4 className="text-lg font-semibold text-gray-300 mb-2">Transcript:</h4>
-                        <p className="text-gray-200 whitespace-pre-wrap">{(memory as VoiceMemory).transcript}</p>
+                        <p className="text-gray-200 whitespace-pre-wrap">{voiceMemory.transcript}</p>
                     </div>
                 </div>
             )}
@@ -160,9 +209,9 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
 
     return (
         <div className="space-y-8">
-            <button onClick={() => setIsRecording(true)} className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-blue-600 rounded-lg hover:bg-blue-700 border-2 border-dashed border-blue-400 hover:border-blue-300 transition-colors">
+            <button onClick={() => setIsRecording(true)} className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-blue-600 rounded-lg hover:bg-blue-700 border-2 border-dashed border-blue-400 hover:border-blue-300 transition-colors focus:ring-4 focus:ring-blue-400" aria-label="Record new thought or to-do">
                 <MicIcon className="w-10 h-10 text-white"/>
-                <span className="text-xl font-semibold text-white">Record New Voice Note</span>
+                <span className="text-xl font-semibold text-white">Record Thoughts & To-Dos</span>
             </button>
             <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-gray-700 pb-2">
@@ -183,7 +232,7 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
                 {memories.length === 0 ? (
                     <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
                         <p className="mt-2 text-gray-400">
-                            Tap the button above to record your first voice note.
+                            Tap the button above to record your first thought or to-do.
                         </p>
                     </div>
                 ) : (

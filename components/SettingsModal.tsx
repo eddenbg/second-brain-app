@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { XIcon, LogOutIcon } from './Icons';
 import type { StoredData } from '../hooks/useRecordings';
@@ -14,9 +15,15 @@ interface SettingsModalProps {
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ syncId, onClose }) => {
 
-    const handleSignOut = () => {
+    const handleSignOut = async () => {
         if(window.confirm("Are you sure you want to sign out?")) {
-            signOut(auth);
+            // @ts-ignore
+            if (auth && auth.type === 'mock') {
+                // @ts-ignore
+                await auth.signOut();
+            } else {
+                await signOut(auth);
+            }
             onClose();
         }
     };

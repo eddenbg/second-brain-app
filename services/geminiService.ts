@@ -1,6 +1,7 @@
+
 import type { AnyMemory } from '../types';
 import { getGeminiInstance } from '../utils/gemini';
-import { Modality } from '@google/genai';
+import { Modality, Type } from '@google/genai';
 
 const model = "gemini-2.5-flash";
 const UNAVAILABLE_ERROR_MESSAGE = "AI features are unavailable. Please check your API key configuration.";
@@ -25,11 +26,14 @@ export async function answerQuestionFromContext(memories: AnyMemory[], question:
     let memoryString = '';
 
     if (mem.type === 'voice') {
+      const actionItems = mem.actionItems?.map(i => `- [${i.done ? 'x' : ' '}] ${i.text}`).join('\n') || '';
+      const actionItemsStr = actionItems ? `\nAction Items:\n${actionItems}` : '';
+      
       if (mem.category === 'college') {
         const courseInfo = mem.course ? ` for course "${mem.course}"` : '';
-        memoryString = `--- College Lecture${courseInfo}: "${mem.title}" (Recorded on: ${date}${locationString}) ---${tagsString}\nTranscript:\n${mem.transcript}\n--- End of College Lecture: "${mem.title}" ---`;
+        memoryString = `--- College Lecture${courseInfo}: "${mem.title}" (Recorded on: ${date}${locationString}) ---${tagsString}\nTranscript:\n${mem.transcript}${actionItemsStr}\n--- End of College Lecture: "${mem.title}" ---`;
       } else {
-        memoryString = `--- Personal Voice Note: "${mem.title}" (Recorded on: ${date}${locationString}) ---${tagsString}\nTranscript:\n${mem.transcript}\n--- End of Personal Voice Note: "${mem.title}" ---`;
+        memoryString = `--- Personal Voice Note: "${mem.title}" (Recorded on: ${date}${locationString}) ---${tagsString}\nTranscript:\n${mem.transcript}${actionItemsStr}\n--- End of Personal Voice Note: "${mem.title}" ---`;
       }
     } else if (mem.type === 'web') {
       memoryString = `--- Web Clip: "${mem.title}" (Saved on: ${date}${locationString}, From: ${mem.url || 'N/A'}) ---${tagsString}\nContent:\n${mem.content}`;
@@ -119,6 +123,46 @@ export async function generateTitleForContent(content: string): Promise<string> 
     } catch (error) {
         console.error("Error generating title:", error);
         return "Untitled";
+    }
+}
+
+export async function analyzeVoiceNote(content: string): Promise<{ title: string; actionItems: string[] }> {
+    const ai = getGeminiInstance();
+    if (!ai) return { title: "Untitled", actionItems: [] };
+
+    if (!content.trim()) return { title: "Empty Note", actionItems: [] };
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Analyze the following voice note transcript. Provide a concise title (max 10 words) and a list of specific action items or to-dos mentioned or implied in the text.
+            
+            Transcript:
+            ${content.substring(0, 4000)}`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        title: { type: Type.STRING },
+                        actionItems: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING }
+                        }
+                    },
+                    required: ["title", "actionItems"]
+                }
+            }
+        });
+        
+        const json = JSON.parse(response.text);
+        return {
+            title: json.title || "Untitled Voice Note",
+            actionItems: json.actionItems || []
+        };
+    } catch (error) {
+        console.error("Error analyzing voice note:", error);
+        return { title: "Voice Note", actionItems: [] };
     }
 }
 
