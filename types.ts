@@ -56,3 +56,25 @@ export interface DocumentMemory extends BaseMemory {
 }
 
 export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory;
+
+export type TaskStatus = 'idea' | 'todo' | 'in-progress' | 'done';
+
+export interface SubTask {
+    id: string;
+    title: string;
+    done: boolean;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  category: 'college' | 'personal';
+  course?: string; // For college
+  project?: string; // For personal or college projects
+  subtasks?: SubTask[];
+  dueDate?: string;
+  linkedMemoryIds?: string[]; // IDs of memories linked to this task
+  createdAt: string;
+}

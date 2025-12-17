@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { MicIcon, BookOpenIcon, BrainCircuitIcon, CameraIcon, GlobeIcon } from './Icons';
 
@@ -54,7 +55,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
             onClick={() => setView('askai')}
         />
         <NavButton
-            label="Voice Notes"
+            label="Personal"
             icon={<MicIcon className="w-8 h-8" />}
             isActive={view === 'voicenotes'}
             onClick={() => setView('voicenotes')}

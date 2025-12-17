@@ -153,4 +153,22 @@ const SyncSetup: React.FC<SyncSetupProps> = () => {
                             className="text-gray-500 hover:text-gray-300 text-xs flex items-center justify-center gap-1"
                         >
                             <SettingsIcon className="w-3 h-3"/> Re-configure Database
-                        </button
+                        </button>
+                    </div>
+                </>
+            ) : (
+                <div className="mt-6">
+                    <button 
+                        onClick={() => setShowConfig(true)} 
+                        className="text-blue-400 hover:text-blue-300 flex items-center justify-center gap-2 border border-blue-500 px-4 py-2 rounded-lg"
+                    >
+                        <SettingsIcon className="w-4 h-4"/> Configure Cloud Database
+                    </button>
+                    <p className="text-xs text-gray-500 mt-2">Required for multi-device sync</p>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default SyncSetup;

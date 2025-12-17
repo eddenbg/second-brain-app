@@ -1,13 +1,15 @@
 
-import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import type { AnyMemory, VoiceMemory, DocumentMemory } from '../types';
-import { generateSummaryForContent, extractTextFromImage, generateTitleForContent, generateSpeechFromText } from '../services/geminiService';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { AnyMemory, VoiceMemory, DocumentMemory, Task } from '../types';
+import { generateSummaryForContent, generateSpeechFromText } from '../services/geminiService';
+import { generatePDF } from '../services/pdfService';
 import { decode, decodeAudioData } from '../utils/audio';
 import Recorder from './Recorder';
 import QASession from './QASession';
 import TemporaryScanView from './TemporaryScanView';
-import { FolderIcon, MicIcon, PlusCircleIcon, ArrowLeftIcon, BrainCircuitIcon, BookOpenIcon, TrashIcon, FileTextIcon, CameraIcon, UploadIcon, Volume2Icon, Loader2Icon, SaveIcon } from './Icons';
-import { getCurrentLocation } from '../utils/location';
+import KanbanBoard from './KanbanBoard';
+import AddDocumentModal from './AddDocumentModal';
+import { FolderIcon, MicIcon, PlusCircleIcon, ArrowLeftIcon, BrainCircuitIcon, FileTextIcon, CameraIcon, Volume2Icon, Loader2Icon, DownloadIcon } from './Icons';
 
 interface CollegeViewProps {
     lectures: AnyMemory[];
@@ -17,7 +19,12 @@ interface CollegeViewProps {
     bulkDelete: (ids: string[]) => void;
     courses: string[];
     addCourse: (courseName: string) => void;
+    tasks: Task[];
+    addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
+    updateTask: (id: string, updates: Partial<Task>) => void;
+    deleteTask: (id: string) => void;
 }
+
 
 const LectureDetailView: React.FC<{
     lecture: VoiceMemory;
@@ -32,6 +39,7 @@ const LectureDetailView: React.FC<{
                 </button>
                 <h2 className="text-xl font-bold truncate">{lecture.title}</h2>
             </header>
+            
             <div className="mb-4 bg-gray-800 rounded-lg p-4 border border-gray-700">
                 <h3 className="text-lg font-semibold text-gray-300 mb-2">Summary:</h3>
                 <p className="text-gray-200 italic">
@@ -45,7 +53,7 @@ const LectureDetailView: React.FC<{
             <div className="flex-shrink-0">
                  <h3 className="text-lg font-semibold text-gray-300 mb-2 text-center">Ask about this lecture:</h3>
                 <div className="h-[30vh] border border-gray-700 rounded-lg">
-                   <QASession memories={[lecture]} />
+                   <QASession memories={[lecture]} tasks={[]} />
                 </div>
             </div>
         </div>
@@ -58,8 +66,8 @@ const DocumentDetailView: React.FC<{
 }> = ({ doc, onBack }) => {
     const [isLoadingAudio, setIsLoadingAudio] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const audioContextRef = React.useRef<AudioContext | null>(null);
+    const audioSourceRef = React.useRef<AudioBufferSourceNode | null>(null);
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -102,11 +110,19 @@ const DocumentDetailView: React.FC<{
             <div className="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto mb-4">
                 <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 flex justify-center items-center"><img src={doc.imageDataUrl} alt="Scanned document" className="max-w-full max-h-full object-contain rounded-md"/></div>
                 <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 overflow-y-auto">
-                    <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-semibold text-gray-300">Extracted Text:</h3>
-                        <button onClick={handleReadAloud} disabled={isLoadingAudio || isPlaying} className="flex items-center gap-2 px-3 py-1 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-500">
-                            {isLoadingAudio ? <Loader2Icon className="w-5 h-5 animate-spin"/> : <Volume2Icon className="w-5 h-5"/>}
-                            {isLoadingAudio ? 'Generating...' : isPlaying ? 'Playing...' : 'Read Aloud'}
+                    <div className="flex flex-col gap-2 mb-4">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-lg font-semibold text-gray-300">Extracted Text:</h3>
+                            <button onClick={handleReadAloud} disabled={isLoadingAudio || isPlaying} className="flex items-center gap-2 px-3 py-1 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-500 text-sm">
+                                {isLoadingAudio ? <Loader2Icon className="w-4 h-4 animate-spin"/> : <Volume2Icon className="w-4 h-4"/>}
+                                {isLoadingAudio ? '...' : isPlaying ? 'Stop' : 'Read'}
+                            </button>
+                        </div>
+                        <button 
+                            onClick={() => generatePDF(doc.title, doc.extractedText, doc.imageDataUrl)}
+                            className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 text-sm w-full"
+                        >
+                            <DownloadIcon className="w-4 h-4" /> Download PDF
                         </button>
                     </div>
                     <p className="text-gray-200 whitespace-pre-wrap">{doc.extractedText}</p>
@@ -115,192 +131,22 @@ const DocumentDetailView: React.FC<{
              <div className="flex-shrink-0">
                  <h3 className="text-lg font-semibold text-gray-300 mb-2 text-center">Ask about this document:</h3>
                 <div className="h-[30vh] border border-gray-700 rounded-lg">
-                   <QASession memories={[doc]} />
+                   <QASession memories={[doc]} tasks={[]} />
                 </div>
             </div>
         </div>
     );
 };
 
-const AddDocumentView: React.FC<{
-    course: string;
-    onSave: (memory: Omit<DocumentMemory, 'id'|'date'|'category'>) => void;
-    onCancel: () => void;
-}> = ({ course, onSave, onCancel }) => {
-    const [title, setTitle] = useState('');
-    const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-    const [extractedText, setExtractedText] = useState('');
-    const [isLoading, setIsLoading] = useState<'camera'|'ocr'|'title'|null>(null);
-    const [error, setError] = useState<string|null>(null);
-    const [stream, setStream] = useState<MediaStream | null>(null);
-    
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    
-    const stopCamera = useCallback(() => {
-        if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            setStream(null);
-        }
-    }, [stream]);
-
-    useEffect(() => { return () => { stopCamera(); }; }, [stopCamera]);
-
-    const startCamera = async () => {
-        stopCamera();
-        setImageDataUrl(null);
-        setError(null);
-        setIsLoading('camera');
-        try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-            setStream(mediaStream);
-        } catch (err) { setError("Could not access camera. Please check permissions."); }
-        finally { setIsLoading(null); }
-    };
-
-    useEffect(() => { if (stream && videoRef.current) { videoRef.current.srcObject = stream; } }, [stream]);
-
-    const takePicture = () => {
-        if (videoRef.current && canvasRef.current) {
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d')?.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-            const dataUrl = canvas.toDataURL('image/jpeg');
-            setImageDataUrl(dataUrl);
-            stopCamera();
-        }
-    };
-    
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setImageDataUrl(e.target?.result as string);
-                stopCamera();
-            };
-            reader.readAsDataURL(file);
-        } else {
-            setError('Please select a valid image file.');
-        }
-    };
-
-    const handleExtractText = async () => {
-        if (!imageDataUrl) return;
-        setIsLoading('ocr');
-        setError(null);
-        try {
-            const base64Data = imageDataUrl.split(',')[1];
-            const mimeType = imageDataUrl.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
-            const text = await extractTextFromImage(base64Data, mimeType);
-            setExtractedText(text);
-        } catch (e) { setError("Failed to extract text."); }
-        finally { setIsLoading(null); }
-    };
-    
-    const handleGenerateTitle = async () => {
-        if (!extractedText.trim()) return;
-        setIsLoading('title');
-        setTitle(await generateTitleForContent(extractedText));
-        setIsLoading(null);
-    };
-
-    const handleSave = async () => {
-        if (!imageDataUrl || !title.trim() || !extractedText.trim()) return;
-        const location = await getCurrentLocation();
-        onSave({ type: 'document', title, imageDataUrl, extractedText, course, ...(location && { location }) });
-    };
-
-    const renderContent = () => {
-        if (extractedText) {
-             return (
-                <div className="space-y-4">
-                     <div className="w-full bg-gray-800 rounded-lg p-2 border border-gray-700 flex justify-center items-center">
-                        <img src={imageDataUrl || ''} alt="Scanned document source" className="max-h-60 object-contain rounded-md"/>
-                     </div>
-                     
-                     <div className="flex gap-2">
-                           <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter a title for the document" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600"/>
-                           <button onClick={handleGenerateTitle} disabled={isLoading === 'title'} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2 flex-shrink-0">
-                               <BrainCircuitIcon className="w-5 h-5"/> {isLoading === 'title' ? '...' : 'Generate'}
-                           </button>
-                    </div>
-                     <textarea value={extractedText} onChange={e => setExtractedText(e.target.value)} rows={8} className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600"/>
-                </div>
-            )
-        }
-        if (imageDataUrl) {
-            return (
-                <div className="space-y-4 text-center">
-                    <img src={imageDataUrl} alt="Preview" className="max-h-96 w-full object-contain rounded-md" />
-                    <div className="flex gap-4 justify-center">
-                        <button onClick={() => setImageDataUrl(null)} className="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Retake</button>
-                        <button onClick={handleExtractText} disabled={isLoading === 'ocr'} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-500">
-                             {isLoading === 'ocr' ? 'Extracting...' : 'Extract Text'}
-                        </button>
-                    </div>
-                </div>
-            )
-        }
-        return (
-            <div className="space-y-4 text-center">
-                <div className="w-full aspect-video bg-gray-900 rounded-md flex items-center justify-center relative overflow-hidden border border-gray-700">
-                    <canvas ref={canvasRef} className="hidden" />
-                    {stream ? <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                        : <CameraIcon className="w-16 h-16 mx-auto text-gray-500" />
-                    }
-                </div>
-                {stream ? (
-                    <button onClick={takePicture} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2 mx-auto">
-                        <CameraIcon className="w-5 h-5"/> Take Picture
-                    </button>
-                ) : (
-                     <div className="flex gap-4 justify-center">
-                        <button onClick={startCamera} disabled={isLoading==='camera'} className="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 flex items-center gap-2">
-                           {isLoading==='camera' ? <Loader2Icon className="animate-spin w-5 h-5"/> : <CameraIcon className="w-5 h-5"/>} Open Camera
-                        </button>
-                         <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 flex items-center gap-2">
-                            <UploadIcon className="w-5 h-5"/> Upload Image
-                        </button>
-                         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-                    </div>
-                )}
-            </div>
-        )
-    };
-
-    return (
-        <div className="flex flex-col h-full">
-            <header className="flex items-center mb-4">
-                <button onClick={onCancel} className="p-2 mr-2 rounded-full hover:bg-gray-700">
-                    <ArrowLeftIcon className="w-6 h-6" />
-                </button>
-                <h2 className="text-xl font-bold truncate">Add Document to {course}</h2>
-            </header>
-            <div className="flex-grow overflow-y-auto bg-gray-800 rounded-lg p-4 border border-gray-700">
-                {renderContent()}
-            </div>
-            {extractedText && (
-                 <div className="mt-4 flex justify-end border-t border-gray-700 pt-4">
-                    <button onClick={handleSave} className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                        <SaveIcon className="w-6 h-6"/> Save Document
-                    </button>
-                </div>
-            )}
-        </div>
-    );
-};
-
-const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, onUpdate, bulkDelete, courses, addCourse }) => {
-    type View = 'courses' | 'lectures' | 'lectureDetail' | 'documentDetail' | 'qa' | 'record' | 'addDocument' | 'temporaryScan';
+const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, onUpdate, bulkDelete, courses, addCourse, tasks, addTask, updateTask, deleteTask }) => {
+    type View = 'courses' | 'lectures' | 'lectureDetail' | 'documentDetail' | 'qa' | 'record' | 'temporaryScan';
     const [view, setView] = useState<View>('courses');
+    const [showAddDocModal, setShowAddDocModal] = useState(false);
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
     const [selectedLecture, setSelectedLecture] = useState<VoiceMemory | null>(null);
     const [selectedDocument, setSelectedDocument] = useState<DocumentMemory | null>(null);
     const [newCourseName, setNewCourseName] = useState('');
+    const [activeTab, setActiveTab] = useState<'content' | 'tasks'>('content'); 
 
     const allCourses = useMemo(() => {
         const coursesFromMemories = lectures.map(l => l.course).filter(Boolean) as string[];
@@ -342,13 +188,22 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
     };
     
     const handleSaveMemory = (mem: Omit<AnyMemory, 'id'|'date'|'category'>) => {
+        // Category and Course are handled inside AddDocumentModal for documents, but need ensuring here for Recorder
+        // Recorder returns Omit<VoiceMemory...>, we assume 'college' category.
         onSave({ ...mem, category: 'college', course: selectedCourse || 'General' });
         setView('lectures');
     };
+    
+    const handleSaveDocument = (mem: Omit<DocumentMemory, 'id'|'date'>) => {
+        // AddDocumentModal already sets category/course
+        onSave(mem); 
+        setShowAddDocModal(false);
+    }
 
     const handleSelectCourse = (course: string) => {
         setSelectedCourse(course);
         setView('lectures');
+        setActiveTab('content'); // Default to content
     };
 
     const handleSelectItem = (item: AnyMemory) => {
@@ -364,13 +219,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
     if (view === 'temporaryScan') {
         return <TemporaryScanView onClose={() => setView('courses')} />;
     }
-    
-    if (view === 'addDocument' && selectedCourse) {
-        return <AddDocumentView course={selectedCourse} onSave={handleSaveMemory} onCancel={() => setView('lectures')} />;
-    }
 
     if (view === 'record') {
-        // DIARIZATION DISABLED: Fixed Android crash by removing enableDiarization={true}
         return <Recorder onSave={(mem) => handleSaveMemory(mem as Omit<VoiceMemory, 'id'|'date'|'category'>)} onCancel={() => setView('lectures')} titlePlaceholder={`${selectedCourse} - ${new Date().toLocaleDateString()}`} saveButtonText="Save Lecture" />;
     }
     
@@ -386,73 +236,144 @@ const CollegeView: React.FC<CollegeViewProps> = ({ lectures, onSave, onDelete, o
         return (
             <div className="flex flex-col h-full">
                 <header className="flex items-center mb-4"><button onClick={() => setView('courses')} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button><h2 className="text-xl font-bold">Ask About All College Notes</h2></header>
-                <div className="flex-grow border border-gray-700 rounded-lg"><QASession memories={lectures} /></div>
+                <div className="flex-grow border border-gray-700 rounded-lg"><QASession memories={lectures} tasks={[]} /></div>
             </div>
         );
     }
 
+    // --- Course Detail View (Includes Kanban) ---
     if (view === 'lectures' && selectedCourse) {
         const courseMemories = memoriesByCourse[selectedCourse] || [];
+        
         return (
-            <div className="space-y-4">
-                 <header className="flex items-center mb-4"><button onClick={() => setView('courses')} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button><h2 className="text-2xl font-bold">{selectedCourse}</h2></header>
-                <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => setView('record')} className="w-full flex items-center justify-center gap-2 p-4 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"><MicIcon className="w-6 h-6 text-white"/><span className="text-lg font-semibold text-white">Record Lecture</span></button>
-                    <button onClick={() => setView('addDocument')} className="w-full flex items-center justify-center gap-2 p-4 bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"><FileTextIcon className="w-6 h-6 text-white"/><span className="text-lg font-semibold text-white">Scan Document</span></button>
-                </div>
-                 {courseMemories.length === 0 ? <p className="text-center text-gray-400 py-8">No lectures or documents for this course yet.</p>
-                : courseMemories.map(mem => (
-                        <div key={mem.id} onClick={() => handleSelectItem(mem)} className="bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 cursor-pointer hover:border-blue-500 transition-colors">
-                            <div className="flex items-start gap-3">
-                                <div className="flex-shrink-0 mt-1">{mem.type === 'voice' ? <MicIcon className="w-5 h-5 text-blue-400"/> : <FileTextIcon className="w-5 h-5 text-indigo-400"/>}</div>
-                                <div className="flex-grow">
-                                    <h3 className="text-lg font-semibold text-white">{mem.title}</h3>
-                                    <p className="text-sm text-gray-400 mb-2">{new Date(mem.date).toLocaleString()}</p>
-                                    {mem.type === 'voice' && (mem as VoiceMemory).summary && (
-                                        <div className="border-t border-gray-700 pt-2 mt-2">
-                                            <h4 className="text-xs font-bold text-gray-500 uppercase mb-1">Summary</h4>
-                                            <p className="text-sm text-gray-300 italic">{(mem as VoiceMemory).summary || "Generating summary..."}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
+            <div className="flex flex-col h-full">
+                 {showAddDocModal && (
+                    <AddDocumentModal 
+                        course={selectedCourse} 
+                        onSave={handleSaveDocument} 
+                        onClose={() => setShowAddDocModal(false)}
+                    />
+                 )}
+                 <header className="flex items-center justify-between mb-4">
+                    <div className="flex items-center">
+                        <button onClick={() => setView('courses')} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button>
+                        <h2 className="text-2xl font-bold truncate">{selectedCourse}</h2>
+                    </div>
+                 </header>
+
+                 {/* Tab Switcher */}
+                 <div className="flex mb-4 bg-gray-800 rounded-lg p-1">
+                    <button onClick={() => setActiveTab('content')} className={`flex-1 py-2 rounded-md font-semibold transition-colors ${activeTab === 'content' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                        Lectures & Docs
+                    </button>
+                    <button onClick={() => setActiveTab('tasks')} className={`flex-1 py-2 rounded-md font-semibold transition-colors ${activeTab === 'tasks' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                        Tasks (Kanban)
+                    </button>
+                 </div>
+
+                {activeTab === 'content' ? (
+                    <div className="space-y-4 overflow-y-auto">
+                        <div className="grid grid-cols-2 gap-4">
+                            <button onClick={() => setView('record')} className="w-full flex items-center justify-center gap-2 p-4 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"><MicIcon className="w-6 h-6 text-white"/><span className="text-lg font-semibold text-white">Record Lecture</span></button>
+                            <button onClick={() => setShowAddDocModal(true)} className="w-full flex items-center justify-center gap-2 p-4 bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"><FileTextIcon className="w-6 h-6 text-white"/><span className="text-lg font-semibold text-white">Scan Document</span></button>
                         </div>
-                    ))
+                        {courseMemories.length === 0 ? <p className="text-center text-gray-400 py-8">No lectures or documents for this course yet.</p>
+                        : courseMemories.map(mem => (
+                                <div key={mem.id} onClick={() => handleSelectItem(mem)} className="bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 cursor-pointer hover:border-blue-500 transition-colors">
+                                    <div className="flex items-start gap-3">
+                                        <div className="flex-shrink-0 mt-1">{mem.type === 'voice' ? <MicIcon className="w-5 h-5 text-blue-400"/> : <FileTextIcon className="w-5 h-5 text-indigo-400"/>}</div>
+                                        <div className="flex-grow">
+                                            <div className="flex items-center gap-2">
+                                                <h3 className="text-lg font-semibold text-white">{mem.title}</h3>
+                                                {mem.type === 'document' && <span className="bg-indigo-900 text-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded">OCR</span>}
+                                            </div>
+                                            <p className="text-sm text-gray-400 mb-2">{new Date(mem.date).toLocaleString()}</p>
+                                            {mem.type === 'voice' && (mem as VoiceMemory).summary && (
+                                                <div className="border-t border-gray-700 pt-2 mt-2">
+                                                    <h4 className="text-xs font-bold text-gray-500 uppercase mb-1">Summary</h4>
+                                                    <p className="text-sm text-gray-300 italic">{(mem as VoiceMemory).summary || "Generating summary..."}</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        }
+                    </div>
+                ) : (
+                    <div className="flex-grow overflow-hidden">
+                        <KanbanBoard 
+                            tasks={tasks} 
+                            category="college"
+                            courseFilter={selectedCourse} 
+                            onUpdateTask={updateTask} 
+                            onDeleteTask={deleteTask}
+                            onAddTask={addTask}
+                            memories={lectures}
+                            onOpenMemory={handleSelectItem}
+                        />
+                    </div>
                 )}
             </div>
         );
     }
 
     return (
-        <div className="space-y-6">
-            <div className="space-y-4">
-                <h2 className="text-2xl font-bold text-white">My Courses</h2>
-                <div className="flex gap-2">
-                    <input type="text" value={newCourseName} onChange={(e) => setNewCourseName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddCourse()} placeholder="Create a new course folder" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                    <button onClick={handleAddCourse} className="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={!newCourseName.trim()}><PlusCircleIcon className="w-6 h-6" /></button>
-                </div>
-                {allCourses.length === 0 ? <div className="text-center py-10 px-6 bg-gray-800 rounded-lg"><FolderIcon className="w-12 h-12 mx-auto text-gray-500"/><p className="mt-2 text-gray-400">Create your first course folder above.</p></div>
-                : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{allCourses.map(course => (<div key={course} onClick={() => handleSelectCourse(course)} className="bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 cursor-pointer hover:border-blue-500 transition-colors flex flex-col items-center justify-center aspect-square"><FolderIcon className="w-12 h-12 text-blue-400 mb-2"/><span className="text-lg font-semibold text-center text-white">{course}</span><span className="text-sm text-gray-400">{(memoriesByCourse[course]?.length || 0)} items</span></div>))}</div>}
-            </div>
-             <div className="border-t border-gray-700 pt-6 space-y-4">
-                <h2 className="text-2xl font-bold text-white">Tools</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <button onClick={() => setView('qa')} className="text-left p-4 bg-purple-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-colors flex flex-col justify-between h-32">
-                        <div>
-                            <BrainCircuitIcon className="w-8 h-8 text-purple-300 mb-2"/>
-                            <span className="text-xl font-semibold text-white">Ask AI about College</span>
+        <div className="flex flex-col h-full">
+            {/* Top Level Tabs */}
+             <div className="flex mb-4 bg-gray-800 rounded-lg p-1 shrink-0">
+                <button onClick={() => setActiveTab('content')} className={`flex-1 py-2 rounded-md font-semibold transition-colors ${activeTab === 'content' ? 'bg-gray-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                    Courses
+                </button>
+                <button onClick={() => setActiveTab('tasks')} className={`flex-1 py-2 rounded-md font-semibold transition-colors ${activeTab === 'tasks' ? 'bg-gray-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
+                    All Tasks
+                </button>
+             </div>
+
+             {activeTab === 'tasks' ? (
+                 <div className="flex-grow overflow-hidden">
+                    <KanbanBoard 
+                        tasks={tasks} 
+                        category="college"
+                        courseFilter={null} 
+                        onUpdateTask={updateTask} 
+                        onDeleteTask={deleteTask}
+                        onAddTask={addTask}
+                        memories={lectures}
+                        onOpenMemory={handleSelectItem}
+                    />
+                 </div>
+             ) : (
+                <div className="space-y-6 overflow-y-auto">
+                    <div className="space-y-4">
+                        <div className="flex gap-2">
+                            <input type="text" value={newCourseName} onChange={(e) => setNewCourseName(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAddCourse()} placeholder="Create a new course folder" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
+                            <button onClick={handleAddCourse} className="p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50" disabled={!newCourseName.trim()}><PlusCircleIcon className="w-6 h-6" /></button>
                         </div>
-                        <p className="text-sm font-normal text-purple-200">Chat with all your saved notes.</p>
-                    </button>
-                    <button onClick={() => setView('temporaryScan')} className="text-left p-4 bg-cyan-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-colors flex flex-col justify-between h-32">
-                        <div>
-                            <CameraIcon className="w-8 h-8 text-cyan-300 mb-2"/>
-                            <span className="text-xl font-semibold text-white">Quick Scan</span>
+                        {allCourses.length === 0 ? <div className="text-center py-10 px-6 bg-gray-800 rounded-lg"><FolderIcon className="w-12 h-12 mx-auto text-gray-500"/><p className="mt-2 text-gray-400">Create your first course folder above.</p></div>
+                        : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{allCourses.map(course => (<div key={course} onClick={() => handleSelectCourse(course)} className="bg-gray-800 p-4 rounded-lg shadow-md border border-gray-700 cursor-pointer hover:border-blue-500 transition-colors flex flex-col items-center justify-center aspect-square"><FolderIcon className="w-12 h-12 text-blue-400 mb-2"/><span className="text-lg font-semibold text-center text-white">{course}</span><span className="text-sm text-gray-400">{(memoriesByCourse[course]?.length || 0)} items</span></div>))}</div>}
+                    </div>
+                    <div className="border-t border-gray-700 pt-6 space-y-4">
+                        <h2 className="text-2xl font-bold text-white">Tools</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <button onClick={() => setView('qa')} className="text-left p-4 bg-purple-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-colors flex flex-col justify-between h-32">
+                                <div>
+                                    <BrainCircuitIcon className="w-8 h-8 text-purple-300 mb-2"/>
+                                    <span className="text-xl font-semibold text-white">Ask AI about College</span>
+                                </div>
+                                <p className="text-sm font-normal text-purple-200">Chat with all your saved notes.</p>
+                            </button>
+                            <button onClick={() => setView('temporaryScan')} className="text-left p-4 bg-cyan-800 bg-opacity-50 rounded-lg hover:bg-opacity-70 transition-colors flex flex-col justify-between h-32">
+                                <div>
+                                    <CameraIcon className="w-8 h-8 text-cyan-300 mb-2"/>
+                                    <span className="text-xl font-semibold text-white">Quick Scan</span>
+                                </div>
+                                <p className="text-sm font-normal text-cyan-200">Scan, listen, and chat without saving.</p>
+                            </button>
                         </div>
-                        <p className="text-sm font-normal text-cyan-200">Scan, listen, and chat without saving.</p>
-                    </button>
+                    </div>
                 </div>
-            </div>
+             )}
         </div>
     );
 };

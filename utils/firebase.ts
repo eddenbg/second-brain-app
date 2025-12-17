@@ -1,6 +1,6 @@
 
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, enableMultiTabIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
 
 const LOCAL_STORAGE_CONFIG_KEY = 'second_brain_firebase_config';
@@ -100,6 +100,12 @@ try {
     }
     app = initializeApp(firebaseConfig);
     authExport = getAuth(app);
+    
+    // Explicitly set persistence to LOCAL (IndexedDB) to ensure PWAs stay logged in
+    setPersistence(authExport, browserLocalPersistence).catch((error) => {
+        console.warn("Firebase persistence could not be set:", error);
+    });
+
     dbExport = initializeFirestore(app, {
         cacheSizeBytes: CACHE_SIZE_UNLIMITED
     });

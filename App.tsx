@@ -1,10 +1,11 @@
+
 import React, { useState, useMemo } from 'react';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import QASession from './components/QASession';
 import VisionView from './components/VisionView';
 import WebClipsView from './components/WebClipsView';
-import VoiceNotesView from './components/RecordingList';
+import PersonalView from './components/PersonalView';
 import UpdateNotification from './components/UpdateNotification';
 import SyncSetup from './components/SyncSetup';
 import SettingsModal from './components/SettingsModal';
@@ -21,20 +22,25 @@ const viewTitles: Record<View, string> = {
     college: 'College',
     webclips: 'Web Clips',
     askai: 'Ask AI',
-    voicenotes: 'Voice Notes',
+    voicenotes: 'Personal',
 };
 
 function App() {
   const [view, setView] = useState<View>('college');
   const [showSettings, setShowSettings] = useState(false);
 
-  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing, user, loading } = useRecordings();
+  const { 
+    memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
+    tasks, addTask, updateTask, deleteTask, 
+    syncSharedClips, pendingClipsCount, courses, addCourse, isSyncing, user, loading 
+  } = useRecordings();
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const physicalMemories = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
   const webClipMemories = useMemo(() => memories.filter(m => m.type === 'web'), [memories]);
-  const voiceNoteMemories = useMemo(() => memories.filter(m => m.type === 'voice' && m.category === 'personal'), [memories]);
+  // Updated: Filter now includes 'document' type for personal category
+  const personalMemories = useMemo(() => memories.filter(m => m.category === 'personal' && (m.type === 'voice' || m.type === 'document')), [memories]);
 
   const handleUpdateMemory = (id: string, updates: Partial<AnyMemory>) => {
     updateMemory(id, updates);
@@ -61,15 +67,37 @@ function App() {
       case 'physical':
         return <VisionView memories={physicalMemories} onDelete={deleteMemory} onUpdate={handleUpdateMemory} onSave={addMemory} bulkDelete={bulkDeleteMemories} />;
       case 'college':
-        return <CollegeView lectures={collegeMemories} onDelete={deleteMemory} onUpdate={handleUpdateMemory} onSave={addMemory} bulkDelete={bulkDeleteMemories} courses={courses} addCourse={addCourse} />;
+        return <CollegeView 
+          lectures={collegeMemories} 
+          onDelete={deleteMemory} 
+          onUpdate={handleUpdateMemory} 
+          onSave={addMemory} 
+          bulkDelete={bulkDeleteMemories} 
+          courses={courses} 
+          addCourse={addCourse} 
+          tasks={tasks}
+          addTask={addTask}
+          updateTask={updateTask}
+          deleteTask={deleteTask}
+        />;
       case 'webclips':
         return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={addMemory} syncSharedClips={syncSharedClips} pendingClipsCount={pendingClipsCount} bulkDelete={bulkDeleteMemories}/>;
       case 'askai':
-        return <QASession memories={memories} />;
+        return <QASession memories={memories} tasks={tasks} />;
       case 'voicenotes':
-        return <VoiceNotesView memories={voiceNoteMemories} onSave={addMemory} onDelete={deleteMemory} onUpdate={handleUpdateMemory} bulkDelete={bulkDeleteMemories} />;
+        return <PersonalView 
+          memories={personalMemories} 
+          tasks={tasks}
+          onSaveMemory={addMemory} 
+          onDeleteMemory={deleteMemory} 
+          onUpdateMemory={handleUpdateMemory} 
+          bulkDeleteMemories={bulkDeleteMemories} 
+          onAddTask={addTask}
+          onUpdateTask={updateTask}
+          onDeleteTask={deleteTask}
+        />;
       default:
-        return <QASession memories={memories} />;
+        return <QASession memories={memories} tasks={tasks} />;
     }
   };
 
@@ -80,7 +108,7 @@ function App() {
             syncId={user.email || 'User'} 
             onClose={() => setShowSettings(false)} 
             onReset={() => {}} 
-            data={{ memories, courses }} 
+            data={{ memories, courses, tasks }} 
             onImport={() => {}} 
           />
       )}

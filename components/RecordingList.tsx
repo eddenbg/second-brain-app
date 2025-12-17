@@ -1,19 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Recorder from './Recorder';
-import type { AnyMemory, VoiceMemory } from '../types';
-import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, MicIcon, MapPinIcon } from './Icons';
+import type { AnyMemory, VoiceMemory, DocumentMemory } from '../types';
+import { TrashIcon, EditIcon, CheckIcon, XIcon, ChevronDownIcon, MicIcon, MapPinIcon, FileTextIcon, EyeIcon } from './Icons';
 
 interface VoiceNotesViewProps {
-    memories: AnyMemory[];
+    voiceMemories: VoiceMemory[];
+    documents: DocumentMemory[];
     onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
     onDelete: (id: string) => void;
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDelete: (ids: string[]) => void;
+    onDocumentClick: (doc: DocumentMemory) => void;
 }
 
 const VoiceNoteItem: React.FC<{ 
-    memory: AnyMemory; 
+    memory: VoiceMemory; 
     onDelete: (id: string) => void; 
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void; 
     isSelectMode: boolean;
@@ -24,7 +26,6 @@ const VoiceNoteItem: React.FC<{
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
     const titleInputRef = useRef<HTMLInputElement>(null);
-    const voiceMemory = memory as VoiceMemory;
 
     useEffect(() => {
         if (isEditing && titleInputRef.current) {
@@ -53,13 +54,13 @@ const VoiceNoteItem: React.FC<{
     };
 
     const toggleActionItem = (index: number) => {
-        if (!voiceMemory.actionItems) return;
-        const newItems = [...voiceMemory.actionItems];
+        if (!memory.actionItems) return;
+        const newItems = [...memory.actionItems];
         newItems[index].done = !newItems[index].done;
         onUpdate(memory.id, { actionItems: newItems });
     };
 
-    const activeTaskCount = voiceMemory.actionItems?.filter(i => !i.done).length || 0;
+    const activeTaskCount = memory.actionItems?.filter(i => !i.done).length || 0;
 
     return (
         <div className={`bg-gray-800 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-blue-500' : 'border-gray-700'}`}>
@@ -101,11 +102,11 @@ const VoiceNoteItem: React.FC<{
             </div>
             {isExpanded && !isSelectMode && (
                 <div className="p-4 border-t border-gray-700 space-y-4">
-                     {voiceMemory.actionItems && voiceMemory.actionItems.length > 0 && (
+                     {memory.actionItems && memory.actionItems.length > 0 && (
                         <div className="bg-gray-700 bg-opacity-30 rounded-lg p-3 border border-gray-600">
                             <h4 className="text-sm font-bold text-gray-300 mb-2 uppercase tracking-wide">To-Do List</h4>
                             <ul className="space-y-2">
-                                {voiceMemory.actionItems.map((item, idx) => (
+                                {memory.actionItems.map((item, idx) => (
                                     <li key={idx} className="flex items-start gap-3 p-1">
                                         <button 
                                             onClick={() => toggleActionItem(idx)}
@@ -150,7 +151,7 @@ const VoiceNoteItem: React.FC<{
                     )}
                     <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
                         <h4 className="text-lg font-semibold text-gray-300 mb-2">Transcript:</h4>
-                        <p className="text-gray-200 whitespace-pre-wrap">{voiceMemory.transcript}</p>
+                        <p className="text-gray-200 whitespace-pre-wrap">{memory.transcript}</p>
                     </div>
                 </div>
             )}
@@ -158,7 +159,109 @@ const VoiceNoteItem: React.FC<{
     );
 }
 
-const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDelete, onUpdate, bulkDelete }) => {
+const DocumentItem: React.FC<{ 
+    memory: DocumentMemory; 
+    onDelete: (id: string) => void; 
+    onUpdate: (id: string, updates: Partial<AnyMemory>) => void; 
+    isSelectMode: boolean;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
+    onClick: () => void;
+}> = ({ memory, onDelete, onUpdate, isSelectMode, isSelected, onToggleSelect, onClick }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
+    const [title, setTitle] = useState(memory.title);
+    const titleInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isEditing && titleInputRef.current) {
+            titleInputRef.current.select();
+        }
+    }, [isEditing]);
+
+    const handleUpdate = () => {
+        if (title.trim()) {
+            onUpdate(memory.id, { title: title.trim() });
+            setIsEditing(false);
+        }
+    };
+    
+    const handleCancel = () => {
+        setTitle(memory.title);
+        setIsEditing(false);
+    };
+
+    const handleHeaderClick = () => {
+        if (isSelectMode) {
+            onToggleSelect(memory.id);
+        } else {
+            setIsExpanded(!isExpanded);
+        }
+    };
+
+    return (
+        <div className={`bg-gray-800 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-indigo-500' : 'border-gray-700'}`}>
+             <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={handleHeaderClick}>
+                {isSelectMode && (
+                     <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-400' : 'border-gray-500'}`}>
+                        {isSelected && <CheckIcon className="w-4 h-4 text-white"/>}
+                    </div>
+                )}
+                <div className="flex-shrink-0"><FileTextIcon className="w-6 h-6 text-indigo-400"/></div>
+                <div className="flex-grow overflow-hidden">
+                     {isEditing ? (
+                        <input
+                           ref={titleInputRef}
+                           type="text"
+                           value={title}
+                           onChange={(e) => setTitle(e.target.value)}
+                           onClick={(e) => e.stopPropagation()}
+                           className="w-full bg-gray-700 text-white text-lg p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"
+                           autoFocus
+                           onKeyDown={(e) => {
+                               if (e.key === 'Enter') handleUpdate();
+                               if (e.key === 'Escape') handleCancel();
+                           }}
+                        />
+                    ) : (
+                        <div className="flex items-center gap-2">
+                             <h3 className="text-xl font-semibold text-white truncate">{memory.title}</h3>
+                             <span className="bg-indigo-900 text-indigo-200 text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0">OCR</span>
+                        </div>
+                    )}
+                    <p className="text-sm text-gray-400">{new Date(memory.date).toLocaleString()}</p>
+                </div>
+                 {!isSelectMode && <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />}
+            </div>
+            {isExpanded && !isSelectMode && (
+                 <div className="p-4 border-t border-gray-700 space-y-4">
+                     <div className="flex items-center justify-between">
+                         <button onClick={onClick} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white font-semibold rounded hover:bg-indigo-700 text-sm">
+                             <EyeIcon className="w-4 h-4"/> View Full Document
+                         </button>
+                         <div className="flex items-center space-x-2">
+                            {isEditing ? (
+                                <>
+                                    <button onClick={handleUpdate} aria-label="Save title" className="p-2 text-green-400 hover:text-green-300 focus:outline-none focus:ring-2 focus:ring-green-500 rounded-full"><CheckIcon className="w-6 h-6"/></button>
+                                    <button onClick={handleCancel} aria-label="Cancel edit" className="p-2 text-gray-400 hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-full"><XIcon className="w-6 h-6"/></button>
+                                </>
+                            ) : (
+                                <button onClick={() => setIsEditing(true)} aria-label="Edit title" className="p-2 text-blue-400 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full"><EditIcon className="w-6 h-6"/></button>
+                            )}
+                            <button onClick={() => onDelete(memory.id)} aria-label="Delete document" className="p-2 text-red-500 hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full"><TrashIcon className="w-6 h-6"/></button>
+                         </div>
+                     </div>
+                     <div className="bg-gray-900 p-4 rounded-md max-h-40 overflow-y-auto border border-gray-600">
+                        <p className="text-gray-400 text-xs uppercase font-bold mb-1">Text Preview:</p>
+                        <p className="text-gray-200 whitespace-pre-wrap text-sm line-clamp-4">{memory.extractedText}</p>
+                    </div>
+                 </div>
+            )}
+        </div>
+    )
+}
+
+const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ voiceMemories, documents, onSave, onDelete, onUpdate, bulkDelete, onDocumentClick }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -198,6 +301,8 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
         />;
     }
 
+    const hasAnyContent = voiceMemories.length > 0 || documents.length > 0;
+
     return (
         <div className="space-y-8">
             <button onClick={() => setIsRecording(true)} className="w-full flex flex-col items-center justify-center gap-2 p-6 bg-blue-600 rounded-lg hover:bg-blue-700 border-2 border-dashed border-blue-400 hover:border-blue-300 transition-colors focus:ring-4 focus:ring-blue-400" aria-label="Record new thought or to-do">
@@ -206,8 +311,8 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
             </button>
             <div className="space-y-4">
                 <div className="flex justify-between items-center border-b border-gray-700 pb-2">
-                    <h2 className="text-2xl font-bold text-white">My Voice Notes</h2>
-                     {memories.length > 0 && (
+                    <h2 className="text-2xl font-bold text-white">My Personal Notes</h2>
+                     {hasAnyContent && (
                         <button 
                             onClick={() => {
                                 setIsSelectMode(!isSelectMode);
@@ -220,24 +325,51 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ memories, onSave, onDel
                     )}
                 </div>
                 
-                {memories.length === 0 ? (
+                {!hasAnyContent ? (
                     <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
                         <p className="mt-2 text-gray-400">
                             Tap the button above to record your first thought or to-do.
                         </p>
                     </div>
                 ) : (
-                    memories.map(mem => (
-                        <VoiceNoteItem 
-                            key={mem.id} 
-                            memory={mem} 
-                            onDelete={onDelete} 
-                            onUpdate={onUpdate}
-                            isSelectMode={isSelectMode}
-                            isSelected={selectedIds.has(mem.id)}
-                            onToggleSelect={toggleSelection}
-                        />
-                    ))
+                    <div className="space-y-6">
+                        {/* Documents Section */}
+                        {documents.length > 0 && (
+                            <div className="space-y-2">
+                                <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider border-l-4 border-indigo-500 pl-2">Scanned Documents</h3>
+                                {documents.map(doc => (
+                                    <DocumentItem 
+                                        key={doc.id}
+                                        memory={doc}
+                                        onDelete={onDelete}
+                                        onUpdate={onUpdate}
+                                        isSelectMode={isSelectMode}
+                                        isSelected={selectedIds.has(doc.id)}
+                                        onToggleSelect={toggleSelection}
+                                        onClick={() => onDocumentClick(doc)}
+                                    />
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Voice Notes Section */}
+                         {voiceMemories.length > 0 && (
+                             <div className="space-y-2">
+                                <h3 className="text-gray-400 font-bold uppercase text-xs tracking-wider border-l-4 border-blue-500 pl-2">Voice Notes</h3>
+                                {voiceMemories.map(mem => (
+                                    <VoiceNoteItem 
+                                        key={mem.id} 
+                                        memory={mem} 
+                                        onDelete={onDelete} 
+                                        onUpdate={onUpdate}
+                                        isSelectMode={isSelectMode}
+                                        isSelected={selectedIds.has(mem.id)}
+                                        onToggleSelect={toggleSelection}
+                                    />
+                                ))}
+                             </div>
+                         )}
+                    </div>
                 )}
             </div>
             {isSelectMode && selectedIds.size > 0 && (
