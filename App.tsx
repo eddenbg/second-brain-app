@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import BottomNavBar from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
@@ -29,11 +28,7 @@ function App() {
   const [view, setView] = useState<View>('college');
   const [showSettings, setShowSettings] = useState(false);
 
-  const { 
-    memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
-    tasks, addTask, updateTask, deleteTask, 
-    syncSharedClips, pendingClipsCount, courses, addCourse, isSyncing, user, loading 
-  } = useRecordings();
+  const { memories, addMemory, deleteMemory, updateMemory, syncSharedClips, pendingClipsCount, bulkDeleteMemories, courses, addCourse, isSyncing, user, loading } = useRecordings();
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
@@ -66,19 +61,7 @@ function App() {
       case 'physical':
         return <VisionView memories={physicalMemories} onDelete={deleteMemory} onUpdate={handleUpdateMemory} onSave={addMemory} bulkDelete={bulkDeleteMemories} />;
       case 'college':
-        return <CollegeView 
-          lectures={collegeMemories} 
-          onDelete={deleteMemory} 
-          onUpdate={handleUpdateMemory} 
-          onSave={addMemory} 
-          bulkDelete={bulkDeleteMemories} 
-          courses={courses} 
-          addCourse={addCourse} 
-          tasks={tasks}
-          addTask={addTask}
-          updateTask={updateTask}
-          deleteTask={deleteTask}
-        />;
+        return <CollegeView lectures={collegeMemories} onDelete={deleteMemory} onUpdate={handleUpdateMemory} onSave={addMemory} bulkDelete={bulkDeleteMemories} courses={courses} addCourse={addCourse} />;
       case 'webclips':
         return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={addMemory} syncSharedClips={syncSharedClips} pendingClipsCount={pendingClipsCount} bulkDelete={bulkDeleteMemories}/>;
       case 'askai':
@@ -97,7 +80,7 @@ function App() {
             syncId={user.email || 'User'} 
             onClose={() => setShowSettings(false)} 
             onReset={() => {}} 
-            data={{ memories, courses, tasks }} 
+            data={{ memories, courses }} 
             onImport={() => {}} 
           />
       )}

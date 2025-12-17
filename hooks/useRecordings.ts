@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
-import type { AnyMemory, WebMemory, Task } from '../types';
+import type { AnyMemory, WebMemory } from '../types';
 import { db, auth } from '../utils/firebase';
 import { 
     collection, 
@@ -17,7 +17,6 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 export interface StoredData {
     memories: AnyMemory[];
     courses: string[];
-    tasks: Task[];
 }
 
 const LOCAL_STORAGE_KEY = 'second_brain_demo_data';
@@ -25,7 +24,6 @@ const LOCAL_STORAGE_KEY = 'second_brain_demo_data';
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
-    const [tasks, setTasks] = useState<Task[]>([]);
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -40,7 +38,6 @@ export const useRecordings = () => {
                 if (!currentUser) {
                     setMemories([]);
                     setCourses([]);
-                    setTasks([]);
                 }
                 setLoading(false);
              });
@@ -57,7 +54,6 @@ export const useRecordings = () => {
             if (!currentUser) {
                 setMemories([]);
                 setCourses([]);
-                setTasks([]);
             }
             setLoading(false);
         });
@@ -76,11 +72,9 @@ export const useRecordings = () => {
                     const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
                     if (stored) {
                         const data = JSON.parse(stored);
-                        setMemories(data.memories || []);
-                        setTasks(data.tasks || []);
-                        
+                        setMemories(data);
                         const extractedCourses = Array.from(new Set(
-                            (data.memories || [])
+                            data
                                 .filter((m: AnyMemory) => m.category === 'college' && m.course)
                                 .map((m: AnyMemory) => m.course as string)
                         )).sort() as string[];
@@ -95,11 +89,10 @@ export const useRecordings = () => {
         }
 
         try {
-            // Memories Listener
             const memoriesRef = collection(db, 'users', user.uid, 'memories');
-            const qMemories = query(memoriesRef, orderBy('date', 'desc'));
+            const q = query(memoriesRef, orderBy('date', 'desc'));
 
-            const unsubMemories = onSnapshot(qMemories, (snapshot) => {
+            const unsubscribe = onSnapshot(q, (snapshot) => {
                 const loadedMemories = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
@@ -113,35 +106,19 @@ export const useRecordings = () => {
                 )).sort();
                 
                 setCourses(extractedCourses);
+            }, (error) => {
+                console.warn("Firestore snapshot error:", error);
             });
 
-            // Tasks Listener
-            const tasksRef = collection(db, 'users', user.uid, 'tasks');
-            const qTasks = query(tasksRef, orderBy('createdAt', 'desc'));
-            
-            const unsubTasks = onSnapshot(qTasks, (snapshot) => {
-                const loadedTasks = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as Task[];
-                setTasks(loadedTasks);
-            });
-
-            return () => {
-                unsubMemories();
-                unsubTasks();
-            };
+            return () => unsubscribe();
         } catch (e) {
             console.warn("Firestore subscription failed", e);
         }
     }, [user]);
 
-    const saveToLocalStorage = (newMemories: AnyMemory[], newTasks: Task[]) => {
-        const data = { memories: newMemories, tasks: newTasks };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+    const saveToLocalStorage = (newMemories: AnyMemory[]) => {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newMemories));
         setMemories(newMemories);
-        setTasks(newTasks);
-        
         const extractedCourses = Array.from(new Set(
             newMemories
                 .filter(m => m.category === 'college' && m.course)
@@ -149,8 +126,6 @@ export const useRecordings = () => {
         )).sort() as string[];
         setCourses(extractedCourses);
     };
-
-    // --- Memory Handlers ---
 
     const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
         if (!user) return;
@@ -164,8 +139,10 @@ export const useRecordings = () => {
 
         // @ts-ignore
         if (db && db.type === 'mock') {
+            // Demo Mode
             const newMemory = { ...newMemoryBase, id: Date.now().toString() } as unknown as AnyMemory;
-            saveToLocalStorage([newMemory, ...memories], tasks);
+            const updatedMemories = [newMemory, ...memories];
+            saveToLocalStorage(updatedMemories);
             setIsSyncing(false);
             return;
         }
@@ -177,14 +154,15 @@ export const useRecordings = () => {
         } finally {
             setIsSyncing(false);
         }
-    }, [user, memories, tasks]);
+    }, [user, memories]);
 
     const deleteMemory = useCallback(async (id: string) => {
         if (!user) return;
 
         // @ts-ignore
         if (db && db.type === 'mock') {
-            saveToLocalStorage(memories.filter(m => m.id !== id), tasks);
+            const updatedMemories = memories.filter(m => m.id !== id);
+            saveToLocalStorage(updatedMemories);
             return;
         }
 
@@ -193,14 +171,15 @@ export const useRecordings = () => {
         } catch (error) {
             console.error("Error deleting memory:", error);
         }
-    }, [user, memories, tasks]);
+    }, [user, memories]);
 
     const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
         if (!user) return;
 
         // @ts-ignore
         if (db && db.type === 'mock') {
-            saveToLocalStorage(memories.map(m => m.id === id ? { ...m, ...updates } : m), tasks);
+            const updatedMemories = memories.map(m => m.id === id ? { ...m, ...updates } : m);
+            saveToLocalStorage(updatedMemories);
             return;
         }
 
@@ -210,78 +189,20 @@ export const useRecordings = () => {
         } catch (error) {
             console.error("Error updating memory:", error);
         }
-    }, [user, memories, tasks]);
+    }, [user, memories]);
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
         if (!user) return;
 
         // @ts-ignore
         if (db && db.type === 'mock') {
-            saveToLocalStorage(memories.filter(m => !ids.includes(m.id)), tasks);
+            const updatedMemories = memories.filter(m => !ids.includes(m.id));
+            saveToLocalStorage(updatedMemories);
             return;
         }
 
         await Promise.all(ids.map(id => deleteDoc(doc(db, 'users', user.uid, 'memories', id))));
-    }, [user, memories, tasks]);
-
-    // --- Task Handlers ---
-
-    const addTask = useCallback(async (task: Omit<Task, 'id' | 'createdAt'>) => {
-        if (!user) return;
-        
-        const newTaskBase = {
-            ...task,
-            createdAt: new Date().toISOString(),
-            userId: user.uid
-        };
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const newTask = { ...newTaskBase, id: 'task_' + Date.now().toString() } as Task;
-            saveToLocalStorage(memories, [newTask, ...tasks]);
-            return;
-        }
-
-        try {
-            await addDoc(collection(db, 'users', user.uid, 'tasks'), newTaskBase);
-        } catch (error) {
-            console.error("Error adding task:", error);
-        }
-    }, [user, memories, tasks]);
-
-    const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
-        if (!user) return;
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            saveToLocalStorage(memories, tasks.map(t => t.id === id ? { ...t, ...updates } : t));
-            return;
-        }
-
-        try {
-            const docRef = doc(db, 'users', user.uid, 'tasks', id);
-            await updateDoc(docRef, updates);
-        } catch (error) {
-            console.error("Error updating task:", error);
-        }
-    }, [user, memories, tasks]);
-
-    const deleteTask = useCallback(async (id: string) => {
-        if (!user) return;
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            saveToLocalStorage(memories, tasks.filter(t => t.id !== id));
-            return;
-        }
-
-        try {
-            await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
-        } catch (error) {
-            console.error("Error deleting task:", error);
-        }
-    }, [user, memories, tasks]);
-
+    }, [user, memories]);
 
     const addCourse = useCallback((courseName: string) => {
         if (!courseName.trim()) return;
@@ -297,12 +218,6 @@ export const useRecordings = () => {
         deleteMemory, 
         bulkDeleteMemories, 
         updateMemory, 
-        
-        tasks,
-        addTask,
-        updateTask,
-        deleteTask,
-
         syncSharedClips, 
         pendingClipsCount: 0, 
         courses, 

@@ -27,7 +27,6 @@ export interface VoiceMemory extends BaseMemory {
   structuredTranscript?: TranscriptSegment[];
   speakerMappings?: { [key: number]: string };
   actionItems?: { text: string; done: boolean }[];
-  audioDataUrl?: string; // New field for audio playback
 }
 
 export interface WebMemory extends BaseMemory {
@@ -57,16 +56,3 @@ export interface DocumentMemory extends BaseMemory {
 }
 
 export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory;
-
-export type TaskStatus = 'todo' | 'in-progress' | 'done';
-
-export interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  status: TaskStatus;
-  course?: string; // Optional, can be 'General' or specific course
-  dueDate?: string;
-  linkedMemoryIds?: string[]; // IDs of memories linked to this task
-  createdAt: string;
-}

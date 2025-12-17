@@ -50,11 +50,6 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
   // Native Speech Refs
   const recognitionRef = useRef<any>(null);
 
-  // MediaRecorder for Playback
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioDataUrlRef = useRef<string | undefined>(undefined);
-
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   // Audio cues for accessibility
@@ -121,44 +116,14 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     lastSpeakerIdRef.current = null;
     speakerCounterRef.current = 1;
     setExtractedActionItems([]);
-    audioChunksRef.current = [];
-    audioDataUrlRef.current = undefined;
 
     await requestWakeLock();
     playBeep(880, 'sine', 0.2); // Start beep
 
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaStreamRef.current = stream;
-
-        // Start MediaRecorder to capture audio file for playback
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                audioChunksRef.current.push(event.data);
-            }
-        };
-        mediaRecorder.onstop = () => {
-             const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-             const reader = new FileReader();
-             reader.readAsDataURL(blob);
-             reader.onloadend = () => {
-                 audioDataUrlRef.current = reader.result as string;
-             }
-        };
-        mediaRecorder.start();
-        mediaRecorderRef.current = mediaRecorder;
-
-        if (transcriptionMode === 'device') {
-            startNativeRecording();
-        } else {
-            startCloudRecording(stream);
-        }
-        setIsRecording(true);
-    } catch (err) {
-        console.error(err);
-        setError("Could not access microphone.");
-        releaseWakeLock();
+    if (transcriptionMode === 'device') {
+        startNativeRecording();
+    } else {
+        startCloudRecording();
     }
   };
 
@@ -175,7 +140,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US'; 
+      recognition.lang = 'en-US'; // Default to English, could be dynamic
 
       recognition.onresult = (event: any) => {
           let interimTranscript = '';
@@ -197,30 +162,38 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
       recognition.onerror = (event: any) => {
           console.error("Speech recognition error", event.error);
-          if (event.error !== 'no-speech') {
-              // Don't kill the MediaRecorder just because speech recog failed temporarily
-              // But maybe notify user?
+          if (event.error === 'not-allowed') {
+              setError("Microphone access denied.");
+          } else {
+            // Don't stop on 'no-speech', just let it listen
+             if (event.error !== 'no-speech') {
+                 setError(`Device recognition error: ${event.error}`);
+             }
           }
       };
 
       recognition.onend = () => {
-          // If we are still supposed to be recording, restart it
-          if (isRecording && recognitionRef.current) {
+          // If we are still supposed to be recording, restart it (browser often stops it after silence)
+          if (isRecording) {
              try {
                  recognition.start();
-             } catch(e) {}
+             } catch(e) {
+                 // ignore if already started
+             }
           }
       };
 
       try {
           recognition.start();
           recognitionRef.current = recognition;
+          setIsRecording(true);
       } catch (e) {
+          console.error(e);
           setError("Failed to start device recording.");
       }
   };
 
-  const startCloudRecording = async (stream: MediaStream) => {
+  const startCloudRecording = async () => {
     const ai = getGeminiInstance();
     if (!ai) {
       setError("AI features are not available. Please check API Key configuration.");
@@ -228,6 +201,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     }
 
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      setIsRecording(true);
+
       const context = new (window.AudioContext || (window as any).webkitAudioContext)({ 
           sampleRate: 16000 
       });
@@ -313,7 +290,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
           },
           onerror: (e: any) => {
             console.error('Live session error:', e);
-            // We do NOT stop the whole recording here, just the transcription might fail
+            const errorMsg = e.message || e.error?.message || "Unknown error";
+            setError(`Transcription paused: ${errorMsg}`);
+            playBeep(200, 'square', 0.5); 
           },
           onclose: (e: CloseEvent) => {},
         },
@@ -321,25 +300,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       });
 
     } catch (err) {
-      console.error('Error starting cloud recording:', err);
-      setError('Could not connect to Gemini Live.');
+      console.error('Error starting recording:', err);
+      setError('Could not access microphone. Please check permissions.');
+      setIsRecording(false);
+      releaseWakeLock();
+      playBeep(200, 'square', 0.5);
     }
   };
 
   const stopRecording = useCallback(async (shouldSave: boolean = true) => {
     if (!isRecording) return;
-    setIsRecording(false); 
+    setIsRecording(false); // Update state immediately to prevent re-triggers
     
-    playBeep(440, 'sine', 0.2); 
+    playBeep(440, 'sine', 0.2); // Stop beep
     await releaseWakeLock();
     setDiscreetMode(false);
 
-    // Stop MediaRecorder first to ensure we get the file
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-    }
-
     if (transcriptionMode === 'cloud') {
+        mediaStreamRef.current?.getTracks().forEach(track => track.stop());
         scriptProcessorRef.current?.disconnect();
         audioContextRef.current?.close();
 
@@ -347,24 +325,21 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             try {
                 const session = await sessionPromiseRef.current;
                 session.close();
-            } catch (e) {}
+            } catch (e) {
+                console.error("Error closing session", e)
+            }
         }
         sessionPromiseRef.current = null;
+        mediaStreamRef.current = null;
         audioContextRef.current = null;
         scriptProcessorRef.current = null;
     } else {
+        // Native Mode
         if (recognitionRef.current) {
             recognitionRef.current.stop();
             recognitionRef.current = null;
         }
     }
-    
-    // Stop all tracks on the stream
-    mediaStreamRef.current?.getTracks().forEach(track => track.stop());
-    mediaStreamRef.current = null;
-
-    // Small delay to allow FileReader to finish in the onstop callback
-    await new Promise(resolve => setTimeout(resolve, 500));
 
     if (shouldSave && finalTranscriptRef.current.trim()) {
       setIsSaving(true);
@@ -399,7 +374,6 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       title: recordingTitle,
       transcript: finalTranscriptRef.current,
       tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
-      audioDataUrl: audioDataUrlRef.current, // Save the audio file
       ...(location && { location }),
       ...(actionItemsObj.length > 0 && { actionItems: actionItemsObj })
     } as Omit<VoiceMemory, 'id'|'date'>;

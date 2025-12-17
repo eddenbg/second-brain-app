@@ -101,15 +101,6 @@ const VoiceNoteItem: React.FC<{
             </div>
             {isExpanded && !isSelectMode && (
                 <div className="p-4 border-t border-gray-700 space-y-4">
-                     
-                     {/* Audio Player */}
-                     {voiceMemory.audioDataUrl && (
-                        <div className="bg-gray-900 p-3 rounded-lg border border-gray-600">
-                             <h4 className="text-sm font-bold text-gray-400 mb-2 uppercase tracking-wide">Playback</h4>
-                             <audio controls src={voiceMemory.audioDataUrl} className="w-full h-10" />
-                        </div>
-                     )}
-
                      {voiceMemory.actionItems && voiceMemory.actionItems.length > 0 && (
                         <div className="bg-gray-700 bg-opacity-30 rounded-lg p-3 border border-gray-600">
                             <h4 className="text-sm font-bold text-gray-300 mb-2 uppercase tracking-wide">To-Do List</h4>

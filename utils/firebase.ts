@@ -3,6 +3,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore, enableMultiTabIndexedDbPersistence, initializeFirestore, CACHE_SIZE_UNLIMITED } from 'firebase/firestore';
 
+const LOCAL_STORAGE_CONFIG_KEY = 'second_brain_firebase_config';
+
 // Helper to safely get env vars (handles Vite import.meta.env and legacy process.env)
 const getEnv = (key: string) => {
   try {
@@ -13,7 +15,26 @@ const getEnv = (key: string) => {
   }
 };
 
-const firebaseConfig = {
+const getStoredConfig = () => {
+    try {
+        const stored = localStorage.getItem(LOCAL_STORAGE_CONFIG_KEY);
+        return stored ? JSON.parse(stored) : null;
+    } catch (e) {
+        return null;
+    }
+};
+
+export const saveFirebaseConfig = (config: any) => {
+    localStorage.setItem(LOCAL_STORAGE_CONFIG_KEY, JSON.stringify(config));
+    window.location.reload(); // Reload to initialize with new config
+};
+
+export const clearFirebaseConfig = () => {
+    localStorage.removeItem(LOCAL_STORAGE_CONFIG_KEY);
+    window.location.reload();
+};
+
+const envConfig = {
   apiKey: getEnv('VITE_FIREBASE_API_KEY'),
   authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN'),
   projectId: getEnv('VITE_FIREBASE_PROJECT_ID'),
@@ -22,10 +43,15 @@ const firebaseConfig = {
   appId: getEnv('VITE_FIREBASE_APP_ID')
 };
 
+// Determine which config to use: Env Vars > Local Storage > Missing
+const storedConfig = getStoredConfig();
+const firebaseConfig = envConfig.apiKey ? envConfig : (storedConfig || {});
+
 // Safety check: Don't crash if config is missing (e.g. in Preview)
 let app;
 let authExport;
 let dbExport;
+let isMock = false;
 
 // Simple Mock Auth System for Demo/Offline Mode
 class MockAuth {
@@ -39,8 +65,6 @@ class MockAuth {
         return () => this.listeners.delete(cb);
     }
 
-    // mimic the signature of modular SDK: (auth, email, password)
-    // But since we call it on the instance, we might ignore the first arg if we call it as auth.signIn...(auth, ...)
     async signInWithEmailAndPassword(auth: any, email: string, password: string) {
         if (email === 'demo@example.com' || email === 'offline@device.local') {
             this.currentUser = { 
@@ -94,9 +118,11 @@ try {
 } catch (e) {
     // Mock objects for Preview environment so app renders UI without crashing
     console.log("Initializing Mock Firebase for Preview/Offline");
+    isMock = true;
     authExport = new MockAuth() as any;
     dbExport = { type: 'mock' } as any;
 }
 
 export const auth = authExport;
 export const db = dbExport;
+export const isConfigured = !isMock;
