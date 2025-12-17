@@ -24,6 +24,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const titleInputRef = useRef<HTMLInputElement>(null);
     
     const stopCamera = React.useCallback(() => {
         if (stream) {
@@ -33,6 +34,13 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     }, [stream]);
 
     useEffect(() => { return () => { stopCamera(); }; }, [stopCamera]);
+
+    // Auto-focus title input when extracted text is ready
+    useEffect(() => {
+        if (extractedText && titleInputRef.current) {
+            titleInputRef.current.focus();
+        }
+    }, [extractedText]);
 
     const startCamera = async () => {
         stopCamera();
@@ -142,13 +150,13 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                            <label htmlFor="doc-title" className="text-sm font-semibold text-gray-300">Name your document:</label>
                            <div className="flex gap-2">
                                <input 
+                                    ref={titleInputRef}
                                     id="doc-title"
                                     type="text" 
                                     value={title} 
                                     onChange={e => setTitle(e.target.value)} 
                                     placeholder="e.g. Utility Bill - Oct 2023" 
                                     className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"
-                                    autoFocus
                                />
                                <button onClick={handleGenerateTitle} disabled={isLoading === 'title'} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2 flex-shrink-0">
                                    <BrainCircuitIcon className="w-5 h-5"/> {isLoading === 'title' ? '...' : 'Auto Name'}

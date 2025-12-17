@@ -205,7 +205,7 @@ export const useRecordings = () => {
 
         // @ts-ignore
         if (db && db.type === 'mock') {
-            const updatedMemories = memories.map(m => m.id === id ? { ...m, ...updates } : m);
+            const updatedMemories = memories.map(m => m.id === id ? { ...m, ...updates } as AnyMemory : m);
             saveToLocalStorage(updatedMemories, tasks);
             return;
         }
@@ -310,7 +310,7 @@ export const useRecordings = () => {
         deleteMemory, 
         bulkDeleteMemories, 
         updateMemory, 
-        addTask,
+        addTask, 
         updateTask,
         deleteTask,
         syncSharedClips, 

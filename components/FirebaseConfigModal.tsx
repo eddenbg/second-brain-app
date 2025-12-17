@@ -27,10 +27,6 @@ const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({ onClose }) =>
             const pastedText = e.clipboardData.getData('text');
             // Look for JSON-like structure
             if (pastedText.includes('{')) {
-                // Try to clean up JS object syntax to valid JSON if needed, 
-                // but for now, let's just assume they might paste key-values.
-                // Or better, just let them paste manually into fields. 
-                // Advanced: Parse `const firebaseConfig = { ... }`
                 const match = pastedText.match(/apiKey:\s*['"]([^'"]+)['"]/);
                 if (match) {
                     e.preventDefault();
@@ -66,21 +62,26 @@ const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({ onClose }) =>
                 <header className="flex justify-between items-center p-4 border-b border-gray-700">
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                         <BrainCircuitIcon className="w-6 h-6 text-blue-400"/> 
-                        Setup Cloud Sync
+                        Connect Personal Database
                     </h2>
                     <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><XIcon className="w-6 h-6"/></button>
                 </header>
                 
                 <div className="p-6 overflow-y-auto">
-                    <p className="text-gray-300 mb-4 text-sm">
-                        To sync across devices, create a free project at <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">console.firebase.google.com</a>. 
-                        Add a "Web App" to your project and paste the configuration values below.
+                    <p className="text-gray-300 mb-4 text-sm leading-relaxed">
+                        To store your private data securely in the cloud (so you can see it on both your phone and laptop), you need to connect to a free <strong>Google Firebase</strong> project.
                     </p>
+                    <ol className="list-decimal list-inside text-gray-400 text-sm mb-6 space-y-2">
+                         <li>Go to <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-400 underline">console.firebase.google.com</a>.</li>
+                         <li>Create a new project (it's free).</li>
+                         <li>Add a "Web App" to the project.</li>
+                         <li>Copy the configuration values and paste them below.</li>
+                    </ol>
                     
                     <form onSubmit={handleSubmit} className="space-y-4" onPaste={handlePaste}>
                         {Object.keys(config).map((key) => (
                             <div key={key}>
-                                <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">{key}</label>
+                                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">{key}</label>
                                 <input
                                     type="text"
                                     name={key}
@@ -96,7 +97,7 @@ const FirebaseConfigModal: React.FC<FirebaseConfigModalProps> = ({ onClose }) =>
                         <div className="pt-4 flex gap-3">
                             <button type="button" onClick={onClose} className="flex-1 py-3 bg-gray-700 text-white rounded hover:bg-gray-600">Cancel</button>
                             <button type="submit" className="flex-1 py-3 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 flex items-center justify-center gap-2">
-                                <SaveIcon className="w-5 h-5"/> Save & Connect
+                                <SaveIcon className="w-5 h-5"/> Connect Database
                             </button>
                         </div>
                     </form>

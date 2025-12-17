@@ -47,6 +47,11 @@ const envConfig = {
 const storedConfig = getStoredConfig();
 const firebaseConfig = envConfig.apiKey ? envConfig : (storedConfig || {});
 
+export const getCurrentConfig = () => {
+    if (firebaseConfig.apiKey) return firebaseConfig;
+    return null;
+};
+
 // Safety check: Don't crash if config is missing (e.g. in Preview)
 let app;
 let authExport;
