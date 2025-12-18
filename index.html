@@ -3,10 +3,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>My Second Brain</title>
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#1f2937">
+    <meta name="theme-color" content="#111827">
+    
+    <!-- Android / Chrome Full Screen -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Second Brain">
+    
+    <!-- iOS / Safari Full Screen -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Second Brain">
     
     <style>
         /* Ensure the app takes up the full screen height */
@@ -15,13 +24,12 @@
             width: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; /* Prevent body scroll, let the app handle scrolling */
+            overflow: hidden; 
             background-color: #111827;
         }
     </style>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // Safety shim for the browser preview to prevent crashes if process is undefined
         if (typeof process === 'undefined') {
             window.process = { env: { API_KEY: '' } };
         }

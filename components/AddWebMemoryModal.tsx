@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { generateTitleForContent } from '../services/geminiService';
 import type { WebMemory } from '../types';
 import { BrainCircuitIcon, XIcon, SaveIcon, LinkIcon } from './Icons';
@@ -8,15 +9,27 @@ import { getCurrentLocation } from '../utils/location';
 interface AddWebMemoryModalProps {
     onClose: () => void;
     onSave: (memory: Omit<WebMemory, 'id' | 'date' | 'category'>) => void;
+    initialUrl?: string;
+    initialTitle?: string;
 }
 
-const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave }) => {
-    const [url, setUrl] = useState('');
-    const [title, setTitle] = useState('');
+const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, initialUrl, initialTitle }) => {
+    const [url, setUrl] = useState(initialUrl || '');
+    const [title, setTitle] = useState(initialTitle || '');
     const [content, setContent] = useState('');
     const [tags, setTags] = useState('');
     const [voiceNote, setVoiceNote] = useState('');
     const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+
+    // If we only got a title (sometimes shared text contains the URL)
+    useEffect(() => {
+        if (!url && title.includes('http')) {
+            const match = title.match(/(https?:\/\/[^\s]+)/);
+            if (match) {
+                setUrl(match[0]);
+            }
+        }
+    }, [title, url]);
 
     const handleGenerateTitle = async () => {
         if (!content.trim()) return;
@@ -32,13 +45,13 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave }
     };
 
     const handleSave = async () => {
-        if (!title.trim() || !content.trim()) return;
+        if (!title.trim() && !url.trim()) return;
         const location = await getCurrentLocation();
         const newMemory: Omit<WebMemory, 'id' | 'date' | 'category'> = {
             type: 'web',
             url,
-            title,
-            content,
+            title: title || 'Shared Link',
+            content: content || `Shared URL: ${url}`,
             tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
             ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote } }),
             ...(location && { location }),
@@ -47,10 +60,10 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave }
         onClose();
     };
     
-    const isSaveDisabled = !title.trim() || !content.trim();
+    const isSaveDisabled = (!title.trim() && !url.trim());
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[70] p-4">
             <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-600">
                 <header className="flex justify-between items-center p-4 border-b border-gray-700">
                     <h2 className="text-2xl font-bold text-white flex items-center gap-3"><LinkIcon/> Add Web Clip</h2>
@@ -62,22 +75,23 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave }
                         <input id="url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
                     </div>
                     <div>
-                        <label htmlFor="content" className="block text-lg font-medium text-gray-300 mb-2">Content</label>
-                        <textarea id="content" value={content} onChange={e => setContent(e.target.value)} rows={6} placeholder="Paste the article content here..." className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                    </div>
-                    <div>
-                        <label htmlFor="title" className="block text-lg font-medium text-gray-300 mb-2">Title</label>
+                        <label htmlFor="title" className="block text-lg font-medium text-gray-300 mb-2">Title / Description</label>
                          <div className="flex gap-2">
                            <input id="title" type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter a title for the clip" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                           <button onClick={handleGenerateTitle} disabled={isGeneratingTitle || !content.trim()} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2">
-                               <BrainCircuitIcon className="w-5 h-5"/> {isGeneratingTitle ? 'Generating...' : 'Generate'}
-                           </button>
+                           {content.trim() && (
+                               <button onClick={handleGenerateTitle} disabled={isGeneratingTitle} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2">
+                                   <BrainCircuitIcon className="w-5 h-5"/> {isGeneratingTitle ? '...' : 'AI'}
+                               </button>
+                           )}
                         </div>
+                    </div>
+                    <div>
+                        <label htmlFor="content" className="block text-lg font-medium text-gray-300 mb-2">Notes or Content (Optional)</label>
+                        <textarea id="content" value={content} onChange={e => setContent(e.target.value)} rows={4} placeholder="Paste content or write your own notes here..." className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
                     </div>
                     <div>
                         <label htmlFor="tags" className="block text-lg font-medium text-gray-300 mb-2">Tags</label>
                         <input id="tags" type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g., research, AI, psychology" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                        <p className="text-sm text-gray-400 mt-1">Separate tags with commas.</p>
                     </div>
                      <div>
                         <MiniRecorder onTranscriptChange={setVoiceNote} />
