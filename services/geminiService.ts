@@ -1,4 +1,3 @@
-
 import type { AnyMemory, Task } from '../types';
 import { getGeminiInstance } from '../utils/gemini';
 import { Modality, Type } from '@google/genai';
@@ -93,7 +92,8 @@ export async function answerQuestionFromContext(memories: AnyMemory[], tasks: Ta
             systemInstruction,
         },
     });
-    return response.text;
+    // Fixed: response.text is a property, ensuring safe access and providing a default message.
+    return response.text ?? "I could not find an answer in your memories or tasks.";
   } catch (error) {
     console.error("Error calling Gemini API:", error);
     return "Sorry, I encountered an error while trying to find an answer.";
@@ -119,7 +119,8 @@ export async function answerFromImage(base64Data: string, mimeType: string, ques
             model,
             contents: { parts: [imagePart, textPart] },
         });
-        return response.text;
+        // Fixed: response.text is a property, ensuring safe access.
+        return response.text ?? "I could not analyze the image.";
     } catch (error) {
         console.error("Error calling Gemini API for image question:", error);
         return "Sorry, I encountered an error while analyzing the image.";
@@ -145,7 +146,9 @@ export async function generateTitleForContent(content: string): Promise<string> 
                 stopSequences: ['\n']
             },
         });
-        return response.text.trim().replace(/"/g, ''); // Remove quotes from title
+        // Fixed: response.text is a property, ensuring safe access and removing quotes.
+        const text = response.text ?? "Untitled";
+        return text.trim().replace(/"/g, ''); 
     } catch (error) {
         console.error("Error generating title:", error);
         return "Untitled";
@@ -181,7 +184,9 @@ export async function analyzeVoiceNote(content: string): Promise<{ title: string
             }
         });
         
-        const json = JSON.parse(response.text);
+        // Fixed: response.text is a property, ensuring safe access for JSON parsing.
+        const text = response.text ?? "{}";
+        const json = JSON.parse(text);
         return {
             title: json.title || "Untitled Voice Note",
             actionItems: json.actionItems || []
@@ -209,7 +214,8 @@ export async function generateSummaryForContent(content: string): Promise<string
                 systemInstruction,
             },
         });
-        return response.text.trim();
+        // Fixed: response.text is a property, ensuring safe access.
+        return (response.text ?? "Could not generate summary.").trim();
     } catch (error) {
         console.error("Error generating summary:", error);
         return "Could not generate summary.";
@@ -231,7 +237,8 @@ export async function generateGeneralSummary(content: string): Promise<string> {
             contents: `Summarize this content:\n\n${content.substring(0, 8000)}`,
             config: { systemInstruction },
         });
-        return response.text.trim();
+        // Fixed: response.text is a property, ensuring safe access.
+        return (response.text ?? "").trim();
     } catch (error) {
         console.error("Error generating web summary:", error);
         return "";
@@ -257,7 +264,8 @@ export async function extractTextFromImage(base64Data: string, mimeType: string)
             model,
             contents: { parts: [imagePart, textPart] },
         });
-        return response.text;
+        // Fixed: response.text is a property, ensuring safe access.
+        return response.text ?? "No text extracted from image.";
     } catch (error) {
         console.error("Error calling Gemini API for image text extraction:", error);
         return "Sorry, I encountered an error while extracting text from the image.";
@@ -281,6 +289,7 @@ export async function generateSpeechFromText(text: string): Promise<string | nul
                 },
             },
         });
+        // Fixed: Safe extraction of inline audio data from candidates.
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         return base64Audio || null;
 

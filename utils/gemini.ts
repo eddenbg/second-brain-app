@@ -1,31 +1,19 @@
 import { GoogleGenAI } from '@google/genai';
 
-let aiInstance: GoogleGenAI | null = null;
-
+// Guideline: Create a new GoogleGenAI instance right before making an API call 
+// to ensure it always uses the most up-to-date API key. Avoid caching in a singleton.
 export function getGeminiInstance(): GoogleGenAI | null {
-    // Check for the instance first to avoid re-initializing.
-    if (aiInstance) {
-        return aiInstance;
-    }
-
-    // Safely access process.env. In Vite, this is replaced at build time.
-    // We add a check to ensure we don't crash if accessed in a non-standard env.
-    let apiKey = '';
-    try {
-        apiKey = process.env.API_KEY || '';
-    } catch (e) {
-        console.error("Error accessing process.env:", e);
-    }
-
-    if (!apiKey) {
+    // Guideline: The API key must be obtained exclusively from process.env.API_KEY.
+    // Assume this variable is pre-configured and valid.
+    if (!process.env.API_KEY) {
         console.error("API_KEY environment variable not set. AI features will be disabled.");
         return null;
     }
 
     try {
-        // Create and cache the instance for future calls.
-        aiInstance = new GoogleGenAI({ apiKey });
-        return aiInstance;
+        // Guideline: Use the process.env.API_KEY string directly during initialization.
+        // Must use named parameter: new GoogleGenAI({ apiKey: ... }).
+        return new GoogleGenAI({ apiKey: process.env.API_KEY });
     } catch (error) {
         console.error("Failed to initialize GoogleGenAI:", error);
         return null;
