@@ -4,15 +4,12 @@ import type { AnyMemory, WebMemory, Task } from '../types';
 import { db, auth } from '../utils/firebase';
 import { 
     collection, 
-    query, 
-    onSnapshot, 
-    addDoc, 
-    deleteDoc, 
+    getDocs,
     doc, 
-    updateDoc, 
-    orderBy,
     setDoc,
-    arrayUnion
+    writeBatch,
+    query,
+    orderBy
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -22,353 +19,183 @@ export interface StoredData {
     tasks: Task[];
 }
 
-const LOCAL_STORAGE_KEY = 'second_brain_demo_data';
+const LOCAL_STORAGE_KEY = 'second_brain_local_data';
 
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
-    
-    // Split courses into those found in memories vs those manually added
-    const [derivedCourses, setDerivedCourses] = useState<string[]>([]);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
-
+    
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [syncError, setSyncError] = useState<string | null>(null);
 
-    // Combine derived and saved courses
+    // Load initial data from LocalStorage
     useEffect(() => {
-        const uniqueCourses = Array.from(new Set([...derivedCourses, ...savedCourses])).sort();
-        setCourses(uniqueCourses);
-    }, [derivedCourses, savedCourses]);
-
-    // 1. Listen for User Login/Logout
-    useEffect(() => {
-        // @ts-ignore
-        if (auth && auth.type === 'mock') {
-             // @ts-ignore
-             const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-                setUser(currentUser);
-                if (!currentUser) {
-                    setMemories([]);
-                    setTasks([]);
-                    setDerivedCourses([]);
-                    setSavedCourses([]);
-                }
-                setLoading(false);
-             });
-             return () => unsubscribe();
+        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (stored) {
+            try {
+                const data = JSON.parse(stored);
+                setMemories(data.memories || []);
+                setTasks(data.tasks || []);
+                setSavedCourses(data.courses || []);
+            } catch (e) {
+                console.error("Failed to parse local storage", e);
+            }
         }
+    }, []);
 
+    // Derived courses from memories
+    useEffect(() => {
+        const extracted = Array.from(new Set(
+            memories
+                .filter(m => m.category === 'college' && m.course)
+                .map(m => m.course as string)
+        ));
+        const uniqueCourses = Array.from(new Set([...extracted, ...savedCourses])).sort();
+        setCourses(uniqueCourses);
+    }, [memories, savedCourses]);
+
+    // Handle Auth state
+    useEffect(() => {
         if (!auth) {
             setLoading(false);
             return;
         }
-
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            if (!currentUser) {
-                setMemories([]);
-                setTasks([]);
-                setDerivedCourses([]);
-                setSavedCourses([]);
-            }
             setLoading(false);
         });
         return () => unsubscribe();
     }, []);
 
-    // 2. Subscribe to Database Changes (Real-time Sync) OR Local Storage
+    // Save to local storage whenever state changes
     useEffect(() => {
-        if (!user) return;
+        const data = { memories, tasks, courses: savedCourses };
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+    }, [memories, tasks, savedCourses]);
+
+    // --- Manual Cloud Actions ---
+
+    const fetchFromCloud = useCallback(async () => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        setIsSyncing(true);
         setSyncError(null);
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            // Demo Mode: Load from Local Storage
-            const loadLocalData = () => {
-                try {
-                    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-                    if (stored) {
-                        const data = JSON.parse(stored);
-                        setMemories(data.memories || []);
-                        setTasks(data.tasks || []);
-                        setSavedCourses(data.courses || []);
-                        
-                        const extracted = Array.from(new Set(
-                            (data.memories || [])
-                                .filter((m: AnyMemory) => m.category === 'college' && m.course)
-                                .map((m: AnyMemory) => m.course as string)
-                        )) as string[];
-                        setDerivedCourses(extracted);
-                    }
-                } catch (e) {
-                    console.error("Failed to load local demo data", e);
-                }
-            };
-            loadLocalData();
-            return;
-        }
-
         try {
-            // A. Subscribe to Memories
+            // 1. Fetch Memories
             const memoriesRef = collection(db, 'users', user.uid, 'memories');
             const qMemories = query(memoriesRef, orderBy('date', 'desc'));
-
-            const unsubMemories = onSnapshot(qMemories, (snapshot) => {
-                const loadedMemories = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as AnyMemory[];
-                setMemories(loadedMemories);
-                setSyncError(null);
-                
-                const extracted = Array.from(new Set(
-                    loadedMemories
-                        .filter(m => m.category === 'college' && m.course)
-                        .map(m => m.course as string)
-                ));
-                setDerivedCourses(extracted);
-            }, (error) => {
-                console.warn("Firestore memories snapshot error:", error);
-                if (error.code === 'permission-denied') {
-                    setSyncError("Database Permission Denied. Please check Firestore Rules in Firebase Console.");
-                } else {
-                    setSyncError(`Sync Error: ${error.message}`);
-                }
-            });
-
-            // B. Subscribe to Tasks
-            const tasksRef = collection(db, 'users', user.uid, 'tasks');
-            const qTasks = query(tasksRef, orderBy('createdAt', 'desc'));
+            const memSnap = await getDocs(qMemories);
+            const loadedMemories = memSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AnyMemory[];
             
-            const unsubTasks = onSnapshot(qTasks, (snapshot) => {
-                const loadedTasks = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                })) as Task[];
-                setTasks(loadedTasks);
-            }, (error) => {
-                 console.warn("Firestore tasks snapshot error:", error);
-                 // Error is likely caught by the memories listener already
-            });
+            // 2. Fetch Tasks
+            const tasksRef = collection(db, 'users', user.uid, 'tasks');
+            const taskSnap = await getDocs(tasksRef);
+            const loadedTasks = taskSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
 
-            // C. Subscribe to Saved Courses (Settings)
-            const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-            const unsubSettings = onSnapshot(settingsRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data && data.courses && Array.isArray(data.courses)) {
-                        setSavedCourses(data.courses);
-                    }
-                } else {
-                    // Initialize if missing
-                    setSavedCourses([]);
-                }
-            }, (error) => {
-                console.warn("Firestore settings snapshot error:", error);
-            });
-
-            return () => {
-                unsubMemories();
-                unsubTasks();
-                unsubSettings();
-            };
-        } catch (e) {
-            console.warn("Firestore subscription failed", e);
-            setSyncError("Failed to connect to database.");
+            // 3. Update local state
+            setMemories(loadedMemories);
+            setTasks(loadedTasks);
+            setHasUnsavedChanges(false);
+        } catch (error: any) {
+            setSyncError("Failed to fetch from cloud: " + error.message);
+        } finally {
+            setIsSyncing(false);
         }
     }, [user]);
 
-    const saveToLocalStorage = (newMemories: AnyMemory[], newTasks: Task[], newSavedCourses: string[]) => {
-        const data = { memories: newMemories, tasks: newTasks, courses: newSavedCourses };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-        setMemories(newMemories);
-        setTasks(newTasks);
-        setSavedCourses(newSavedCourses);
-        
-        const extracted = Array.from(new Set(
-            newMemories
-                .filter(m => m.category === 'college' && m.course)
-                .map(m => m.course as string)
-        ));
-        setDerivedCourses(extracted);
-    };
-
-    // --- Memory Actions ---
-    const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
-        if (!user) return null;
+    const performSync = useCallback(async () => {
+        if (!user || !db || (db as any).type === 'mock') return;
         setIsSyncing(true);
-
-        const newMemoryBase = {
-            ...memory,
-            date: new Date().toISOString(),
-            userId: user.uid
-        };
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const id = Date.now().toString();
-            const newMemory = { ...newMemoryBase, id } as unknown as AnyMemory;
-            const updatedMemories = [newMemory, ...memories];
-            saveToLocalStorage(updatedMemories, tasks, savedCourses);
-            setIsSyncing(false);
-            return id;
-        }
-
+        setSyncError(null);
         try {
-            const docRef = await addDoc(collection(db, 'users', user.uid, 'memories'), newMemoryBase);
-            return docRef.id;
-        } catch (error) {
-            console.error("Error adding memory:", error);
-            return null;
+            const batch = writeBatch(db);
+
+            // This is a "Replace" strategy: we clear and rewrite to ensure the cloud matches the local exactly
+            // For a single user, this is the most reliable way to avoid duplication or conflicts.
+            
+            // 1. Save Memories
+            for (const mem of memories) {
+                const docRef = doc(db, 'users', user.uid, 'memories', mem.id);
+                batch.set(docRef, mem);
+            }
+
+            // 2. Save Tasks
+            for (const task of tasks) {
+                const docRef = doc(db, 'users', user.uid, 'tasks', task.id);
+                batch.set(docRef, task);
+            }
+
+            // 3. Save Settings/Courses
+            const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
+            batch.set(settingsRef, { courses: savedCourses }, { merge: true });
+
+            await batch.commit();
+            setHasUnsavedChanges(false);
+        } catch (error: any) {
+            console.error("Sync failed", error);
+            setSyncError("Sync failed: " + error.message);
         } finally {
             setIsSyncing(false);
         }
     }, [user, memories, tasks, savedCourses]);
+
+    // --- Local Actions ---
+
+    const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
+        const id = Date.now().toString(); // Local ID generation
+        const newMemory = { ...memory, id, date: new Date().toISOString() } as AnyMemory;
+        setMemories(prev => [newMemory, ...prev]);
+        setHasUnsavedChanges(true);
+        return id;
+    }, []);
 
     const deleteMemory = useCallback(async (id: string) => {
-        if (!user) return;
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const updatedMemories = memories.filter(m => m.id !== id);
-            saveToLocalStorage(updatedMemories, tasks, savedCourses);
-            return;
-        }
-
-        try {
-            await deleteDoc(doc(db, 'users', user.uid, 'memories', id));
-        } catch (error) {
-            console.error("Error deleting memory:", error);
-        }
-    }, [user, memories, tasks, savedCourses]);
+        setMemories(prev => prev.filter(m => m.id !== id));
+        setHasUnsavedChanges(true);
+    }, []);
 
     const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
-        if (!user) return;
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const updatedMemories = memories.map(m => m.id === id ? { ...m, ...updates } as AnyMemory : m);
-            saveToLocalStorage(updatedMemories, tasks, savedCourses);
-            return;
-        }
-
-        try {
-            const docRef = doc(db, 'users', user.uid, 'memories', id);
-            await updateDoc(docRef, updates);
-        } catch (error) {
-            console.error("Error updating memory:", error);
-        }
-    }, [user, memories, tasks, savedCourses]);
+        setMemories(prev => prev.map(m => m.id === id ? { ...m, ...updates } as AnyMemory : m));
+        setHasUnsavedChanges(true);
+    }, []);
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
-        if (!user) return;
+        setMemories(prev => prev.filter(m => !ids.includes(m.id)));
+        setHasUnsavedChanges(true);
+    }, []);
 
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const updatedMemories = memories.filter(m => !ids.includes(m.id));
-            saveToLocalStorage(updatedMemories, tasks, savedCourses);
-            return;
-        }
-
-        await Promise.all(ids.map(id => deleteDoc(doc(db, 'users', user.uid, 'memories', id))));
-    }, [user, memories, tasks, savedCourses]);
-
-    // --- Task Actions ---
     const addTask = useCallback(async (task: Omit<Task, 'id' | 'createdAt'>) => {
-        if (!user) return;
-        setIsSyncing(true);
-
-        const newTaskBase = {
-            ...task,
-            createdAt: new Date().toISOString(),
-            userId: user.uid
-        };
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const newTask = { ...newTaskBase, id: Date.now().toString() } as unknown as Task;
-            const updatedTasks = [newTask, ...tasks];
-            saveToLocalStorage(memories, updatedTasks, savedCourses);
-            setIsSyncing(false);
-            return;
-        }
-
-        try {
-            await addDoc(collection(db, 'users', user.uid, 'tasks'), newTaskBase);
-        } catch (error) {
-            console.error("Error adding task:", error);
-        } finally {
-            setIsSyncing(false);
-        }
-    }, [user, memories, tasks, savedCourses]);
+        const id = (Date.now() + 1).toString();
+        const newTask = { ...task, id, createdAt: new Date().toISOString() } as Task;
+        setTasks(prev => [newTask, ...prev]);
+        setHasUnsavedChanges(true);
+    }, []);
 
     const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
-        if (!user) return;
-
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const updatedTasks = tasks.map(t => t.id === id ? { ...t, ...updates } : t);
-            saveToLocalStorage(memories, updatedTasks, savedCourses);
-            return;
-        }
-
-        try {
-            const docRef = doc(db, 'users', user.uid, 'tasks', id);
-            await updateDoc(docRef, updates);
-        } catch (error) {
-            console.error("Error updating task:", error);
-        }
-    }, [user, memories, tasks, savedCourses]);
+        setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+        setHasUnsavedChanges(true);
+    }, []);
 
     const deleteTask = useCallback(async (id: string) => {
-        if (!user) return;
+        setTasks(prev => prev.filter(t => t.id !== id));
+        setHasUnsavedChanges(true);
+    }, []);
 
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const updatedTasks = tasks.filter(t => t.id !== id);
-            saveToLocalStorage(memories, updatedTasks, savedCourses);
-            return;
-        }
-
-        try {
-             await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
-        } catch (error) {
-            console.error("Error deleting task:", error);
-        }
-    }, [user, memories, tasks, savedCourses]);
-
-    // --- Course Actions ---
     const addCourse = useCallback(async (courseName: string) => {
-        if (!user || !courseName.trim()) return;
         const name = courseName.trim();
-        
-        // @ts-ignore
-        if (db && db.type === 'mock') {
-            const newSaved = [...new Set([...savedCourses, name])];
-            saveToLocalStorage(memories, tasks, newSaved);
-            return;
-        }
-
-        try {
-            const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-            await setDoc(settingsRef, {
-                courses: arrayUnion(name)
-            }, { merge: true });
-        } catch (error) {
-            console.error("Error adding course:", error);
-        }
-    }, [user, memories, tasks, savedCourses]);
-
-    const syncSharedClips = async () => 0;
-    const loadBackup = () => {}; 
+        if (!name) return;
+        setSavedCourses(prev => [...new Set([...prev, name])]);
+        setHasUnsavedChanges(true);
+    }, []);
 
     return { 
         memories, 
         tasks,
+        courses,
         addMemory, 
         deleteMemory, 
         bulkDeleteMemories, 
@@ -376,14 +203,13 @@ export const useRecordings = () => {
         addTask, 
         updateTask,
         deleteTask,
-        syncSharedClips, 
-        pendingClipsCount: 0, 
-        courses, 
         addCourse, 
-        isSyncing, 
-        loadBackup,
         user,
         loading,
-        syncError
+        isSyncing,
+        hasUnsavedChanges,
+        syncError,
+        performSync,
+        fetchFromCloud
     };
 };

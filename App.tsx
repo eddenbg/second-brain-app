@@ -15,7 +15,7 @@ import AddWebMemoryModal from './components/AddWebMemoryModal';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import type { AnyMemory, WebMemory } from './types';
-import { SettingsIcon, RefreshCwIcon, Loader2Icon } from './components/Icons';
+import { SettingsIcon, RefreshCwIcon, Loader2Icon, UploadIcon, CheckIcon } from './components/Icons';
 
 type View = 'physical' | 'college' | 'webclips' | 'askai' | 'voicenotes';
 
@@ -32,14 +32,15 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showRulesHelp, setShowRulesHelp] = useState(false);
   
-  // State for the auto-open share modal
   const [shareData, setShareData] = useState<{ url: string; title: string } | null>(null);
 
   const { 
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
     tasks, addTask, updateTask, deleteTask, 
-    syncSharedClips, pendingClipsCount, courses, addCourse, isSyncing, user, loading, syncError 
+    courses, addCourse, user, loading,
+    isSyncing, hasUnsavedChanges, syncError, performSync, fetchFromCloud
   } = useRecordings();
+  
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   // Detect Share Target Data
@@ -54,7 +55,6 @@ function App() {
         title: sharedTitle
       });
       setView('webclips');
-      // Clean up the URL so it doesn't re-trigger on refresh
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -128,7 +128,7 @@ function App() {
           deleteTask={deleteTask}
         />;
       case 'webclips':
-        return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={handleSaveMemory} syncSharedClips={syncSharedClips} pendingClipsCount={pendingClipsCount} bulkDelete={bulkDeleteMemories}/>;
+        return <WebClipsView memories={webClipMemories} onDelete={deleteMemory} onUpdate={handleUpdateWebClip} onSave={handleSaveMemory} syncSharedClips={async()=>0} pendingClipsCount={0} bulkDelete={bulkDeleteMemories}/>;
       case 'askai':
         return <QASession memories={memories} tasks={tasks} />;
       case 'voicenotes':
@@ -152,7 +152,6 @@ function App() {
     <div className="grid grid-rows-[auto_1fr_auto] h-full bg-gray-900 text-white relative">
       {showRulesHelp && <FirebaseRulesHelp onClose={() => setShowRulesHelp(false)} />}
       
-      {/* Auto-open Web Clip modal if share data exists */}
       {shareData && (
           <AddWebMemoryModal 
             onClose={() => setShareData(null)} 
@@ -172,30 +171,61 @@ function App() {
             onReset={() => {}} 
             data={{ memories, courses, tasks }} 
             onImport={() => {}} 
+            hasUnsavedChanges={hasUnsavedChanges}
+            onSync={performSync}
+            onFetch={fetchFromCloud}
           />
       )}
-      <header className="text-center bg-gray-800 border-b border-gray-700">
-        <div className="flex justify-between items-center p-4">
-            <div className="w-10">
-            {isSyncing && <RefreshCwIcon className="w-6 h-6 text-gray-400 animate-spin" />}
+      
+      <header className="bg-gray-800 border-b border-gray-700">
+        <div className="flex justify-between items-center p-3 sm:p-4">
+            <div className="flex-1">
+                {hasUnsavedChanges && (
+                    <button 
+                        onClick={performSync}
+                        disabled={isSyncing}
+                        className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg shadow-lg animate-pulse focus:ring-4 focus:ring-green-400"
+                        aria-label="You have unsaved changes. Tap to sync to cloud."
+                    >
+                        {isSyncing ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <UploadIcon className="w-5 h-5" />}
+                        <span className="hidden sm:inline">Sync Cloud</span>
+                    </button>
+                )}
+                {!hasUnsavedChanges && !isSyncing && (
+                    <div className="flex items-center gap-1 text-gray-500 text-xs px-2" role="status">
+                        <CheckIcon className="w-4 h-4"/> <span className="hidden sm:inline">Cloud Synced</span>
+                    </div>
+                )}
+                {isSyncing && (
+                    <div className="flex items-center gap-2 text-blue-400 text-xs px-2 animate-pulse" aria-live="polite">
+                        <Loader2Icon className="w-4 h-4 animate-spin"/> Syncing...
+                    </div>
+                )}
             </div>
-            <h1 className="text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
-            <button onClick={() => setShowSettings(true)} className="p-2 rounded-full hover:bg-gray-700" aria-label="Settings">
-                <SettingsIcon className="w-6 h-6 text-gray-400" />
-            </button>
+            
+            <h1 className="flex-grow text-center text-xl sm:text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
+            
+            <div className="flex-1 flex justify-end">
+                <button onClick={() => setShowSettings(true)} className="p-2 rounded-full hover:bg-gray-700 focus:ring-4 focus:ring-blue-400" aria-label="Open Settings">
+                    <SettingsIcon className="w-7 h-7 text-gray-400" />
+                </button>
+            </div>
         </div>
+        
         {syncError && (
             <div 
-                className="bg-red-600 text-white text-xs p-2 text-center animate-pulse cursor-pointer hover:bg-red-700"
+                className="bg-red-600 text-white text-xs p-2 text-center animate-pulse cursor-pointer"
                 onClick={() => setShowRulesHelp(true)}
             >
                 {syncError} (Tap for Help)
             </div>
         )}
       </header>
+
       <main className="p-4 sm:p-6 overflow-y-auto">
         {renderView()}
       </main>
+
       <BottomNavBar view={view} setView={setView} />
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
       <AddToHomeScreenPrompt />
