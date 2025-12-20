@@ -15,7 +15,7 @@ import AddWebMemoryModal from './components/AddWebMemoryModal';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import type { AnyMemory, WebMemory } from './types';
-import { SettingsIcon, RefreshCwIcon, Loader2Icon, UploadIcon, CheckIcon } from './components/Icons';
+import { SettingsIcon, RefreshCwIcon, Loader2Icon, UploadIcon, CheckIcon, BrainCircuitIcon } from './components/Icons';
 
 type View = 'physical' | 'college' | 'webclips' | 'askai' | 'voicenotes';
 
@@ -203,7 +203,10 @@ function App() {
                 )}
             </div>
             
-            <h1 className="flex-grow text-center text-xl sm:text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
+            <div className="flex-grow flex items-center justify-center gap-2">
+                <BrainCircuitIcon className="w-6 h-6 text-blue-400" />
+                <h1 className="text-xl sm:text-2xl font-bold tracking-wider">{viewTitles[view]}</h1>
+            </div>
             
             <div className="flex-1 flex justify-end">
                 <button onClick={() => setShowSettings(true)} className="p-2 rounded-full hover:bg-gray-700 focus:ring-4 focus:ring-blue-400" aria-label="Open Settings">
