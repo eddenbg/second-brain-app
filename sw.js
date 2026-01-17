@@ -1,17 +1,14 @@
-
-const CACHE_NAME = 'second-brain-v5';
+const CACHE_NAME = 'second-brain-v17';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon.svg',
-  '/index.tsx'
+  './',
+  './index.html',
+  './manifest.json',
+  './icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Opened cache');
       return cache.addAll(ASSETS_TO_CACHE);
     })
   );
@@ -24,7 +21,6 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -34,27 +30,21 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// The fetch handler is required for the "Install" button to appear.
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-
-  // Special handling for shared data
-  if (event.request.method === 'GET' && 
-      (url.searchParams.has('url') || url.searchParams.has('title') || url.searchParams.has('text'))) {
-    event.respondWith(fetch(event.request));
-    return;
+  
+  // Handle shared intent navigation
+  if (url.searchParams.has('shared') || url.searchParams.has('url') || url.searchParams.has('text') || url.searchParams.has('title')) {
+      // Redirect to the root with the search params
+      event.respondWith(
+          Response.redirect('./' + url.search, 303)
+      );
+      return;
   }
 
-  // Strategy: Network first, then Cache
   event.respondWith(
-    fetch(event.request)
-      .catch(() => caches.match(event.request))
-      .then((response) => response || caches.match('/'))
+    caches.match(event.request).then(response => {
+      return response || fetch(event.request);
+    })
   );
-});
-
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
 });

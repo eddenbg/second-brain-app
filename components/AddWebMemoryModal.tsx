@@ -21,7 +21,6 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
     const [voiceNote, setVoiceNote] = useState('');
     const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
 
-    // If we only got a title (sometimes shared text contains the URL)
     useEffect(() => {
         if (!url && title.includes('http')) {
             const match = title.match(/(https?:\/\/[^\s]+)/);
@@ -63,46 +62,56 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
     const isSaveDisabled = (!title.trim() && !url.trim());
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[70] p-4">
-            <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-600">
-                <header className="flex justify-between items-center p-4 border-b border-gray-700">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-3"><LinkIcon/> Add Web Clip</h2>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><XIcon className="w-6 h-6"/></button>
-                </header>
-                <main className="p-6 space-y-4 overflow-y-auto">
-                    <div>
-                        <label htmlFor="url" className="block text-lg font-medium text-gray-300 mb-2">URL</label>
-                        <input id="url" type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://example.com" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
+        <div className="fixed inset-0 bg-black/90 flex flex-col justify-center items-center z-[140] p-4">
+            <div className="bg-gray-800 rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col border-4 border-gray-600 overflow-hidden">
+                <header className="flex justify-between items-center p-6 border-b-4 border-gray-700 shrink-0 bg-gray-800">
+                    <h2 className="text-xl font-black text-white flex items-center gap-4 uppercase"><LinkIcon className="w-8 h-8"/> Clip</h2>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={handleSave} 
+                            disabled={isSaveDisabled} 
+                            className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white font-black rounded-xl text-sm uppercase shadow-xl disabled:bg-gray-700 active:scale-95 transition-all"
+                        >
+                            <SaveIcon className="w-5 h-5"/> SAVE
+                        </button>
+                        <button onClick={onClose} className="p-3 bg-gray-700 rounded-2xl active:scale-90 transition-transform"><XIcon className="w-6 h-6 text-gray-400"/></button>
                     </div>
+                </header>
+                
+                <main className="flex-grow p-6 space-y-6 overflow-y-auto scroll-smooth">
                     <div>
-                        <label htmlFor="title" className="block text-lg font-medium text-gray-300 mb-2">Title / Description</label>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Link URL</label>
+                        <input type="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                    </div>
+                    
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Title</label>
                          <div className="flex gap-2">
-                           <input id="title" type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter a title for the clip" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                           {content.trim() && (
-                               <button onClick={handleGenerateTitle} disabled={isGeneratingTitle} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2">
-                                   <BrainCircuitIcon className="w-5 h-5"/> {isGeneratingTitle ? '...' : 'AI'}
-                               </button>
-                           )}
+                           <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Name your link" className="flex-grow bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                           <button onClick={handleGenerateTitle} className="p-4 bg-purple-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
+                               <BrainCircuitIcon className="w-6 h-6"/>
+                           </button>
                         </div>
                     </div>
+                    
                     <div>
-                        <label htmlFor="content" className="block text-lg font-medium text-gray-300 mb-2">Notes or Content (Optional)</label>
-                        <textarea id="content" value={content} onChange={e => setContent(e.target.value)} rows={4} placeholder="Paste content or write your own notes here..." className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Notes</label>
+                        <textarea value={content} onChange={e => setContent(e.target.value)} rows={4} placeholder="What is this link about?" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
                     </div>
+                    
                     <div>
-                        <label htmlFor="tags" className="block text-lg font-medium text-gray-300 mb-2">Tags</label>
-                        <input id="tags" type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g., research, AI, psychology" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
+                        <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Tags</label>
+                        <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. school, research" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
                     </div>
-                     <div>
+                    
+                    <div className="bg-gray-900 p-6 rounded-[2rem] border border-gray-700 shadow-inner">
                         <MiniRecorder onTranscriptChange={setVoiceNote} />
-                        {voiceNote && <div className="mt-2 text-sm bg-gray-900 border border-gray-700 rounded-md p-2 text-gray-300 max-h-24 overflow-y-auto">{voiceNote}</div>}
+                        {voiceNote && <div className="mt-4 text-xs bg-gray-800 border-2 border-gray-700 rounded-xl p-4 text-gray-200 font-medium leading-relaxed">{voiceNote}</div>}
                     </div>
                 </main>
-                <footer className="p-4 flex justify-end gap-4 border-t border-gray-700 bg-gray-800 rounded-b-lg">
-                    <button onClick={onClose} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancel</button>
-                    <button onClick={handleSave} disabled={isSaveDisabled} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-500">
-                        <SaveIcon className="w-6 h-6"/> Save Clip
-                    </button>
+                
+                <footer className="p-4 bg-gray-800 border-t-2 border-gray-700 shrink-0 text-center">
+                    <button onClick={onClose} className="text-gray-500 font-black uppercase text-xs tracking-widest active:scale-95">Cancel</button>
                 </footer>
             </div>
         </div>

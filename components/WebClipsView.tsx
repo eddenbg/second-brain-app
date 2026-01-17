@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import type { AnyMemory, WebMemory } from '../types';
-import { TrashIcon, CheckIcon, RefreshCwIcon, PlusCircleIcon } from './Icons';
+import { TrashIcon, CheckIcon, RefreshCwIcon, PlusCircleIcon, GlobeIcon, EditIcon, XIcon } from './Icons';
 import AddWebMemoryModal from './AddWebMemoryModal';
 
 interface WebClipsViewProps {
@@ -13,41 +14,107 @@ interface WebClipsViewProps {
   bulkDelete: (ids: string[]) => void;
 }
 
+const ClipItem: React.FC<{
+    memory: WebMemory;
+    onDelete: (id: string) => void;
+    onUpdate: (id: string, updates: Partial<WebMemory>) => void;
+    isSelectMode: boolean;
+    isSelected: boolean;
+    onToggleSelect: (id: string) => void;
+}> = ({ memory, onDelete, onUpdate, isSelectMode, isSelected, onToggleSelect }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editValue, setEditValue] = useState(memory.title);
+
+    const handleSave = () => {
+        if (editValue.trim()) {
+            onUpdate(memory.id, { title: editValue.trim() });
+            setIsEditing(false);
+        }
+    };
+
+    return (
+        <div className={`bg-gray-800 rounded-3xl p-6 border-4 transition-all mb-6 shadow-xl ${isSelected ? 'border-blue-500 scale-[1.02]' : 'border-gray-700'}`}>
+            <div className="flex gap-6 items-start">
+                {isSelectMode && (
+                    <button 
+                        onClick={() => onToggleSelect(memory.id)}
+                        className={`flex-shrink-0 w-12 h-12 rounded-2xl border-4 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-400' : 'border-gray-500'}`}
+                    >
+                        {isSelected && <CheckIcon className="w-8 h-8 text-white" />}
+                    </button>
+                )}
+                
+                <div className="flex-shrink-0 pt-1">
+                    <GlobeIcon className="w-12 h-12 text-blue-400" />
+                </div>
+
+                <div className="flex-grow space-y-2 overflow-hidden">
+                    {isEditing ? (
+                        <div className="flex gap-3">
+                            <input 
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="flex-grow bg-gray-700 text-white text-2xl p-4 rounded-2xl border-4 border-blue-500 focus:outline-none"
+                                autoFocus
+                            />
+                            <button onClick={handleSave} className="p-4 bg-green-600 rounded-2xl"><CheckIcon className="w-8 h-8"/></button>
+                        </div>
+                    ) : (
+                        <h3 className="text-2xl font-black text-white leading-tight break-words">{memory.title}</h3>
+                    )}
+                    
+                    <div className="flex flex-wrap gap-2">
+                        <span className="text-xl text-gray-400 font-bold">{new Date(memory.date).toLocaleDateString()}</span>
+                        {memory.contentType && (
+                            <span className="bg-blue-900 text-blue-200 text-sm font-black px-3 py-1 rounded-full uppercase">{memory.contentType}</span>
+                        )}
+                    </div>
+                    
+                    {memory.tags && memory.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-2">
+                            {memory.tags.map(tag => (
+                                <span key={tag} className="bg-gray-700 text-gray-300 text-lg font-bold px-4 py-1 rounded-xl border-2 border-gray-600">#{tag}</span>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex flex-col gap-3">
+                    <button onClick={() => setIsEditing(!isEditing)} className="p-4 bg-gray-700 text-blue-400 rounded-2xl hover:bg-gray-600"><EditIcon className="w-10 h-10"/></button>
+                    <button onClick={() => onDelete(memory.id)} className="p-4 bg-gray-700 text-red-500 rounded-2xl hover:bg-gray-600"><TrashIcon className="w-10 h-10"/></button>
+                </div>
+            </div>
+            
+            <a 
+                href={memory.url} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="mt-6 w-full flex items-center justify-center gap-4 py-5 bg-blue-600 text-white text-2xl font-black rounded-2xl shadow-lg border-b-8 border-blue-800 active:border-b-0 active:translate-y-2"
+            >
+                OPEN LINK
+            </a>
+        </div>
+    );
+}
+
 const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdate, onSave, syncSharedClips, pendingClipsCount, bulkDelete }) => {
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showAddModal, setShowAddModal] = useState(false);
-  
-  const [editingCell, setEditingCell] = useState<{ memoryId: string; field: 'title' | 'contentType' | 'tags' } | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (editingCell && inputRef.current) {
-        inputRef.current.focus();
-    }
-  }, [editingCell]);
-
 
   const handleSync = async () => {
     setIsSyncing(true);
-    setSyncMessage(null);
-    const count = await syncSharedClips();
+    await syncSharedClips();
     setIsSyncing(false);
-    setSyncMessage(count > 0 ? `Synced ${count} new clip(s)!` : 'No new clips to sync.');
-    setTimeout(() => setSyncMessage(null), 3000);
   }
 
   const toggleSelection = (id: string) => {
     setSelectedIds(prev => {
         const newSet = new Set(prev);
-        if (newSet.has(id)) {
-            newSet.delete(id);
-        } else {
-            newSet.add(id);
-        }
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
         return newSet;
     });
   };
@@ -59,86 +126,20 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
   };
   
   const handleSaveClip = (mem: Omit<WebMemory, 'id'|'date'|'category'>) => {
-    onSave({
-        ...mem,
-        category: 'personal',
-    });
+    onSave({ ...mem, category: 'personal' });
     setShowAddModal(false);
   };
 
-  const startEditing = (memory: WebMemory, field: 'title' | 'contentType' | 'tags') => {
-    if (isSelectMode) return;
-    setEditingCell({ memoryId: memory.id, field });
-    if (field === 'tags') {
-        setEditValue(memory.tags?.join(', ') || '');
-    } else {
-        setEditValue(memory[field] || '');
-    }
-  };
-
-  const handleSaveEdit = () => {
-    if (!editingCell) return;
-    const { memoryId, field } = editingCell;
-    
-    const updates: Partial<WebMemory> = {};
-    if (field === 'tags') {
-        updates.tags = editValue.split(',').map(t => t.trim()).filter(Boolean);
-    } else {
-        updates[field] = editValue;
-    }
-
-    onUpdate(memoryId, updates);
-    setEditingCell(null);
-  };
-  
-  const renderCell = (memory: WebMemory, field: 'title' | 'contentType' | 'tags') => {
-    const isEditing = editingCell?.memoryId === memory.id && editingCell?.field === field;
-    if (isEditing) {
-        return (
-            <input
-                ref={inputRef}
-                type="text"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onBlur={handleSaveEdit}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveEdit();
-                    if (e.key === 'Escape') setEditingCell(null);
-                }}
-                className="w-full bg-gray-600 text-white p-1 rounded-md border border-blue-500 focus:outline-none"
-            />
-        );
-    }
-    
-    let displayValue: string;
-    if (field === 'tags') {
-        displayValue = memory.tags?.join(', ') || '';
-    } else {
-        displayValue = memory[field] || '';
-    }
-    
-    return (
-        <span onClick={() => startEditing(memory, field)} className="cursor-pointer hover:bg-gray-700 p-1 rounded-md min-h-[24px] block">
-           {displayValue || <span className="text-gray-500">empty</span>}
-        </span>
-    );
-  }
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       {showAddModal && <AddWebMemoryModal onClose={() => setShowAddModal(false)} onSave={handleSaveClip} />}
-      {syncMessage && (
-        <div className="text-center p-2 bg-gray-700 rounded-lg text-white animate-fade-in-up fixed top-20 left-1/2 -translate-x-1/2 z-40 w-11/12 max-w-sm">
-            {syncMessage}
-        </div>
-      )}
 
-      <div className="space-y-4">
-          <div className="flex justify-between items-center border-b border-gray-700 pb-2">
-            <h2 className="text-2xl font-bold text-white">My Web Clips</h2>
-            <div className="flex items-center gap-2 sm:gap-4">
-                <button onClick={() => setShowAddModal(true)} className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300">
-                    <PlusCircleIcon className="w-6 h-6" />
+      <div className="space-y-8">
+          <div className="flex justify-between items-center border-b-4 border-gray-700 pb-4">
+            <h2 className="text-3xl font-black text-white uppercase tracking-tight">Archives</h2>
+            <div className="flex items-center gap-4">
+                <button onClick={() => setShowAddModal(true)} className="p-4 rounded-2xl bg-blue-600 text-white shadow-xl hover:scale-110 transition-transform">
+                    <PlusCircleIcon className="w-12 h-12" />
                 </button>
                 {memories.length > 0 && (
                     <button 
@@ -146,66 +147,47 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
                             setIsSelectMode(!isSelectMode);
                             setSelectedIds(new Set());
                         }} 
-                        className="px-4 py-2 text-md font-semibold rounded-md bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                        className="px-6 py-4 text-xl font-black rounded-2xl bg-gray-700 text-gray-300 border-2 border-gray-600"
                     >
-                        {isSelectMode ? 'Cancel' : 'Select'}
+                        {isSelectMode ? 'DONE' : 'SELECT'}
                     </button>
                 )}
-                <button onClick={handleSync} disabled={isSyncing} className="relative p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-50">
-                    <RefreshCwIcon className={`w-6 h-6 ${isSyncing ? 'animate-spin' : ''}`} />
+                <button onClick={handleSync} disabled={isSyncing} className="relative p-4 rounded-2xl bg-gray-700 text-gray-300 border-2 border-gray-600">
+                    <RefreshCwIcon className={`w-10 h-10 ${isSyncing ? 'animate-spin' : ''}`} />
                     {pendingClipsCount > 0 && !isSyncing && (
-                        <span className="absolute top-0 right-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingClipsCount}</span>
+                        <span className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 text-lg font-black text-white border-2 border-gray-900">{pendingClipsCount}</span>
                     )}
                 </button>
             </div>
           </div>
           
           {memories.length > 0 ? (
-                <div className="overflow-x-auto bg-gray-800 rounded-lg border border-gray-700">
-                    <table className="w-full text-left table-auto">
-                        <thead className="border-b border-gray-700">
-                            <tr>
-                                {isSelectMode && <th className="p-3 w-12"></th>}
-                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Title</th>
-                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Date</th>
-                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Type</th>
-                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider">Tags</th>
-                                <th className="p-3 text-sm font-semibold text-gray-400 tracking-wider w-20">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {(memories as WebMemory[]).map((mem, index) => (
-                                <tr key={mem.id} className={`border-b border-gray-700 last:border-b-0 ${selectedIds.has(mem.id) ? 'bg-blue-900 bg-opacity-50' : ''}`}>
-                                    {isSelectMode && (
-                                        <td className="p-3 align-top" onClick={() => toggleSelection(mem.id)}>
-                                            <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center cursor-pointer ${selectedIds.has(mem.id) ? 'bg-blue-500 border-blue-400' : 'border-gray-500'}`}>
-                                                {selectedIds.has(mem.id) && <CheckIcon className="w-4 h-4 text-white" />}
-                                            </div>
-                                        </td>
-                                    )}
-                                    <td className="p-2 text-white align-top min-w-[200px]">{renderCell(mem, 'title')}</td>
-                                    <td className="p-3 text-gray-400 text-sm align-top whitespace-nowrap">{new Date(mem.date).toLocaleDateString()}</td>
-                                    <td className="p-2 text-gray-300 align-top min-w-[120px]">{renderCell(mem, 'contentType')}</td>
-                                    <td className="p-2 text-gray-300 align-top min-w-[150px]">{renderCell(mem, 'tags')}</td>
-                                    <td className="p-2 align-top text-center">
-                                        <button onClick={() => onDelete(mem.id)} aria-label="Delete memory" className="p-2 text-gray-500 hover:text-red-500 focus:outline-none rounded-full"><TrashIcon className="w-5 h-5"/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div className="pb-40">
+                    {(memories as WebMemory[]).map((mem) => (
+                        <ClipItem 
+                            key={mem.id}
+                            memory={mem}
+                            onDelete={onDelete}
+                            onUpdate={onUpdate}
+                            isSelectMode={isSelectMode}
+                            isSelected={selectedIds.has(mem.id)}
+                            onToggleSelect={toggleSelection}
+                        />
+                    ))}
                 </div>
           ) : (
-               <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
-                  <h2 className="text-2xl font-semibold text-white">No Clips Yet</h2>
-                  <p className="mt-2 text-gray-400">Add a new clip manually or share content from other apps to see it here.</p>
+               <div className="text-center py-24 px-8 bg-gray-800 rounded-3xl border-4 border-gray-700 border-dashed">
+                  <GlobeIcon className="w-24 h-24 text-gray-600 mx-auto mb-6" />
+                  <h2 className="text-3xl font-black text-white mb-4">No Web Clips</h2>
+                  <p className="text-2xl text-gray-400 font-bold">Add links manually or share content from your browser to save it here.</p>
               </div>
           )}
       </div>
+
       {isSelectMode && selectedIds.size > 0 && (
-          <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-sm">
-              <button onClick={handleBulkDelete} className="w-full bg-red-600 text-white font-bold py-4 px-4 rounded-lg shadow-lg flex items-center justify-center gap-2">
-                  <TrashIcon className="w-6 h-6"/> Delete ({selectedIds.size})
+          <div className="fixed bottom-36 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-md">
+              <button onClick={handleBulkDelete} className="w-full bg-red-600 text-white font-black text-2xl py-6 px-4 rounded-3xl shadow-2xl flex items-center justify-center gap-4 border-b-8 border-red-800 active:border-b-0 active:translate-y-2">
+                  <TrashIcon className="w-12 h-12"/> DELETE ({selectedIds.size})
               </button>
           </div>
       )}

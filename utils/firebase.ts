@@ -1,13 +1,12 @@
-// @ts-ignore
+
+
 import { initializeApp } from 'firebase/app';
-import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider } from 'firebase/auth';
 import { initializeFirestore, CACHE_SIZE_UNLIMITED, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
 
 /**
  * AUTOMATIC SYNC SETUP:
  * Your Firebase configuration is now hardcoded below.
- * This ensures that on any device (phone, laptop, etc.), 
- * the app will automatically connect to your database.
  */
 const DEFAULT_CONFIG = {
   apiKey: "AIzaSyBh7OGWLhzLIxQfawEs3oCHMPWwGu1khoo",
@@ -48,7 +47,6 @@ export const clearFirebaseConfig = () => {
     window.location.reload();
 };
 
-// Priority: Hardcoded Default > Env Vars > Local Storage
 const firebaseConfig = (DEFAULT_CONFIG.apiKey) 
     ? DEFAULT_CONFIG 
     : (getEnv('VITE_FIREBASE_API_KEY') ? {
@@ -60,11 +58,6 @@ const firebaseConfig = (DEFAULT_CONFIG.apiKey)
         appId: getEnv('VITE_FIREBASE_APP_ID')
       } : (getStoredConfig() || {}));
 
-export const getCurrentConfig = () => {
-    if (firebaseConfig.apiKey) return firebaseConfig;
-    return null;
-};
-
 let app;
 let authExport;
 let dbExport;
@@ -74,7 +67,6 @@ try {
     if (!firebaseConfig.apiKey) {
         throw new Error("Missing Config");
     }
-    // Fixed: Ensure modular import is handled correctly by re-asserting the standard initializeApp call.
     app = initializeApp(firebaseConfig);
     authExport = getAuth(app);
     
@@ -101,3 +93,4 @@ try {
 export const auth = authExport;
 export const db = dbExport;
 export const isConfigured = !isMock;
+export const googleProvider = new GoogleAuthProvider();

@@ -1,30 +1,34 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AnyMemory, WebMemory, Task } from '../types';
 import { db, auth } from '../utils/firebase';
 import { 
     collection, 
-    getDocs,
     doc, 
-    setDoc,
     writeBatch,
     query,
-    orderBy
+    orderBy,
+    onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User, GoogleAuthProvider, linkWithPopup, unlink } from 'firebase/auth';
 
 export interface StoredData {
     memories: AnyMemory[];
     courses: string[];
     tasks: Task[];
+    moodleToken?: string;
+    isGoogleConnected?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
+const SYNC_DELAY_MS = 2000; // 2 seconds of inactivity before auto-sync
 
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
+    const [moodleToken, setMoodleToken] = useState<string | null>(null);
+    const [isGoogleConnected, setIsGoogleConnected] = useState(false);
     const [courses, setCourses] = useState<string[]>([]);
     
     const [user, setUser] = useState<User | null>(null);
@@ -33,7 +37,9 @@ export const useRecordings = () => {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [syncError, setSyncError] = useState<string | null>(null);
 
-    // Load initial data from LocalStorage
+    const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // 1. Initial Load from LocalStorage (for speed)
     useEffect(() => {
         const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (stored) {
@@ -42,111 +48,143 @@ export const useRecordings = () => {
                 setMemories(data.memories || []);
                 setTasks(data.tasks || []);
                 setSavedCourses(data.courses || []);
+                setMoodleToken(data.moodleToken || null);
+                setIsGoogleConnected(data.isGoogleConnected || false);
             } catch (e) {
                 console.error("Failed to parse local storage", e);
             }
         }
     }, []);
 
-    // Derived courses from memories
+    // 2. Handle Auth state & Setup Real-time Listeners
+    useEffect(() => {
+        if (!auth) {
+            setLoading(false);
+            return;
+        }
+
+        const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
+            setUser(currentUser);
+            setLoading(false);
+        });
+
+        return () => authUnsubscribe();
+    }, []);
+
+    // 3. Real-time Listeners for Memories and Tasks
+    useEffect(() => {
+        if (!user || !db || (db as any).type === 'mock') return;
+
+        // Memories Listener
+        const memoriesRef = collection(db, 'users', user.uid, 'memories');
+        const qMemories = query(memoriesRef, orderBy('date', 'desc'));
+        const unsubMemories = onSnapshot(qMemories, (snapshot) => {
+            const remoteMemories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AnyMemory[];
+            setMemories(remoteMemories);
+        });
+
+        // Tasks Listener
+        const tasksRef = collection(db, 'users', user.uid, 'tasks');
+        const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
+            const remoteTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
+            setTasks(remoteTasks);
+        });
+
+        return () => {
+            unsubMemories();
+            unsubTasks();
+        };
+    }, [user]);
+
+    // 3b. Separate Real-time Listener for Settings to ensure cross-device sync
+    useEffect(() => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        
+        const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
+        const unsubSettings = onSnapshot(settingsRef, (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                setSavedCourses(data.courses || []);
+                setMoodleToken(data.moodleToken || null);
+                setIsGoogleConnected(data.isGoogleConnected || false);
+            } else {
+                setSavedCourses([]);
+                setMoodleToken(null);
+                setIsGoogleConnected(false);
+            }
+        });
+
+        return () => unsubSettings();
+
+    }, [user]);
+
+    // 4. Derived courses from memories + savedCourses
     useEffect(() => {
         const extracted = Array.from(new Set(
             memories
                 .filter(m => m.category === 'college' && m.course)
                 .map(m => m.course as string)
         ));
-        const uniqueCourses = Array.from(new Set([...extracted, ...savedCourses])).sort();
+        const uniqueCourses = Array.from(new Set([...extracted, ...savedCourses]))
+            .filter(c => c !== 'General')
+            .sort();
+            
         setCourses(uniqueCourses);
     }, [memories, savedCourses]);
 
-    // Handle Auth state
+    // 5. Save to local storage for offline persistent cache
     useEffect(() => {
-        if (!auth) {
-            setLoading(false);
-            return;
-        }
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, []);
-
-    // Save to local storage whenever state changes
-    useEffect(() => {
-        const data = { memories, tasks, courses: savedCourses };
+        const data = { memories, tasks, courses: savedCourses, moodleToken, isGoogleConnected };
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-    }, [memories, tasks, savedCourses]);
+    }, [memories, tasks, savedCourses, moodleToken, isGoogleConnected]);
 
-    // --- Manual Cloud Actions ---
-
-    const fetchFromCloud = useCallback(async () => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        setIsSyncing(true);
-        setSyncError(null);
-        try {
-            // 1. Fetch Memories
-            const memoriesRef = collection(db, 'users', user.uid, 'memories');
-            const qMemories = query(memoriesRef, orderBy('date', 'desc'));
-            const memSnap = await getDocs(qMemories);
-            const loadedMemories = memSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AnyMemory[];
-            
-            // 2. Fetch Tasks
-            const tasksRef = collection(db, 'users', user.uid, 'tasks');
-            const taskSnap = await getDocs(tasksRef);
-            const loadedTasks = taskSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
-
-            // 3. Update local state
-            setMemories(loadedMemories);
-            setTasks(loadedTasks);
-            setHasUnsavedChanges(false);
-        } catch (error: any) {
-            setSyncError("Failed to fetch from cloud: " + error.message);
-        } finally {
-            setIsSyncing(false);
-        }
-    }, [user]);
-
+    // --- Cloud Sync Action ---
     const performSync = useCallback(async () => {
         if (!user || !db || (db as any).type === 'mock') return;
         setIsSyncing(true);
         setSyncError(null);
         try {
             const batch = writeBatch(db);
-
-            // This is a "Replace" strategy: we clear and rewrite to ensure the cloud matches the local exactly
-            // For a single user, this is the most reliable way to avoid duplication or conflicts.
             
-            // 1. Save Memories
             for (const mem of memories) {
                 const docRef = doc(db, 'users', user.uid, 'memories', mem.id);
                 batch.set(docRef, mem);
             }
 
-            // 2. Save Tasks
             for (const task of tasks) {
                 const docRef = doc(db, 'users', user.uid, 'tasks', task.id);
                 batch.set(docRef, task);
             }
 
-            // 3. Save Settings/Courses
             const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-            batch.set(settingsRef, { courses: savedCourses }, { merge: true });
+            batch.set(settingsRef, { courses: savedCourses, moodleToken, isGoogleConnected }, { merge: true });
 
             await batch.commit();
             setHasUnsavedChanges(false);
         } catch (error: any) {
             console.error("Sync failed", error);
-            setSyncError("Sync failed: " + error.message);
+            setSyncError("Cloud connection lost.");
         } finally {
             setIsSyncing(false);
         }
-    }, [user, memories, tasks, savedCourses]);
+    }, [user, memories, tasks, savedCourses, moodleToken, isGoogleConnected]);
 
-    // --- Local Actions ---
+    // Auto-Sync Trigger
+    useEffect(() => {
+        if (hasUnsavedChanges && user && !isSyncing) {
+            if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
+            autoSyncTimerRef.current = setTimeout(() => {
+                performSync();
+            }, SYNC_DELAY_MS);
+        }
+        return () => {
+            if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
+        };
+    }, [hasUnsavedChanges, user, performSync, isSyncing]);
 
+    // --- Actions ---
     const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
-        const id = Date.now().toString(); // Local ID generation
+        const id = Date.now().toString();
         const newMemory = { ...memory, id, date: new Date().toISOString() } as AnyMemory;
         setMemories(prev => [newMemory, ...prev]);
         setHasUnsavedChanges(true);
@@ -188,28 +226,56 @@ export const useRecordings = () => {
     const addCourse = useCallback(async (courseName: string) => {
         const name = courseName.trim();
         if (!name) return;
-        setSavedCourses(prev => [...new Set([...prev, name])]);
+        setSavedCourses(prev => {
+            if (prev.includes(name)) return prev;
+            return [...prev, name];
+        });
         setHasUnsavedChanges(true);
     }, []);
 
+    const saveMoodleToken = useCallback(async (token: string) => {
+        setMoodleToken(token);
+        setHasUnsavedChanges(true);
+    }, []);
+
+    const connectGoogleCalendar = useCallback(async () => {
+        if (!auth.currentUser) return;
+        const provider = new GoogleAuthProvider();
+        provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+        try {
+            const result = await linkWithPopup(auth.currentUser, provider);
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            const accessToken = credential?.accessToken;
+            if (accessToken) {
+                localStorage.setItem('google_access_token', accessToken);
+                setIsGoogleConnected(true);
+                setHasUnsavedChanges(true);
+            }
+        } catch (error: any) {
+            console.error("Failed to link Google Account", error);
+            alert(`Could not connect to Google: ${error.message}`);
+        }
+    }, []);
+
+    const disconnectGoogleCalendar = useCallback(async () => {
+        if (!auth.currentUser) return;
+        try {
+            await unlink(auth.currentUser, 'google.com');
+            localStorage.removeItem('google_access_token');
+            setIsGoogleConnected(false);
+            setHasUnsavedChanges(true);
+        } catch (error: any) {
+            console.error("Failed to unlink Google Account", error);
+            alert(`Could not disconnect from Google: ${error.message}`);
+        }
+    }, []);
+
     return { 
-        memories, 
-        tasks,
-        courses,
-        addMemory, 
-        deleteMemory, 
-        bulkDeleteMemories, 
-        updateMemory, 
-        addTask, 
-        updateTask,
-        deleteTask,
-        addCourse, 
-        user,
-        loading,
-        isSyncing,
-        hasUnsavedChanges,
-        syncError,
-        performSync,
-        fetchFromCloud
+        memories, tasks, courses, moodleToken, isGoogleConnected,
+        addMemory, deleteMemory, bulkDeleteMemories, updateMemory, 
+        addTask, updateTask, deleteTask, addCourse, saveMoodleToken,
+        connectGoogleCalendar, disconnectGoogleCalendar,
+        user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
+        fetchFromCloud: performSync
     };
 };

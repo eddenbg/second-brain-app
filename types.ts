@@ -1,4 +1,3 @@
-
 export interface BaseMemory {
   id: string;
   date: string;
@@ -6,6 +5,7 @@ export interface BaseMemory {
   category: 'college' | 'personal';
   tags?: string[];
   course?: string;
+  isHidden?: boolean;
   voiceNote?: {
     transcript: string;
   };
@@ -20,13 +20,33 @@ export interface TranscriptSegment {
   text: string;
 }
 
+export interface StrokePoint {
+    x: number;
+    y: number;
+    t: number;
+}
+
+export interface DrawingStroke {
+    points: StrokePoint[];
+    color: string;
+    width: number;
+}
+
+export interface NotebookData {
+    strokes: DrawingStroke[];
+    backgroundImageUrl?: string;
+    textNotes?: { text: string; x: number; y: number; t: number }[];
+}
+
 export interface VoiceMemory extends BaseMemory {
   type: 'voice';
   transcript: string;
+  audioDataUrl?: string;
   summary?: string;
   structuredTranscript?: TranscriptSegment[];
   speakerMappings?: { [key: number]: string };
   actionItems?: { text: string; done: boolean }[];
+  notebook?: NotebookData;
 }
 
 export interface WebMemory extends BaseMemory {
@@ -55,7 +75,17 @@ export interface DocumentMemory extends BaseMemory {
   imageDataUrl: string;
 }
 
-export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory;
+export interface FileMemory extends BaseMemory {
+  type: 'file';
+  fileUrl: string;
+  mimeType: string;
+  size?: number;
+  sourceType?: 'moodle' | 'upload';
+  moodleId?: string;
+  summary?: string;
+}
+
+export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory | FileMemory;
 
 export type TaskStatus = 'idea' | 'todo' | 'in-progress' | 'done';
 
@@ -71,10 +101,35 @@ export interface Task {
   description?: string;
   status: TaskStatus;
   category: 'college' | 'personal';
-  course?: string; // For college
-  project?: string; // For personal or college projects
+  course?: string;
+  project?: string;
   subtasks?: SubTask[];
   dueDate?: string;
-  linkedMemoryIds?: string[]; // IDs of memories linked to this task
+  linkedMemoryIds?: string[];
   createdAt: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  startTime: string; 
+  endTime: string;   
+  category: 'college' | 'personal';
+  description?: string;
+  relatedTaskId?: string;
+  source?: 'moodle' | 'google' | 'manual';
+}
+
+export interface MoodleCourse {
+    id: number;
+    fullname: string;
+    shortname: string;
+}
+
+export interface MoodleContent {
+    id: number;
+    name: string;
+    type: 'file' | 'url' | 'folder' | 'resource';
+    fileurl?: string;
+    mimetype?: string;
 }

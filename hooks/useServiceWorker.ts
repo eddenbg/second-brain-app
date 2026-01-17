@@ -14,8 +14,11 @@ export const useServiceWorker = () => {
     useEffect(() => {
         if ('serviceWorker' in navigator) {
             const registerAndListen = () => {
-                // Use a standard root-relative path for the service worker.
-                navigator.serviceWorker.register('/sw.js').then(registration => {
+                // Fix: Force the registration to use the current window's origin
+                // to avoid mismatch errors in proxied preview environments.
+                const swUrl = new URL('sw.js', window.location.href).href;
+                
+                navigator.serviceWorker.register(swUrl).then(registration => {
                     if (registration.waiting) {
                         onUpdate(registration);
                     }
@@ -34,8 +37,12 @@ export const useServiceWorker = () => {
                 });
             };
             
-            // Register the service worker once the page is fully loaded.
-            window.addEventListener('load', registerAndListen);
+            if (document.readyState === 'complete') {
+                registerAndListen();
+            } else {
+                window.addEventListener('load', registerAndListen);
+                return () => window.removeEventListener('load', registerAndListen);
+            }
 
             let refreshing = false;
             navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -44,11 +51,6 @@ export const useServiceWorker = () => {
                     refreshing = true;
                 }
             });
-
-            // Cleanup the event listener when the component unmounts.
-            return () => {
-                window.removeEventListener('load', registerAndListen);
-            };
         }
     }, [onUpdate]);
 

@@ -1,8 +1,10 @@
-
-import React, { useState } from 'react';
-import { auth, isConfigured, saveFirebaseConfig } from '../utils/firebase';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { Loader2Icon, SettingsIcon, CheckIcon, BrainCircuitIcon } from './Icons';
+import React, { useState, useCallback } from 'react';
+import { auth, isConfigured } from '../utils/firebase';
+import { 
+    createUserWithEmailAndPassword, 
+    signInWithEmailAndPassword, 
+} from 'firebase/auth';
+import { Loader2Icon, BrainCircuitIcon, MicIcon } from './Icons';
 import FirebaseConfigModal from './FirebaseConfigModal';
 
 interface SyncSetupProps {
@@ -17,140 +19,129 @@ const SyncSetup: React.FC<SyncSetupProps> = () => {
     const [loading, setLoading] = useState(false);
     const [showConfig, setShowConfig] = useState(false);
 
+    const playTone = useCallback((type: 'success' | 'error') => {
+        try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            
+            if (type === 'success') {
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.2);
+            } else {
+                osc.frequency.setValueAtTime(440, ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(220, ctx.currentTime + 0.3);
+            }
+            
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.3);
+        } catch (e) { console.error(e); }
+    }, []);
+
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
-        
         if (!isConfigured) {
-            setError("Database not connected. Please click 'Connect Database' first.");
+            setError("Database not connected.");
             return;
         }
-
         setLoading(true);
-
         try {
-            // @ts-ignore
-            if (auth.type === 'mock') {
-                if (mode === 'signin') {
-                     // @ts-ignore
-                    await auth.signInWithEmailAndPassword(auth, email, password);
-                } else {
-                     // @ts-ignore
-                    await auth.createUserWithEmailAndPassword(auth, email, password);
-                }
-                return;
-            }
-
             if (mode === 'signin') {
                 await signInWithEmailAndPassword(auth, email, password);
             } else {
                 await createUserWithEmailAndPassword(auth, email, password);
             }
+            playTone('success');
         } catch (err: any) {
-            let msg = "Authentication failed.";
-            if (err.code === 'auth/invalid-credential') msg = "Incorrect email or password.";
-            if (err.code === 'auth/email-already-in-use') msg = "Email already in use. Please sign in.";
-            if (err.code === 'auth/weak-password') msg = "Password should be at least 6 characters.";
-            if (err.code === 'auth/operation-not-allowed') msg = "Email/Password sign-in is not enabled in Firebase Console.";
-            
-            setError(msg);
+            setError("Invalid email or password.");
+            playTone('error');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="flex flex-col items-center justify-center h-full bg-gray-900 text-white p-8 text-center overflow-y-auto">
-            {showConfig && <FirebaseConfigModal onClose={() => setShowConfig(false)} />}
-            
-            <div className="mb-8">
-                <BrainCircuitIcon className="w-20 h-20 text-blue-500 mx-auto mb-4" />
-                <h1 className="text-4xl font-bold mb-2">My Second Brain</h1>
-                <p className="text-gray-400 text-sm">Your Personal AI Memory Assistant</p>
-            </div>
-            
-            <div className="w-full max-w-sm bg-gray-800 rounded-xl shadow-2xl border border-gray-700 overflow-hidden">
-                {!isConfigured ? (
-                    <div className="p-8 space-y-6">
-                        <div className="text-yellow-400 bg-yellow-900 bg-opacity-20 p-4 rounded-lg border border-yellow-700 text-sm text-left">
-                            <strong>Setup Required:</strong> The app is not connected to your database yet.
+        <div className="absolute inset-0 overflow-y-auto bg-[#0b0f1a] text-white scroll-smooth">
+            <div className="min-h-full flex flex-col items-center px-6 py-12">
+                {showConfig && <FirebaseConfigModal onClose={() => setShowConfig(false)} />}
+                
+                <div className="mb-12 text-center flex-shrink-0">
+                    <div className="relative inline-block mb-4">
+                        <div className="bg-blue-600 p-6 rounded-[2rem] shadow-[0_0_40px_rgba(37,99,235,0.4)]">
+                            <BrainCircuitIcon className="w-16 h-16 text-white" />
                         </div>
-                        <p className="text-gray-400 text-sm">
-                            Please paste your Firebase Configuration to start syncing your thoughts and to-dos.
-                        </p>
-                        <button 
-                            onClick={() => setShowConfig(true)}
-                            className="w-full py-4 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg transition-all"
-                        >
-                            <SettingsIcon className="w-5 h-5" /> Connect Database
-                        </button>
+                        <div className="absolute -bottom-2 -right-2 bg-white rounded-2xl p-2 border-4 border-[#0b0f1a] shadow-xl">
+                            <MicIcon className="w-6 h-6 text-blue-600" />
+                        </div>
                     </div>
-                ) : (
-                    <>
-                        {/* Tabs */}
-                        <div className="flex border-b border-gray-700">
-                            <button 
-                                onClick={() => setMode('signin')}
-                                className={`flex-1 py-4 font-semibold text-sm transition-colors ${mode === 'signin' ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'bg-gray-900 text-gray-400 hover:text-white'}`}
-                            >
-                                Sign In
-                            </button>
-                            <button 
-                                onClick={() => setMode('signup')}
-                                className={`flex-1 py-4 font-semibold text-sm transition-colors ${mode === 'signup' ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'bg-gray-900 text-gray-400 hover:text-white'}`}
-                            >
-                                Create Account
-                            </button>
-                        </div>
-
-                        <div className="p-6">
-                            <form onSubmit={handleAuth} className="space-y-4">
+                    <h1 className="text-4xl font-black mb-1 tracking-tighter uppercase">My Second Brain</h1>
+                    <p className="text-blue-400 text-xl font-black uppercase tracking-widest opacity-80">Memory Assistant</p>
+                </div>
+                
+                <div className="w-full max-w-md space-y-8">
+                    <div className="bg-[#111827] rounded-[3rem] border-4 border-gray-800 p-10 space-y-8 shadow-2xl relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-2 bg-blue-600"></div>
+                        
+                        <h2 className="text-3xl font-black text-center uppercase tracking-tighter">
+                            {mode === 'signin' ? 'Welcome Back' : 'Create Account'}
+                        </h2>
+                        
+                        <form onSubmit={handleAuth} className="space-y-5 text-left">
+                            <div>
                                 <input
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="Email"
-                                    required
-                                    className="w-full bg-gray-900 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Email Address"
+                                    className="w-full bg-[#0b0f1a] text-white text-xl p-5 rounded-2xl border-4 border-gray-800 focus:border-blue-600 outline-none transition-all shadow-inner"
+                                    aria-label="Email Address"
                                 />
+                            </div>
+                            <div>
                                 <input
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     placeholder="Password"
-                                    required
-                                    className="w-full bg-gray-900 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"
+                                    className="w-full bg-[#0b0f1a] text-white text-xl p-5 rounded-2xl border-4 border-gray-800 focus:border-blue-600 outline-none transition-all shadow-inner"
+                                    aria-label="Password"
                                 />
-                                
-                                {error && (
-                                    <div className="text-red-400 bg-red-900 bg-opacity-20 p-3 rounded-lg text-sm text-left">
-                                        {error}
-                                    </div>
-                                )}
-
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="w-full flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition-colors disabled:bg-blue-800"
-                                >
-                                    {loading ? <Loader2Icon className="animate-spin w-6 h-6"/> : (mode === 'signin' ? "Sign In" : "Create Account")}
-                                </button>
-                            </form>
-                        </div>
-                        
-                        <div className="bg-gray-900 p-3 border-t border-gray-700 flex flex-col gap-2">
-                             <div className="text-green-400 text-xs flex items-center justify-center gap-1">
-                                <CheckIcon className="w-3 h-3"/> Database Connected
                             </div>
-                            <button 
-                                onClick={() => setShowConfig(true)} 
-                                className="text-gray-500 hover:text-gray-300 text-xs flex items-center justify-center gap-1 w-full"
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full py-6 bg-blue-600 text-white font-black text-2xl rounded-2xl border-b-8 border-blue-800 active:border-b-0 active:translate-y-2 transition-all shadow-xl uppercase tracking-tighter"
                             >
-                                <SettingsIcon className="w-3 h-3"/> Config Settings
+                                {loading ? <Loader2Icon className="w-10 h-10 animate-spin mx-auto"/> : (mode === 'signin' ? 'Sign In' : 'Sign Up')}
                             </button>
+                        </form>
+                        
+                        <button 
+                            onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')} 
+                            className="text-gray-500 font-black text-lg underline uppercase tracking-widest w-full hover:text-white transition-colors py-2"
+                        >
+                            {mode === 'signin' ? "Need an account? Sign Up" : 'Have an account? Log In'}
+                        </button>
+                    </div>
+                    
+                    {error && (
+                        <div className="bg-red-900/30 border-4 border-red-600 p-6 rounded-[2rem] text-red-200 font-black text-lg text-center animate-shake flex flex-col items-center gap-4 shadow-xl">
+                            <div className="flex flex-col items-center gap-2">
+                                <span className="text-3xl">⚠️</span>
+                                <p>{error}</p>
+                            </div>
                         </div>
-                    </>
-                )}
+                    )}
+
+                    <p className="text-gray-500 font-bold text-sm px-10 text-center leading-relaxed pb-20 uppercase tracking-tighter">
+                        Protected by Firebase Cloud Sync. Your data is encrypted and private.
+                    </p>
+                </div>
             </div>
         </div>
     );

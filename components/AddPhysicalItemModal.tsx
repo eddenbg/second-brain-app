@@ -1,7 +1,8 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { generateTitleForContent } from '../services/geminiService';
 import type { PhysicalItemMemory, VideoItemMemory, AnyMemory } from '../types';
-import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon } from './Icons';
+import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon, Loader2Icon } from './Icons';
 import MiniRecorder from './MiniRecorder';
 import { getCurrentLocation } from '../utils/location';
 import { Modality, LiveSession } from '@google/genai';
@@ -18,8 +19,8 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [tags, setTags] = useState('');
-    const [voiceNote, setVoiceNote] = useState(''); // For photo mode
-    const [transcript, setTranscript] = useState(''); // For video mode
+    const [voiceNote, setVoiceNote] = useState(''); 
+    const [transcript, setTranscript] = useState(''); 
     const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
     const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -100,7 +101,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         
         const ai = getGeminiInstance();
         if (!ai) {
-          setError("AI features are not available. Please check API Key configuration.");
+          setError("AI features are not available.");
           return;
         }
 
@@ -109,17 +110,17 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         liveTranscriptRef.current = '';
         setTranscript('');
         
-        // Media Recorder for Video
         const chunks: Blob[] = [];
         mediaRecorderRef.current = new MediaRecorder(stream);
         mediaRecorderRef.current.ondataavailable = (event) => chunks.push(event.data);
         mediaRecorderRef.current.onstop = () => {
             const blob = new Blob(chunks, { type: 'video/webm' });
-            setVideoDataUrl(URL.createObjectURL(blob));
+            const reader = new FileReader();
+            reader.onloadend = () => setVideoDataUrl(reader.result as string);
+            reader.readAsDataURL(blob);
         };
         mediaRecorderRef.current.start();
         
-        // Live transcription for Audio
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         sessionPromiseRef.current = ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -130,7 +131,10 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                 scriptProcessor.onaudioprocess = (e) => {
                   const inputData = e.inputBuffer.getChannelData(0);
                   const int16 = new Int16Array(inputData.length);
-                  for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
+                  for (let i = 0; i < inputData.length; i++) {
+                    let s = Math.max(-1, Math.min(1, inputData[i]));
+                    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                  }
                   let binary = '';
                   const bytes = new Uint8Array(int16.buffer);
                   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
@@ -199,93 +203,100 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     const isSaveDisabled = !title.trim() || (mode === 'photo' && !imageDataUrl) || (mode === 'video' && !videoDataUrl);
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-600">
-                <header className="flex justify-between items-center p-4 border-b border-gray-700">
-                    <h2 className="text-2xl font-bold text-white flex items-center gap-3"><CameraIcon/> Add Item Memory</h2>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-700"><XIcon className="w-6 h-6"/></button>
+        <div className="fixed inset-0 bg-black/90 flex flex-col justify-center items-center z-[120] p-4">
+            <div className="bg-gray-800 rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col border-4 border-gray-600 overflow-hidden">
+                <header className="flex justify-between items-center p-6 border-b-4 border-gray-700 shrink-0 bg-gray-800">
+                    <h2 className="text-xl font-black text-white flex items-center gap-3 uppercase"><CameraIcon className="w-8 h-8"/> Item</h2>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={handleSave} 
+                            disabled={isSaveDisabled} 
+                            className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white font-black rounded-xl text-sm uppercase shadow-xl disabled:bg-gray-700 active:scale-95 transition-all"
+                        >
+                            <SaveIcon className="w-5 h-5"/> SAVE
+                        </button>
+                        <button onClick={onClose} className="p-3 rounded-2xl bg-gray-700 active:scale-90 transition-transform"><XIcon className="w-6 h-6"/></button>
+                    </div>
                 </header>
-                <main className="p-6 space-y-4 overflow-y-auto">
-                    <div className="flex justify-center bg-gray-700 p-1 rounded-lg">
-                        <button onClick={() => { setMode('photo'); stopCamera(); }} className={`w-full py-2 font-semibold rounded-md ${mode === 'photo' ? 'bg-blue-600' : ''}`}>Photo</button>
-                        <button onClick={() => { setMode('video'); stopCamera(); }} className={`w-full py-2 font-semibold rounded-md ${mode === 'video' ? 'bg-blue-600' : ''}`}>Video</button>
+                
+                <main className="flex-grow p-6 space-y-6 overflow-y-auto scroll-smooth">
+                    <div className="flex justify-center bg-gray-900 p-1.5 rounded-2xl border border-gray-700">
+                        <button onClick={() => { setMode('photo'); stopCamera(); }} className={`flex-1 py-3 font-black rounded-xl text-xs uppercase tracking-widest transition-all ${mode === 'photo' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500'}`}>Photo</button>
+                        <button onClick={() => { setMode('video'); stopCamera(); }} className={`flex-1 py-3 font-black rounded-xl text-xs uppercase tracking-widest transition-all ${mode === 'video' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-500'}`}>Video</button>
                     </div>
 
-                    <div className="w-full aspect-video bg-gray-900 rounded-md flex items-center justify-center relative overflow-hidden border border-gray-700">
+                    <div className="w-full aspect-square bg-gray-900 rounded-[2rem] flex items-center justify-center relative overflow-hidden border-2 border-gray-700 shadow-inner">
                         <canvas ref={canvasRef} className="hidden" />
                         {imageDataUrl && mode === 'photo' ? <img src={imageDataUrl} alt="Item" className="w-full h-full object-contain" />
                         : videoDataUrl && mode === 'video' ? <video src={videoDataUrl} controls className="w-full h-full object-contain" />
                         : stream ? <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                         : (
-                            <div className="text-center text-gray-400">
-                                {mode === 'photo' ? <CameraIcon className="w-16 h-16 mx-auto" /> : <VideoIcon className="w-16 h-16 mx-auto" />}
-                                <p className="mt-2">Use camera or upload a {mode}</p>
+                            <div className="text-center text-gray-700">
+                                {mode === 'photo' ? <CameraIcon className="w-20 h-20 mx-auto" /> : <VideoIcon className="w-20 h-20 mx-auto" />}
+                                <p className="mt-4 font-black uppercase text-xs tracking-tighter">Capture a {mode}</p>
                             </div>
                         )}
                     </div>
 
-                    <div className="flex gap-2 justify-center">
+                    <div className="flex gap-3 justify-center">
                         {isRecording ? (
-                            <button onClick={stopRecording} className="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 flex items-center gap-2">
-                                <StopCircleIcon className="w-5 h-5"/> Stop Recording
+                            <button onClick={stopRecording} className="px-8 py-4 bg-red-600 text-white font-black rounded-2xl shadow-lg active:scale-95 flex items-center gap-3 uppercase text-sm">
+                                <StopCircleIcon className="w-6 h-6"/> STOP
                             </button>
                         ) : stream ? (
                             mode === 'photo' ? (
-                                <button onClick={takePicture} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                                    <CameraIcon className="w-5 h-5"/> Take Picture
+                                <button onClick={takePicture} className="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg active:scale-95 flex items-center gap-3 uppercase text-sm">
+                                    <CameraIcon className="w-6 h-6"/> CAPTURE
                                 </button>
                             ) : (
-                                <button onClick={startRecording} className="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 flex items-center gap-2">
-                                    <VideoIcon className="w-5 h-5"/> Start Recording
+                                <button onClick={startRecording} className="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl shadow-lg active:scale-95 flex items-center gap-3 uppercase text-sm">
+                                    <VideoIcon className="w-6 h-6"/> RECORD
                                 </button>
                             )
                         ) : (
                             <>
-                                <button onClick={startCamera} className="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 flex items-center gap-2">
-                                    <CameraIcon className="w-5 h-5"/> Start Camera
+                                <button onClick={startCamera} className="flex-1 py-4 bg-gray-700 text-white font-black rounded-2xl flex items-center justify-center gap-3 uppercase text-xs">
+                                    <CameraIcon className="w-5 h-5"/> Camera
                                 </button>
-                                <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 flex items-center gap-2">
-                                    <UploadIcon className="w-5 h-5"/> Upload {mode === 'photo' ? 'Image' : 'Video'}
+                                <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-4 bg-gray-700 text-white font-black rounded-2xl flex items-center justify-center gap-3 uppercase text-xs">
+                                    <UploadIcon className="w-5 h-5"/> File
                                 </button>
                                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept={mode === 'photo' ? "image/*" : "video/*"} className="hidden" />
                             </>
                         )}
                     </div>
-                    {error && <p className="text-center text-red-400">{error}</p>}
-                     <div>
-                        <label htmlFor="description" className="block text-lg font-medium text-gray-300 mb-2">Description</label>
-                        <textarea id="description" value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Describe the item, where it is, etc." className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                    </div>
-                    <div>
-                        <label htmlFor="title" className="block text-lg font-medium text-gray-300 mb-2">Title</label>
-                         <div className="flex gap-2">
-                           <input id="title" type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter a title for the item" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                           <button onClick={handleGenerateTitle} disabled={isGeneratingTitle || (!description.trim() && !transcript.trim())} className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 disabled:bg-gray-500 flex items-center gap-2">
-                               <BrainCircuitIcon className="w-5 h-5"/> {isGeneratingTitle ? 'Generating...' : 'Generate'}
-                           </button>
+
+                    {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl">{error}</p>}
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Details</label>
+                            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="What is this? Where is it located?" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                        </div>
+                        
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Title</label>
+                             <div className="flex gap-2">
+                               <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="flex-grow bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                               <button onClick={handleGenerateTitle} disabled={isGeneratingTitle || (!description.trim() && !transcript.trim())} className="p-4 bg-purple-600 text-white rounded-2xl disabled:bg-gray-700 shadow-lg active:scale-95 transition-all">
+                                   {isGeneratingTitle ? <Loader2Icon className="w-6 h-6 animate-spin"/> : <BrainCircuitIcon className="w-6 h-6"/>}
+                               </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <MiniRecorder onTranscriptChange={setVoiceNote} />
+                            {(voiceNote || transcript) && (
+                                <div className="mt-3 bg-gray-900 p-4 rounded-2xl border border-gray-700 shadow-inner">
+                                    <p className="text-xs text-gray-400 leading-relaxed font-medium">{voiceNote || transcript}</p>
+                                </div>
+                            )}
                         </div>
                     </div>
-                    <div>
-                        <label htmlFor="tags" className="block text-lg font-medium text-gray-300 mb-2">Tags</label>
-                        <input id="tags" type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g., kitchen, documents, sentimental" className="w-full bg-gray-700 text-white text-lg p-3 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"/>
-                        <p className="text-sm text-gray-400 mt-1">Separate tags with commas.</p>
-                    </div>
-                     <div>
-                        {mode === 'photo' && <MiniRecorder onTranscriptChange={setVoiceNote} />}
-                        {voiceNote && mode === 'photo' && <div className="mt-2 text-sm bg-gray-900 border border-gray-700 rounded-md p-2 text-gray-300 max-h-24 overflow-y-auto">{voiceNote}</div>}
-                        {transcript && mode === 'video' && (
-                            <>
-                                <h4 className="text-lg font-medium text-gray-300 mb-2 mt-4">Video Transcript:</h4>
-                                <div className="text-sm bg-gray-900 border border-gray-700 rounded-md p-2 text-gray-300 max-h-24 overflow-y-auto">{transcript}</div>
-                            </>
-                        )}
-                    </div>
                 </main>
-                <footer className="p-4 flex justify-end gap-4 border-t border-gray-700 bg-gray-800 rounded-b-lg">
-                    <button onClick={onClose} className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700">Cancel</button>
-                    <button onClick={handleSave} disabled={isSaveDisabled} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-gray-500">
-                        <SaveIcon className="w-6 h-6"/> Save Memory
-                    </button>
+                
+                <footer className="p-4 bg-gray-800 border-t-2 border-gray-700 shrink-0 text-center">
+                    <button onClick={onClose} className="text-gray-500 font-black uppercase text-xs tracking-widest">Cancel</button>
                 </footer>
             </div>
         </div>

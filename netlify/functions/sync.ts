@@ -4,7 +4,9 @@ import { getStore } from "@netlify/blobs";
 const storeName = "second-brain-data";
 
 export default async (req: Request, context: Context) => {
-  const url = new URL(req.url);
+  // Fix: Use a dummy base to construct a valid URL object from the request,
+  // which might have a relative path when running through a dev proxy.
+  const url = new URL(req.url, 'http://localhost');
   const syncId = url.searchParams.get("syncId");
 
   if (!syncId) {
