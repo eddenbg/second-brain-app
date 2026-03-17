@@ -5,6 +5,8 @@ import { generateTitleForContent, extractTextFromImage } from '../services/gemin
 import { getCurrentLocation } from '../utils/location';
 import { generatePDF } from '../services/pdfService';
 import { CameraIcon, UploadIcon, SaveIcon, XIcon, BrainCircuitIcon, Loader2Icon, FileTextIcon, CheckIcon } from './Icons';
+import MiniRecorder from './MiniRecorder';
+import type { TranscriptSegment } from '../types';
 
 interface AddDocumentModalProps {
     course?: string; 
@@ -18,6 +20,9 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const [extractedText, setExtractedText] = useState('');
     const [isLoading, setIsLoading] = useState<string | null>(null);
     const [error, setError] = useState<string|null>(null);
+    const [voiceNote, setVoiceNote] = useState('');
+    const [audioDataUrl, setAudioDataUrl] = useState<string | null>(null);
+    const [structuredTranscript, setStructuredTranscript] = useState<TranscriptSegment[]>([]);
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [statusMessage, setStatusMessage] = useState(''); 
     
@@ -136,7 +141,14 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
             extractedText: finalContent, 
             category: course ? 'college' : 'personal',
             course, 
-            ...(location && { location }) 
+            ...(location && { location }),
+            ...(voiceNote.trim() && { 
+                voiceNote: { 
+                    transcript: voiceNote.trim(),
+                    audioDataUrl: audioDataUrl || undefined,
+                    structuredTranscript: structuredTranscript.length > 0 ? structuredTranscript : undefined
+                } 
+            })
         });
         onClose();
     };
@@ -204,6 +216,20 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                                         rows={8} 
                                         className="w-full bg-gray-900 text-white text-sm p-5 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-medium leading-relaxed shadow-inner"
                                     />
+                                )}
+                            </div>
+
+                            <div className="space-y-3">
+                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Voice Note (Optional)</label>
+                                <MiniRecorder 
+                                    onTranscriptChange={setVoiceNote} 
+                                    onAudioDataUrlChange={setAudioDataUrl}
+                                    onStructuredTranscriptChange={setStructuredTranscript}
+                                />
+                                {voiceNote && (
+                                    <div className="mt-2 bg-gray-900 p-4 rounded-2xl border border-gray-700">
+                                        <p className="text-xs text-gray-400 italic">{voiceNote}</p>
+                                    </div>
                                 )}
                             </div>
                         </div>

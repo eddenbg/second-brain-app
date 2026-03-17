@@ -1,14 +1,16 @@
 
-import React, { useState } from 'react';
-import type { AnyMemory, VoiceMemory, DocumentMemory, Task } from '../types';
-import VoiceNotesView from './RecordingList';
+import React, { useState, useMemo } from 'react';
+import { 
+    Mic, FileText, Globe, ArrowLeft, Plus, 
+    Trash2, Edit3, Volume2, Download, Loader2, X,
+    Brain, Link as LinkIcon, File as FileIcon, Package, Camera
+} from 'lucide-react';
+import type { AnyMemory, VoiceMemory, DocumentMemory, Task, PhysicalItemMemory } from '../types';
+import Recorder from './Recorder';
+import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
-import { MicIcon, ListIcon, FileTextIcon, ArrowLeftIcon, DownloadIcon, Loader2Icon, Volume2Icon } from './Icons';
-import { generateSpeechFromText } from '../services/geminiService';
-import { generatePDF } from '../services/pdfService';
-import { decode, decodeAudioData } from '../utils/audio';
-import QASession from './QASession';
+import AddPhysicalItemModal from './AddPhysicalItemModal';
 
 interface PersonalViewProps {
     memories: AnyMemory[]; 
@@ -17,169 +19,210 @@ interface PersonalViewProps {
     onDeleteMemory: (id: string) => void;
     onUpdateMemory: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDeleteMemories: (ids: string[]) => void;
-    
     onAddTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
     onUpdateTask: (id: string, updates: Partial<Task>) => void;
     onDeleteTask: (id: string) => void;
 }
-
-const PersonalDocumentView: React.FC<{
-    doc: DocumentMemory;
-    onBack: () => void;
-}> = ({ doc, onBack }) => {
-    const [isLoadingAudio, setIsLoadingAudio] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const audioContextRef = React.useRef<AudioContext | null>(null);
-    const audioSourceRef = React.useRef<AudioBufferSourceNode | null>(null);
-
-    React.useEffect(() => {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        return () => {
-            audioSourceRef.current?.stop();
-            audioContextRef.current?.close();
-        };
-    }, []);
-
-    const handleReadAloud = async () => {
-        if (isLoadingAudio || isPlaying) return;
-        setIsLoadingAudio(true);
-        try {
-            const audioB64 = await generateSpeechFromText(doc.extractedText);
-            if (audioB64 && audioContextRef.current) {
-                const audioData = decode(audioB64);
-                const audioBuffer = await decodeAudioData(audioData, audioContextRef.current, 24000, 1);
-                
-                const source = audioContextRef.current.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContextRef.current.destination);
-                source.onended = () => setIsPlaying(false);
-                source.start(0);
-                audioSourceRef.current = source;
-                setIsPlaying(true);
-            }
-        } catch (error) {
-            console.error("Failed to play audio", error);
-        } finally {
-            setIsLoadingAudio(false);
-        }
-    };
-    
-    return (
-        <div className="flex flex-col h-full">
-            <header className="flex items-center mb-4">
-                <button onClick={onBack} className="p-2 mr-2 rounded-full hover:bg-gray-700"><ArrowLeftIcon className="w-6 h-6" /></button>
-                <h2 className="text-xl font-bold truncate">{doc.title}</h2>
-            </header>
-            <div className="flex-grow grid grid-cols-1 lg:grid-cols-2 gap-4 overflow-y-auto mb-4">
-                <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 flex justify-center items-center"><img src={doc.imageDataUrl} alt="Scanned document" className="max-w-full max-h-full object-contain rounded-md"/></div>
-                <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 overflow-y-auto">
-                    <div className="flex flex-col gap-2 mb-4">
-                         <div className="flex justify-between items-center">
-                            <h3 className="text-lg font-semibold text-gray-300">Extracted Text:</h3>
-                            <button onClick={handleReadAloud} disabled={isLoadingAudio || isPlaying} className="flex items-center gap-2 px-3 py-1 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-500 text-sm">
-                                {isLoadingAudio ? <Loader2Icon className="w-4 h-4 animate-spin"/> : <Volume2Icon className="w-4 h-4"/>}
-                                {isLoadingAudio ? '...' : isPlaying ? 'Stop' : 'Read'}
-                            </button>
-                        </div>
-                         <button 
-                            onClick={() => generatePDF(doc.title, doc.extractedText, doc.imageDataUrl)}
-                            className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-500 text-sm w-full"
-                        >
-                            <DownloadIcon className="w-4 h-4" /> Download PDF
-                        </button>
-                    </div>
-                    <p className="text-gray-200 whitespace-pre-wrap">{doc.extractedText}</p>
-                </div>
-            </div>
-             <div className="flex-shrink-0">
-                 <h3 className="text-lg font-semibold text-gray-300 mb-2 text-center">Ask about this document:</h3>
-                <div className="h-[30vh] border border-gray-700 rounded-lg">
-                   <QASession memories={[doc]} tasks={[]} />
-                </div>
-            </div>
-        </div>
-    );
-};
 
 const PersonalView: React.FC<PersonalViewProps> = ({ 
     memories, tasks, 
     onSaveMemory, onDeleteMemory, onUpdateMemory, bulkDeleteMemories,
     onAddTask, onUpdateTask, onDeleteTask
 }) => {
-    const [activeTab, setActiveTab] = useState<'notes' | 'board'>('notes');
-    const [showAddDocModal, setShowAddDocModal] = useState(false);
-    const [selectedDocument, setSelectedDocument] = useState<DocumentMemory | null>(null);
+    const [view, setView] = useState<'hub' | 'detail' | 'recording' | 'scanning' | 'addingItem'>('hub');
+    const [activeTab, setActiveTab] = useState<'items' | 'voice notes' | 'web clips' | 'files'>('items');
+    const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
 
-    const voiceMemories = memories.filter(m => m.type === 'voice' && m.category === 'personal') as VoiceMemory[];
-    const personalDocs = memories.filter(m => m.type === 'document' && m.category === 'personal') as DocumentMemory[];
+    const filteredMemories = useMemo(() => {
+        const personal = memories.filter(m => m.category === 'personal');
+        if (activeTab === 'items') return personal.filter(m => m.type === 'item');
+        if (activeTab === 'voice notes') return personal.filter(m => m.type === 'voice');
+        if (activeTab === 'web clips') return personal.filter(m => m.type === 'web');
+        if (activeTab === 'files') return personal.filter(m => m.type === 'document' || m.type === 'file');
+        return [];
+    }, [memories, activeTab]);
 
-    const handleSaveDocument = (mem: Omit<DocumentMemory, 'id'|'date'>) => {
-        onSaveMemory(mem); 
-        setShowAddDocModal(false);
+    const handleBack = () => {
+        if (view === 'detail') setView('hub');
+        else if (view === 'recording' || view === 'scanning' || view === 'addingItem') setView('hub');
     };
 
-    if (selectedDocument) {
-        return <PersonalDocumentView doc={selectedDocument} onBack={() => setSelectedDocument(null)} />;
+    const handleSaveVoiceNote = (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
+        onSaveMemory({ ...mem, category: 'personal' });
+        setView('hub');
+    };
+
+    if (view === 'recording') {
+        return (
+            <div className="flex flex-col gap-8">
+                <header className="flex justify-between items-center">
+                    <h1 className="text-3xl">Quick Capture</h1>
+                    <button onClick={handleBack} className="btn-outline w-24">
+                        <X size={40} strokeWidth={3} />
+                    </button>
+                </header>
+                <Recorder 
+                    onSave={handleSaveVoiceNote}
+                    onCancel={handleBack}
+                    titlePlaceholder={`Thought - ${new Date().toLocaleDateString()}`}
+                    saveButtonText="Save Thought"
+                />
+            </div>
+        );
     }
 
-    return (
-        <div className="flex flex-col h-full">
-            {showAddDocModal && (
-                <AddDocumentModal 
-                    onSave={handleSaveDocument} 
-                    onClose={() => setShowAddDocModal(false)}
-                />
-            )}
+    if (view === 'scanning') {
+        return (
+            <AddDocumentModal 
+                onClose={handleBack} 
+                onSave={(mem) => { onSaveMemory({ ...mem, category: 'personal' }); setView('hub'); }} 
+            />
+        );
+    }
 
-            {/* Tab Switcher */}
-             <div className="flex mb-4 bg-gray-800 rounded-lg p-1 shrink-0">
-                <button onClick={() => setActiveTab('notes')} className={`flex-1 py-2 rounded-md font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'notes' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
-                    <MicIcon className="w-4 h-4"/> Notes & Docs
-                </button>
-                <button onClick={() => setActiveTab('board')} className={`flex-1 py-2 rounded-md font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'board' ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}>
-                    <ListIcon className="w-4 h-4"/> Task Board
-                </button>
-             </div>
+    if (view === 'addingItem') {
+        return (
+            <AddPhysicalItemModal 
+                onClose={handleBack} 
+                onSave={(mem) => { onSaveMemory({ ...mem, category: 'personal' }); setView('hub'); }} 
+            />
+        );
+    }
 
-            <div className="flex-grow overflow-hidden">
-                {activeTab === 'notes' ? (
-                     <div className="h-full overflow-y-auto flex flex-col gap-4">
-                        {/* Action Buttons */}
-                        <div className="grid grid-cols-1 gap-4 shrink-0">
-                             <button onClick={() => setShowAddDocModal(true)} className="w-full flex flex-col items-center justify-center gap-2 p-4 bg-indigo-600 rounded-lg hover:bg-indigo-700 border-2 border-dashed border-indigo-400 hover:border-indigo-300 transition-colors">
-                                <FileTextIcon className="w-8 h-8 text-white"/>
-                                <span className="text-lg font-semibold text-white">Scan Document</span>
-                            </button>
-                        </div>
+    if (view === 'hub') {
+        return (
+            <div className="flex flex-col gap-8">
+                {/* Hub Tabs */}
+                <div className="flex gap-2 bg-white/10 rounded-2xl p-2 overflow-x-auto no-scrollbar">
+                    {(['items', 'voice notes', 'web clips', 'files'] as const).map(tab => (
+                        <button 
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`flex-1 min-w-[140px] py-4 rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === tab ? 'bg-white text-[#001F3F]' : 'text-white'}`}
+                        >
+                            {tab === 'items' && <Package size={20} />}
+                            {tab === 'voice notes' && <Brain size={20} />}
+                            {tab === 'web clips' && <LinkIcon size={20} />}
+                            {tab === 'files' && <FileIcon size={20} />}
+                            <span>{tab}</span>
+                        </button>
+                    ))}
+                </div>
 
-                        <VoiceNotesView 
-                            voiceMemories={voiceMemories} 
-                            documents={personalDocs}
-                            onSave={onSaveMemory} 
-                            onDelete={onDeleteMemory} 
-                            onUpdate={onUpdateMemory} 
-                            bulkDelete={bulkDeleteMemories}
-                            onDocumentClick={setSelectedDocument}
-                        />
-                     </div>
-                ) : (
-                    <KanbanBoard 
-                        tasks={tasks} 
-                        category="personal"
-                        courseFilter={null}
-                        onUpdateTask={onUpdateTask} 
-                        onDeleteTask={onDeleteTask}
-                        onAddTask={onAddTask}
-                        memories={memories}
-                        onOpenMemory={(mem) => {
-                            if (mem.type === 'document') setSelectedDocument(mem as DocumentMemory);
-                            else setActiveTab('notes');
-                        }} 
-                    />
+                {/* Quick Actions based on tab */}
+                {activeTab === 'items' && (
+                    <button 
+                        onClick={() => setView('addingItem')}
+                        className="btn-primary w-full h-32 flex flex-col items-center justify-center gap-2"
+                    >
+                        <Package size={48} strokeWidth={3} />
+                        <span className="text-2xl">Track Physical Item</span>
+                    </button>
                 )}
+
+                {activeTab === 'voice notes' && (
+                    <button 
+                        onClick={() => setView('recording')}
+                        className="btn-primary w-full h-32 flex flex-col items-center justify-center gap-2"
+                    >
+                        <Mic size={48} strokeWidth={3} />
+                        <span className="text-2xl">Record Voice Note</span>
+                    </button>
+                )}
+
+                {activeTab === 'files' && (
+                    <button 
+                        onClick={() => setView('scanning')}
+                        className="btn-primary w-full h-32 flex flex-col items-center justify-center gap-2"
+                    >
+                        <Camera size={48} strokeWidth={3} />
+                        <span className="text-2xl">Scan Document / Mail</span>
+                    </button>
+                )}
+
+                {/* List */}
+                <div className="grid grid-cols-1 gap-4">
+                    {filteredMemories.map(mem => (
+                        <button 
+                            key={mem.id}
+                            onClick={() => { setSelectedItem(mem); setView('detail'); }}
+                            className="card-brutal flex items-center gap-6 text-left hover:bg-[#60A5FA]/10"
+                        >
+                            {activeTab === 'items' && <Package size={32} strokeWidth={3} />}
+                            {activeTab === 'voice notes' && <Brain size={32} strokeWidth={3} />}
+                            {activeTab === 'web clips' && <LinkIcon size={32} strokeWidth={3} />}
+                            {activeTab === 'files' && <FileIcon size={32} strokeWidth={3} />}
+                            <div className="flex-grow overflow-hidden">
+                                <h3 className="text-xl truncate">{mem.title}</h3>
+                                <p className="text-[#60A5FA] text-xs uppercase tracking-widest">
+                                    {new Date(mem.date).toLocaleDateString()}
+                                </p>
+                            </div>
+                        </button>
+                    ))}
+                    {filteredMemories.length === 0 && (
+                        <div className="py-20 text-center opacity-50">
+                            <p className="text-2xl uppercase">No {activeTab} yet</p>
+                        </div>
+                    )}
+                </div>
             </div>
-        </div>
-    );
+        );
+    }
+
+    if (view === 'detail' && selectedItem) {
+        return (
+            <div className="flex flex-col gap-8">
+                <header className="flex items-center gap-6">
+                    <button onClick={handleBack} className="btn-outline w-24">
+                        <ArrowLeft size={40} strokeWidth={3} />
+                    </button>
+                    <h1 className="text-3xl truncate">{selectedItem.title}</h1>
+                </header>
+
+                <div className="card-brutal bg-[#60A5FA]/5">
+                    {selectedItem.type === 'voice' && (
+                        <div className="space-y-6">
+                            <audio src={(selectedItem as VoiceMemory).audioDataUrl} controls className="w-full" />
+                            <p className="text-xl leading-relaxed">{(selectedItem as VoiceMemory).transcript}</p>
+                        </div>
+                    )}
+                    {selectedItem.type === 'web' && (
+                        <div className="space-y-6">
+                            <a href={(selectedItem as any).url} target="_blank" rel="noreferrer" className="text-[#60A5FA] underline text-xl break-all">
+                                {(selectedItem as any).url}
+                            </a>
+                            <p className="text-xl leading-relaxed">{(selectedItem as any).summary}</p>
+                        </div>
+                    )}
+                    {selectedItem.type === 'item' && (
+                        <div className="space-y-6">
+                            <p className="text-xl leading-relaxed">{(selectedItem as PhysicalItemMemory).description}</p>
+                            {(selectedItem as PhysicalItemMemory).imageDataUrl && (
+                                <img src={(selectedItem as PhysicalItemMemory).imageDataUrl} className="w-full rounded-xl border-3 border-[#60A5FA]/20" />
+                            )}
+                        </div>
+                    )}
+                    {(selectedItem.type === 'document' || selectedItem.type === 'file') && (
+                        <div className="space-y-6">
+                            {'imageDataUrl' in selectedItem && (selectedItem as any).imageDataUrl && (
+                                <img src={(selectedItem as any).imageDataUrl} className="w-full rounded-xl border-3 border-[#60A5FA]/20" />
+                            )}
+                            <p className="text-xl leading-relaxed">
+                                {'extractedText' in selectedItem ? (selectedItem as any).extractedText : 'No text content available.'}
+                            </p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="h-[40vh] card-brutal p-0 overflow-hidden">
+                    <QASession memories={[selectedItem]} tasks={[]} />
+                </div>
+            </div>
+        );
+    }
+
+    return null;
 };
 
 export default PersonalView;

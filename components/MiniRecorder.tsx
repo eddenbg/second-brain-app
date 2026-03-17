@@ -4,19 +4,31 @@ import { Session, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon } from './Icons';
 import { getGeminiInstance } from '../utils/gemini';
 
-const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}> = ({ onTranscriptChange }) => {
+import type { TranscriptSegment } from '../types';
+
+const MiniRecorder: React.FC<{
+    onTranscriptChange: (transcript: string) => void,
+    onAudioDataUrlChange?: (dataUrl: string) => void,
+    onStructuredTranscriptChange?: (segments: TranscriptSegment[]) => void
+}> = ({ onTranscriptChange, onAudioDataUrlChange, onStructuredTranscriptChange }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [error, setError] = useState<string|null>(null);
     const liveTranscriptRef = useRef('');
+    const structuredTranscriptRef = useRef<TranscriptSegment[]>([]);
+    const startTimeRef = useRef<number>(0);
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaStreamRef = useRef<MediaStream | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
     const start = async () => {
         if (isRecording) return;
         liveTranscriptRef.current = '';
+        structuredTranscriptRef.current = [];
         onTranscriptChange('');
+        onStructuredTranscriptChange?.([]);
         setError(null);
+        startTimeRef.current = Date.now();
         
         const ai = getGeminiInstance();
         if (!ai) {
@@ -28,6 +40,19 @@ const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}>
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaStreamRef.current = stream;
             setIsRecording(true);
+
+            // Record audio blob
+            const chunks: Blob[] = [];
+            const recorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = recorder;
+            recorder.ondataavailable = (e) => chunks.push(e.data);
+            recorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.onloadend = () => onAudioDataUrlChange?.(reader.result as string);
+                reader.readAsDataURL(blob);
+            };
+            recorder.start();
             
             // Allow browser to choose native sample rate
             const context = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -54,8 +79,12 @@ const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}>
                   },
                   onmessage: (message) => {
                     if (message.serverContent?.inputTranscription) {
-                      liveTranscriptRef.current += message.serverContent.inputTranscription.text;
+                      const text = message.serverContent.inputTranscription.text || '';
+                      const timestamp = (Date.now() - startTimeRef.current) / 1000;
+                      liveTranscriptRef.current += text;
+                      structuredTranscriptRef.current.push({ text, timestamp });
                       onTranscriptChange(liveTranscriptRef.current);
+                      onStructuredTranscriptChange?.([...structuredTranscriptRef.current]);
                     }
                   },
                   onerror: (e) => { setError('Transcription error.'); stop(); },
@@ -71,6 +100,7 @@ const MiniRecorder: React.FC<{onTranscriptChange: (transcript: string) => void}>
 
     const stop = async () => {
         if (!isRecording) return;
+        mediaRecorderRef.current?.stop();
         mediaStreamRef.current?.getTracks().forEach(t => t.stop());
         audioContextRef.current?.close();
         if (sessionPromiseRef.current) {

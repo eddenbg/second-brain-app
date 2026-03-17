@@ -1,114 +1,20 @@
-
-/* GlobalStyles.css - High Contrast Design System */
-
-:root {
-  --bg-navy: #020617;
-  --accent-blue: #60A5FA;
-  --text-white: #FFFFFF;
-}
-
-* {
-  box-sizing: border-box;
-  -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  background-color: var(--bg-navy) !important;
-  color: var(--text-white) !important;
-  font-family: 'Inter', sans-serif !important;
-  font-weight: 900 !important; /* font-extrabold */
-  font-size: 16px !important; /* Base size reduced for mobile */
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  line-height: 1.4;
-}
-
-@media (min-width: 768px) {
-  body {
-    font-size: 20px !important;
-  }
-}
-
-h1, h2, h3, h4 {
-  font-weight: 900 !important;
-  text-transform: uppercase !important;
-  letter-spacing: -0.05em !important;
-  margin: 0;
-}
-
-h1 { font-size: 32px !important; }
-h2 { font-size: 24px !important; }
-h3 { font-size: 20px !important; }
-
-@media (min-width: 768px) {
-  h1 { font-size: 48px !important; }
-  h2 { font-size: 32px !important; }
-  h3 { font-size: 28px !important; }
-}
-
-/* Interactive Elements */
-button {
-  min-height: 56px !important; /* Reduced for mobile */
-  font-weight: 900 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.1em !important;
-  border-radius: 16px !important;
-  transition: all 0.2s ease !important;
-}
-
-@media (min-width: 768px) {
-  button {
-    min-height: 72px !important;
-  }
-}
-
-button:active {
-  transform: scale(0.95) !important;
-}
-
-/* Cards */
-.card-brutal {
-  border: 3px solid var(--accent-blue) !important;
-  border-radius: 24px !important;
-  padding: 24px !important;
-  background-color: transparent !important;
-}
-
-/* Navigation */
-.nav-bar {
-  background-color: var(--bg-navy) !important;
-  border-top: 3px solid var(--accent-blue) !important;
-  height: 100px !important;
-}
-
-/* Inputs */
-input, textarea {
-  background-color: transparent !important;
-  border: 3px solid var(--accent-blue) !important;
-  color: var(--text-white) !important;
-  padding: 20px !important;
-  font-size: 20px !important;
-  font-weight: 900 !important;
-  border-radius: 16px !important;
-  width: 100% !important;
-}
-
-input:focus {
-  outline: none !important;
-  box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.5) !important;
-}
-
-/* RTL Support */
-[dir="rtl"] {
-  text-align: right !important;
-}
-
-/* Scrollbar */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1D4ED8;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background for maskable icon support -->
+  <rect width="512" height="512" fill="#0b0f1a"/>
+  
+  <!-- Outer Glow -->
+  <circle cx="256" cy="256" r="180" fill="#3B82F6" opacity="0.2" />
+  
+  <!-- Brain/Mind Shape (Vibrant Blue) -->
+  <path d="M256 100c-60 0-108 48-108 108 0 20 5.5 39 15.5 55-9.5 16-15.5 35-15.5 55 0 60 48 108 108 108s108-48 108-108c0-20-5.5-39-15.5-55 9.5-16 15.5-35 15.5-55 0-60-48-108-108-108z" fill="url(#grad)"/>
+  
+  <!-- High Contrast Inner Details -->
+  <path d="M256 160v192M160 256h192" stroke="#FFFFFF" stroke-width="28" stroke-linecap="round" opacity="0.9"/>
+  <circle cx="256" cy="256" r="45" fill="none" stroke="#FFFFFF" stroke-width="20" opacity="0.8"/>
+</svg>

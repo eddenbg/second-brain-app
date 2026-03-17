@@ -23,6 +23,14 @@ const Item: React.FC<{
     const [isExpanded, setIsExpanded] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
+    const mediaRef = React.useRef<HTMLVideoElement | HTMLAudioElement>(null);
+
+    const seekTo = (seconds: number) => {
+        if (mediaRef.current) {
+            mediaRef.current.currentTime = seconds;
+            mediaRef.current.play();
+        }
+    };
 
     const handleUpdate = () => {
         if (title.trim()) {
@@ -53,11 +61,11 @@ const Item: React.FC<{
     };
 
     return (
-        <div className={`bg-gray-800 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-blue-500' : 'border-gray-700'}`}>
+        <div className={`bg-white/5 rounded-lg shadow-md overflow-hidden border transition-colors ${isSelected ? 'border-yellow-500' : 'border-white/10'}`}>
             <div className="p-4 flex justify-between items-center cursor-pointer gap-4" onClick={handleHeaderClick}>
                 {isSelectMode && (
-                     <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-400' : 'border-gray-500'}`}>
-                        {isSelected && <CheckIcon className="w-4 h-4 text-white"/>}
+                     <div className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-yellow-500 border-yellow-400' : 'border-gray-500'}`}>
+                        {isSelected && <CheckIcon className="w-4 h-4 text-[#001f3f]"/>}
                     </div>
                 )}
                 <div className="flex-shrink-0">{getIcon()}</div>
@@ -68,7 +76,7 @@ const Item: React.FC<{
                            value={title}
                            onChange={(e) => setTitle(e.target.value)}
                            onClick={(e) => e.stopPropagation()}
-                           className="w-full bg-gray-700 text-white text-lg p-2 rounded-md border border-gray-600 focus:ring-2 focus:ring-blue-500"
+                           className="w-full bg-black/20 text-white text-lg p-2 rounded-md border border-white/10 focus:ring-2 focus:ring-yellow-500"
                            autoFocus
                            onKeyDown={(e) => {
                                if (e.key === 'Enter') handleUpdate();
@@ -83,31 +91,31 @@ const Item: React.FC<{
                 {!isSelectMode && <ChevronDownIcon className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />}
             </div>
             {isExpanded && !isSelectMode && (
-                <div className="p-4 border-t border-gray-700 space-y-4">
+                <div className="p-4 border-t border-white/10 space-y-4">
                     <div className="flex items-center justify-end space-x-2">
                         {isEditing ? (
                              <>
-                                <button onClick={handleUpdate} aria-label="Save title" className="p-2 text-green-400 hover:text-green-300 focus:outline-none focus:ring-2 focus:ring-green-500 rounded-full"><CheckIcon className="w-6 h-6"/></button>
-                                <button onClick={handleCancel} aria-label="Cancel edit" className="p-2 text-gray-400 hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-full"><XIcon className="w-6 h-6"/></button>
-                            </>
+                                 <button onClick={handleUpdate} aria-label="Save title" className="p-2 text-green-400 hover:text-green-300 focus:outline-none focus:ring-2 focus:ring-green-500 rounded-full"><CheckIcon className="w-6 h-6"/></button>
+                                 <button onClick={handleCancel} aria-label="Cancel edit" className="p-2 text-gray-400 hover:text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 rounded-full"><XIcon className="w-6 h-6"/></button>
+                             </>
                         ) : (
-                            <button onClick={() => setIsEditing(true)} aria-label="Edit title" className="p-2 text-blue-400 hover:text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full"><EditIcon className="w-6 h-6"/></button>
+                            <button onClick={() => setIsEditing(true)} aria-label="Edit title" className="p-2 text-yellow-400 hover:text-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-500 rounded-full"><EditIcon className="w-6 h-6"/></button>
                         )}
                         <button onClick={() => onDelete(memory.id)} aria-label="Delete memory" className="p-2 text-red-500 hover:text-red-400 focus:outline-none focus:ring-2 focus:ring-red-500 rounded-full"><TrashIcon className="w-6 h-6"/></button>
                     </div>
 
                     {memory.tags && memory.tags.length > 0 && (
                       <div className="flex flex-wrap gap-2">
-                        {memory.tags.map(tag => <span key={tag} className="bg-gray-700 text-gray-300 text-xs font-semibold px-2.5 py-0.5 rounded-full">{tag}</span>)}
+                        {memory.tags.map(tag => <span key={tag} className="bg-white/10 text-gray-300 text-xs font-semibold px-2.5 py-0.5 rounded-full">{tag}</span>)}
                       </div>
                     )}
                     
                      {memory.type === 'item' && (
                         <div className="space-y-4">
-                            <img src={(memory as PhysicalItemMemory).imageDataUrl} alt={memory.title} className="rounded-lg max-h-80 w-full object-contain bg-gray-900"/>
+                            <img src={(memory as PhysicalItemMemory).imageDataUrl} alt={memory.title} className="rounded-lg max-h-80 w-full object-contain bg-black/40"/>
                             {(memory as PhysicalItemMemory).description && (
-                                <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                                    <h4 className="text-lg font-semibold text-gray-300 mb-2">Description:</h4>
+                                <div className="bg-black/40 p-4 rounded-md max-h-60 overflow-y-auto border border-white/10">
+                                    <h4 className="text-lg font-semibold text-yellow-400 mb-2">Description:</h4>
                                     <p className="text-gray-200 whitespace-pre-wrap">{(memory as PhysicalItemMemory).description}</p>
                                 </div>
                             )}
@@ -115,21 +123,62 @@ const Item: React.FC<{
                     )}
                     {memory.type === 'video' && (
                         <div className="space-y-4">
-                            <video src={(memory as VideoItemMemory).videoDataUrl} controls className="rounded-lg max-h-80 w-full bg-gray-900"/>
+                            <video 
+                                ref={mediaRef as React.RefObject<HTMLVideoElement>}
+                                src={(memory as VideoItemMemory).videoDataUrl} 
+                                controls 
+                                className="rounded-lg max-h-80 w-full bg-black/40"
+                            />
                              {(memory as VideoItemMemory).transcript && (
-                                <div className="bg-gray-900 p-4 rounded-md max-h-60 overflow-y-auto border border-gray-600">
-                                    <h4 className="text-lg font-semibold text-gray-300 mb-2">Transcript:</h4>
-                                    <p className="text-gray-200 whitespace-pre-wrap">{(memory as VideoItemMemory).transcript}</p>
+                                <div className="bg-black/40 p-4 rounded-md max-h-60 overflow-y-auto border border-white/10">
+                                    <h4 className="text-lg font-semibold text-yellow-400 mb-2">Transcript:</h4>
+                                    <div className="text-gray-200 whitespace-pre-wrap">
+                                        {(memory as any).structuredTranscript && (memory as any).structuredTranscript.length > 0 ? (
+                                            (memory as any).structuredTranscript.map((segment: any, idx: number) => (
+                                                <span 
+                                                    key={idx} 
+                                                    onClick={() => seekTo(segment.timestamp)}
+                                                    className="cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300 transition-colors rounded px-1"
+                                                >
+                                                    {segment.text}
+                                                </span>
+                                            ))
+                                        ) : (
+                                            (memory as VideoItemMemory).transcript
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
                     )}
 
                     {memory.voiceNote && (
-                        <div>
-                            <h4 className="text-lg font-semibold text-gray-300 mb-2">My Note:</h4>
-                                <div className="bg-gray-900 p-4 rounded-md max-h-40 overflow-y-auto border border-gray-600">
-                                <p className="text-gray-200 whitespace-pre-wrap">{memory.voiceNote.transcript}</p>
+                        <div className="space-y-4">
+                            <h4 className="text-lg font-semibold text-yellow-400 mb-2">My Note:</h4>
+                            {memory.voiceNote.audioDataUrl && (
+                                <audio 
+                                    ref={mediaRef as React.RefObject<HTMLAudioElement>}
+                                    src={memory.voiceNote.audioDataUrl} 
+                                    controls 
+                                    className="w-full"
+                                />
+                            )}
+                            <div className="bg-black/40 p-4 rounded-md max-h-40 overflow-y-auto border border-white/10">
+                                <div className="text-gray-200 whitespace-pre-wrap">
+                                    {memory.voiceNote.structuredTranscript && memory.voiceNote.structuredTranscript.length > 0 ? (
+                                        memory.voiceNote.structuredTranscript.map((segment, idx) => (
+                                            <span 
+                                                key={idx} 
+                                                onClick={() => seekTo(segment.timestamp)}
+                                                className="cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300 transition-colors rounded px-1"
+                                            >
+                                                {segment.text}
+                                            </span>
+                                        ))
+                                    ) : (
+                                        memory.voiceNote.transcript
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -170,30 +219,35 @@ const VisionView: React.FC<PhysicalItemsViewProps> = ({ memories, onSave, onDele
     };
 
     return (
-        <div className="flex flex-col h-full gap-6 overflow-hidden">
+        <div className="flex flex-col h-full gap-6 overflow-hidden bg-[#001f3f]">
             {showAddModal && <AddPhysicalItemModal onClose={() => setShowAddModal(false)} onSave={handleSave} />}
             
-            <button onClick={() => setShowAddModal(true)} className="flex-shrink-0 flex flex-col items-center justify-center gap-2 p-6 bg-purple-600 rounded-lg hover:bg-purple-700 border-2 border-dashed border-purple-400 hover:border-purple-300 transition-colors">
-                <CameraIcon className="w-10 h-10 text-white"/>
-                <span className="text-xl font-semibold text-white">Remember Item</span>
+            <button 
+                onClick={() => setShowAddModal(true)} 
+                aria-label="Remember a new item"
+                className="flex-shrink-0 flex flex-col items-center justify-center gap-2 p-8 bg-yellow-500 rounded-3xl hover:bg-yellow-600 border-4 border-dashed border-yellow-400/50 hover:border-yellow-300 transition-all active:scale-95 shadow-xl shadow-yellow-900/40"
+            >
+                <CameraIcon className="w-12 h-12 text-[#001f3f]"/>
+                <span className="text-2xl font-black uppercase tracking-tighter text-[#001f3f]">Remember Item</span>
             </button>
             
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <div className="flex justify-between items-center border-b border-gray-700 pb-2 flex-shrink-0">
-                    <h2 className="text-2xl font-bold text-white">Archives</h2>
+                <div className="flex justify-between items-center border-b border-white/10 pb-4 flex-shrink-0">
+                    <h2 className="text-2xl font-black uppercase tracking-tighter text-white">Archives</h2>
                      {memories.length > 0 && (
                         <button 
                             onClick={() => {
                                 setIsSelectMode(!isSelectMode);
                                 setSelectedIds(new Set());
                             }} 
-                            className="px-4 py-2 text-lg font-semibold rounded-md bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
+                            aria-label={isSelectMode ? "Cancel selection" : "Select items"}
+                            className="px-6 py-3 text-lg font-black uppercase tracking-widest rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors border border-white/10"
                         >
                             {isSelectMode ? 'Cancel' : 'Select'}
                         </button>
                     )}
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pt-4 pr-1">
+                <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pt-6 pr-1">
                     {memories.length > 0 ? (
                         memories.map(mem => 
                             <Item 
@@ -206,16 +260,20 @@ const VisionView: React.FC<PhysicalItemsViewProps> = ({ memories, onSave, onDele
                                 onToggleSelect={toggleSelection}
                             />)
                     ) : (
-                        <div className="text-center py-10 px-6 bg-gray-800 rounded-lg">
-                            <p className="mt-2 text-gray-400 italic">No saved items yet.</p>
+                        <div className="text-center py-16 px-6 bg-white/5 rounded-3xl border-2 border-dashed border-white/10">
+                            <p className="text-xl text-gray-400 italic">No saved items yet.</p>
                         </div>
                     )}
                 </div>
             </div>
              {isSelectMode && selectedIds.size > 0 && (
                 <div className="fixed bottom-36 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-sm">
-                    <button onClick={handleBulkDelete} className="w-full bg-red-600 text-white font-bold py-6 rounded-2xl shadow-xl flex items-center justify-center gap-2">
-                        <TrashIcon className="w-6 h-6"/> Delete Selected
+                    <button 
+                        onClick={handleBulkDelete} 
+                        aria-label={`Delete ${selectedIds.size} selected items`}
+                        className="w-full bg-red-600 text-white font-black uppercase tracking-widest py-6 rounded-3xl shadow-2xl flex items-center justify-center gap-3 active:scale-95 transition-transform"
+                    >
+                        <TrashIcon className="w-8 h-8"/> Delete Selected
                     </button>
                 </div>
             )}

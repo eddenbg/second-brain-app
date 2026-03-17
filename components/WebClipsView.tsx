@@ -33,19 +33,20 @@ const ClipItem: React.FC<{
     };
 
     return (
-        <div className={`bg-gray-800 rounded-3xl p-6 border-4 transition-all mb-6 shadow-xl ${isSelected ? 'border-blue-500 scale-[1.02]' : 'border-gray-700'}`}>
+        <div className={`bg-white/5 rounded-3xl p-6 border-4 transition-all mb-6 shadow-xl ${isSelected ? 'border-yellow-500 scale-[1.02]' : 'border-white/10'}`}>
             <div className="flex gap-6 items-start">
                 {isSelectMode && (
                     <button 
                         onClick={() => onToggleSelect(memory.id)}
-                        className={`flex-shrink-0 w-12 h-12 rounded-2xl border-4 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-400' : 'border-gray-500'}`}
+                        aria-label={isSelected ? "Deselect item" : "Select item"}
+                        className={`flex-shrink-0 w-12 h-12 rounded-2xl border-4 flex items-center justify-center transition-colors ${isSelected ? 'bg-yellow-500 border-yellow-400' : 'border-gray-500'}`}
                     >
-                        {isSelected && <CheckIcon className="w-8 h-8 text-white" />}
+                        {isSelected && <CheckIcon className="w-8 h-8 text-[#001f3f]" />}
                     </button>
                 )}
                 
                 <div className="flex-shrink-0 pt-1">
-                    <GlobeIcon className="w-12 h-12 text-blue-400" />
+                    <GlobeIcon className="w-12 h-12 text-yellow-500" />
                 </div>
 
                 <div className="flex-grow space-y-2 overflow-hidden">
@@ -55,10 +56,10 @@ const ClipItem: React.FC<{
                                 type="text"
                                 value={editValue}
                                 onChange={(e) => setEditValue(e.target.value)}
-                                className="flex-grow bg-gray-700 text-white text-2xl p-4 rounded-2xl border-4 border-blue-500 focus:outline-none"
+                                className="flex-grow bg-black/20 text-white text-2xl p-4 rounded-2xl border-4 border-yellow-500 focus:outline-none"
                                 autoFocus
                             />
-                            <button onClick={handleSave} className="p-4 bg-green-600 rounded-2xl"><CheckIcon className="w-8 h-8"/></button>
+                            <button onClick={handleSave} aria-label="Save title" className="p-4 bg-green-600 rounded-2xl"><CheckIcon className="w-8 h-8"/></button>
                         </div>
                     ) : (
                         <h3 className="text-2xl font-black text-white leading-tight break-words">{memory.title}</h3>
@@ -67,22 +68,22 @@ const ClipItem: React.FC<{
                     <div className="flex flex-wrap gap-2">
                         <span className="text-xl text-gray-400 font-bold">{new Date(memory.date).toLocaleDateString()}</span>
                         {memory.contentType && (
-                            <span className="bg-blue-900 text-blue-200 text-sm font-black px-3 py-1 rounded-full uppercase">{memory.contentType}</span>
+                            <span className="bg-yellow-500 text-[#001f3f] text-sm font-black px-3 py-1 rounded-full uppercase">{memory.contentType}</span>
                         )}
                     </div>
                     
                     {memory.tags && memory.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2 pt-2">
                             {memory.tags.map(tag => (
-                                <span key={tag} className="bg-gray-700 text-gray-300 text-lg font-bold px-4 py-1 rounded-xl border-2 border-gray-600">#{tag}</span>
+                                <span key={tag} className="bg-white/10 text-gray-300 text-lg font-bold px-4 py-1 rounded-xl border-2 border-white/10">#{tag}</span>
                             ))}
                         </div>
                     )}
                 </div>
 
                 <div className="flex flex-col gap-3">
-                    <button onClick={() => setIsEditing(!isEditing)} className="p-4 bg-gray-700 text-blue-400 rounded-2xl hover:bg-gray-600"><EditIcon className="w-10 h-10"/></button>
-                    <button onClick={() => onDelete(memory.id)} className="p-4 bg-gray-700 text-red-500 rounded-2xl hover:bg-gray-600"><TrashIcon className="w-10 h-10"/></button>
+                    <button onClick={() => setIsEditing(!isEditing)} aria-label="Edit title" className="p-4 bg-white/10 text-yellow-400 rounded-2xl hover:bg-white/20"><EditIcon className="w-10 h-10"/></button>
+                    <button onClick={() => onDelete(memory.id)} aria-label="Delete memory" className="p-4 bg-white/10 text-red-500 rounded-2xl hover:bg-white/20"><TrashIcon className="w-10 h-10"/></button>
                 </div>
             </div>
             
@@ -90,7 +91,8 @@ const ClipItem: React.FC<{
                 href={memory.url} 
                 target="_blank" 
                 rel="noopener noreferrer" 
-                className="mt-6 w-full flex items-center justify-center gap-4 py-5 bg-blue-600 text-white text-2xl font-black rounded-2xl shadow-lg border-b-8 border-blue-800 active:border-b-0 active:translate-y-2"
+                aria-label={`Open link: ${memory.title}`}
+                className="mt-6 w-full flex items-center justify-center gap-4 py-5 bg-yellow-500 text-[#001f3f] text-2xl font-black rounded-2xl shadow-lg border-b-8 border-yellow-700 active:border-b-0 active:translate-y-2"
             >
                 OPEN LINK
             </a>
@@ -131,14 +133,18 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 bg-[#001f3f] h-full overflow-hidden flex flex-col">
       {showAddModal && <AddWebMemoryModal onClose={() => setShowAddModal(false)} onSave={handleSaveClip} />}
 
-      <div className="space-y-8">
-          <div className="flex justify-between items-center border-b-4 border-gray-700 pb-4">
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden space-y-8">
+          <div className="flex justify-between items-center border-b-4 border-white/10 pb-4 flex-shrink-0">
             <h2 className="text-3xl font-black text-white uppercase tracking-tight">Archives</h2>
             <div className="flex items-center gap-4">
-                <button onClick={() => setShowAddModal(true)} className="p-4 rounded-2xl bg-blue-600 text-white shadow-xl hover:scale-110 transition-transform">
+                <button 
+                    onClick={() => setShowAddModal(true)} 
+                    aria-label="Clip a new website"
+                    className="p-4 rounded-2xl bg-yellow-500 text-[#001f3f] shadow-xl hover:scale-110 transition-transform"
+                >
                     <PlusCircleIcon className="w-12 h-12" />
                 </button>
                 {memories.length > 0 && (
@@ -147,46 +153,58 @@ const WebClipsView: React.FC<WebClipsViewProps> = ({ memories, onDelete, onUpdat
                             setIsSelectMode(!isSelectMode);
                             setSelectedIds(new Set());
                         }} 
-                        className="px-6 py-4 text-xl font-black rounded-2xl bg-gray-700 text-gray-300 border-2 border-gray-600"
+                        aria-label={isSelectMode ? "Done selecting" : "Select items"}
+                        className="px-6 py-4 text-xl font-black rounded-2xl bg-white/10 text-white border-2 border-white/10"
                     >
                         {isSelectMode ? 'DONE' : 'SELECT'}
                     </button>
                 )}
-                <button onClick={handleSync} disabled={isSyncing} className="relative p-4 rounded-2xl bg-gray-700 text-gray-300 border-2 border-gray-600">
+                <button 
+                    onClick={handleSync} 
+                    disabled={isSyncing} 
+                    aria-label="Sync shared clips"
+                    className="relative p-4 rounded-2xl bg-white/10 text-white border-2 border-white/10"
+                >
                     <RefreshCwIcon className={`w-10 h-10 ${isSyncing ? 'animate-spin' : ''}`} />
                     {pendingClipsCount > 0 && !isSyncing && (
-                        <span className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 text-lg font-black text-white border-2 border-gray-900">{pendingClipsCount}</span>
+                        <span className="absolute -top-3 -right-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 text-lg font-black text-white border-2 border-[#001f3f]">{pendingClipsCount}</span>
                     )}
                 </button>
             </div>
           </div>
           
-          {memories.length > 0 ? (
-                <div className="pb-40">
-                    {(memories as WebMemory[]).map((mem) => (
-                        <ClipItem 
-                            key={mem.id}
-                            memory={mem}
-                            onDelete={onDelete}
-                            onUpdate={onUpdate}
-                            isSelectMode={isSelectMode}
-                            isSelected={selectedIds.has(mem.id)}
-                            onToggleSelect={toggleSelection}
-                        />
-                    ))}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {memories.length > 0 ? (
+                    <div className="pb-40">
+                        {(memories as WebMemory[]).map((mem) => (
+                            <ClipItem 
+                                key={mem.id}
+                                memory={mem}
+                                onDelete={onDelete}
+                                onUpdate={onUpdate}
+                                isSelectMode={isSelectMode}
+                                isSelected={selectedIds.has(mem.id)}
+                                onToggleSelect={toggleSelection}
+                            />
+                        ))}
+                    </div>
+            ) : (
+                <div className="text-center py-24 px-8 bg-white/5 rounded-3xl border-4 border-white/10 border-dashed">
+                    <GlobeIcon className="w-24 h-24 text-gray-600 mx-auto mb-6" />
+                    <h2 className="text-3xl font-black text-white mb-4">No Web Clips</h2>
+                    <p className="text-2xl text-gray-400 font-bold">Add links manually or share content from your browser to save it here.</p>
                 </div>
-          ) : (
-               <div className="text-center py-24 px-8 bg-gray-800 rounded-3xl border-4 border-gray-700 border-dashed">
-                  <GlobeIcon className="w-24 h-24 text-gray-600 mx-auto mb-6" />
-                  <h2 className="text-3xl font-black text-white mb-4">No Web Clips</h2>
-                  <p className="text-2xl text-gray-400 font-bold">Add links manually or share content from your browser to save it here.</p>
-              </div>
-          )}
+            )}
+          </div>
       </div>
 
       {isSelectMode && selectedIds.size > 0 && (
           <div className="fixed bottom-36 left-1/2 -translate-x-1/2 z-30 w-11/12 max-w-md">
-              <button onClick={handleBulkDelete} className="w-full bg-red-600 text-white font-black text-2xl py-6 px-4 rounded-3xl shadow-2xl flex items-center justify-center gap-4 border-b-8 border-red-800 active:border-b-0 active:translate-y-2">
+              <button 
+                onClick={handleBulkDelete} 
+                aria-label={`Delete ${selectedIds.size} selected items`}
+                className="w-full bg-red-600 text-white font-black text-2xl py-6 px-4 rounded-3xl shadow-2xl flex items-center justify-center gap-4 border-b-8 border-red-800 active:border-b-0 active:translate-y-2"
+              >
                   <TrashIcon className="w-12 h-12"/> DELETE ({selectedIds.size})
               </button>
           </div>

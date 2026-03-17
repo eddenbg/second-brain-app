@@ -445,7 +445,7 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
     };
 
     return (
-        <div className="flex flex-col h-full space-y-4 max-w-4xl mx-auto overflow-hidden">
+        <div className="flex flex-col h-full space-y-4 max-w-4xl mx-auto overflow-hidden bg-[#001f3f]">
             {previewMemory && <MediaPreviewDrawer memory={previewMemory} onUpdate={onUpdate} onClose={() => setPreviewMemory(null)} />}
             {showSummaryPrompt && <SummaryFocusModal onClose={() => setShowSummaryPrompt(false)} onGenerate={handleMultiStudy} isGenerating={isGeneratingMulti} initialType={summaryInitialType} />}
             {activeStudyHub && <StudyHubOverlay overview={activeStudyHub} memories={memories} onClose={() => setActiveStudyHub(null)} />}
@@ -453,12 +453,20 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             <header className="flex flex-col gap-3 shrink-0">
                 <div className="flex items-center justify-between">
                     <div className="relative flex-grow">
-                        <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                        <input type="text" placeholder="SEARCH VAULT..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-gray-800 p-4 pl-12 rounded-2xl border-2 border-gray-800 focus:border-blue-600 outline-none font-black uppercase text-xs tracking-tight shadow-inner" />
+                        <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input 
+                            type="text" 
+                            placeholder="SEARCH VAULT..." 
+                            aria-label="Search memories"
+                            value={searchQuery} 
+                            onChange={(e) => setSearchQuery(e.target.value)} 
+                            className="w-full bg-white/10 p-4 pl-12 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-black uppercase text-xs tracking-tight shadow-inner text-white" 
+                        />
                     </div>
                     <button 
                         onClick={() => { setIsSelectMode(!isSelectMode); setSelectedIds(new Set()); }} 
-                        className={`ml-3 px-6 py-4 rounded-2xl font-black text-xs uppercase border-2 transition-all ${isSelectMode ? 'bg-blue-600 text-white border-blue-400' : 'bg-gray-800 text-gray-500 border-gray-700'}`}
+                        aria-label={isSelectMode ? "Cancel selection" : "Select items"}
+                        className={`ml-3 px-6 py-4 rounded-2xl font-black text-xs uppercase border-2 transition-all ${isSelectMode ? 'bg-yellow-500 text-[#001f3f] border-yellow-400' : 'bg-white/10 text-gray-400 border-white/10'}`}
                     >
                         {isSelectMode ? 'CANCEL' : 'SELECT'}
                     </button>
@@ -467,7 +475,12 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
 
             <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 scrollbar-hide">
                 {['all', 'audio', 'image', 'doc', 'moodle', 'hidden'].map(id => (
-                    <button key={id} onClick={() => setFilter(id as any)} className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex-shrink-0 ${filter === id ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-500 hover:text-gray-300'}`}>
+                    <button 
+                        key={id} 
+                        onClick={() => setFilter(id as any)} 
+                        aria-label={`Filter by ${id}`}
+                        className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex-shrink-0 ${filter === id ? 'bg-yellow-500 text-[#001f3f]' : 'bg-white/10 text-gray-400 hover:text-gray-200'}`}
+                    >
                         {id === 'moodle' ? 'Moodle' : id === 'hidden' ? 'Archived' : id}
                     </button>
                 ))}
@@ -475,9 +488,9 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
 
             <main className="flex-grow overflow-y-auto space-y-3 pb-40 px-0.5">
                 {filteredMemories.length === 0 ? (
-                    <div className="text-center py-20 bg-gray-800/20 rounded-[2rem] border-4 border-dashed border-gray-700 opacity-50">
-                        <FolderIcon className="w-16 h-16 mx-auto text-gray-700 mb-4" />
-                        <p className="text-xs text-gray-600 font-black uppercase tracking-widest">Vault Empty</p>
+                    <div className="text-center py-20 bg-white/5 rounded-[2rem] border-4 border-dashed border-white/10 opacity-50">
+                        <FolderIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+                        <p className="text-xs text-gray-500 font-black uppercase tracking-widest">Vault Empty</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 gap-3.5">
@@ -485,21 +498,22 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                             <div 
                                 key={mem.id} 
                                 onClick={() => handleItemClick(mem)} 
-                                className={`bg-gray-800/60 p-4 rounded-[2rem] border-4 flex flex-col gap-3 shadow-xl active:scale-95 transition-all cursor-pointer relative ${selectedIds.has(mem.id) ? 'border-blue-500' : 'border-gray-700'}`}
+                                aria-label={`View ${mem.title}`}
+                                className={`bg-white/5 p-4 rounded-[2rem] border-4 flex flex-col gap-3 shadow-xl active:scale-95 transition-all cursor-pointer relative ${selectedIds.has(mem.id) ? 'border-yellow-500' : 'border-white/10'}`}
                             >
                                 {isSelectMode && (
-                                    <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedIds.has(mem.id) ? 'bg-blue-600 border-blue-400' : 'border-gray-900 border-gray-600'}`}>
-                                        {selectedIds.has(mem.id) && <CheckIcon className="w-4 h-4 text-white" />}
+                                    <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedIds.has(mem.id) ? 'bg-yellow-500 border-yellow-400' : 'border-white/10'}`}>
+                                        {selectedIds.has(mem.id) && <CheckIcon className="w-4 h-4 text-[#001f3f]" />}
                                     </div>
                                 )}
-                                <div className="p-4 bg-gray-900 rounded-2xl w-fit">
-                                    {mem.type === 'file' ? <FileTextIcon className="w-6 h-6 text-indigo-400"/> : 
-                                     mem.type === 'voice' ? <MicIcon className="w-6 h-6 text-blue-400"/> :
-                                     <CameraIcon className="w-6 h-6 text-purple-400"/>}
+                                <div className="p-4 bg-black/20 rounded-2xl w-fit">
+                                    {mem.type === 'file' ? <FileTextIcon className="w-6 h-6 text-yellow-500"/> : 
+                                     mem.type === 'voice' ? <MicIcon className="w-6 h-6 text-yellow-500"/> :
+                                     <CameraIcon className="w-6 h-6 text-yellow-500"/>}
                                 </div>
                                 <div className="overflow-hidden">
                                     <h3 className="text-sm font-black text-white truncate uppercase tracking-tight">{mem.title}</h3>
-                                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest">{mem.course || 'Personal'}</span>
+                                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{mem.course || 'Personal'}</span>
                                 </div>
                             </div>
                         ))}
@@ -514,7 +528,8 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                             setSummaryInitialType('written');
                             setShowSummaryPrompt(true);
                         }}
-                        className="flex-1 bg-purple-600 text-white font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3 uppercase text-xs"
+                        aria-label="Generate Study Pod"
+                        className="flex-1 bg-yellow-500 text-[#001f3f] font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3 uppercase text-xs"
                     >
                         <PenToolIcon className="w-6 h-6" /> Study Pod
                     </button>
@@ -523,7 +538,8 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                             setSummaryInitialType('research');
                             setShowSummaryPrompt(true);
                         }}
-                        className="flex-1 bg-blue-600 text-white font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3 uppercase text-xs"
+                        aria-label="Deep Recall"
+                        className="flex-1 bg-white/10 text-white font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3 uppercase text-xs border-2 border-white/10"
                     >
                         <BrainCircuitIcon className="w-6 h-6" /> Deep Recall
                     </button>

@@ -97,21 +97,25 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 overflow-hidden">
-      <div className="flex-grow p-6 overflow-y-auto space-y-6">
+    <div className="flex flex-col h-full bg-[#001f3f] overflow-hidden">
+      <div className="flex-grow p-8 overflow-y-auto space-y-8 scrollbar-hide">
         {messages.length === 0 && (
-            <div className="text-center py-20 opacity-50">
-                <BrainCircuitIcon className="w-20 h-20 mx-auto mb-4 text-blue-500" />
-                <p className="text-2xl font-black text-white">Ask me to schedule a task or search your notes.</p>
+            <div className="text-center py-24 opacity-30">
+                <BrainCircuitIcon className="w-24 h-24 mx-auto mb-6 text-yellow-500" />
+                <p className="text-3xl font-black text-white uppercase tracking-tighter">Ask me to schedule a task or search your notes.</p>
             </div>
         )}
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] p-5 rounded-3xl ${msg.sender === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-800 text-gray-100 border-2 border-gray-700 rounded-bl-none'}`}>
-              <p className="text-2xl font-bold leading-tight">{msg.text}</p>
+            <div className={`max-w-[85%] p-6 rounded-[2.5rem] shadow-2xl ${msg.sender === 'user' ? 'bg-yellow-500 text-[#001f3f] rounded-br-none' : 'bg-white/10 text-white border-4 border-white/10 rounded-bl-none'}`}>
+              <p className="text-2xl font-black leading-tight tracking-tight">{msg.text}</p>
               {msg.sender === 'ai' && (
-                  <button onClick={() => handleReadResponse(msg)} className="mt-4 p-3 bg-gray-700 rounded-xl text-blue-400">
-                      {playingMessageId === msg.id ? <StopCircleIcon className="w-8 h-8"/> : <Volume2Icon className="w-8 h-8"/>}
+                  <button 
+                    onClick={() => handleReadResponse(msg)} 
+                    aria-label={playingMessageId === msg.id ? "Stop reading" : "Read response aloud"}
+                    className="mt-6 p-4 bg-white/10 rounded-2xl text-yellow-500 hover:bg-white/20 transition-colors"
+                  >
+                      {playingMessageId === msg.id ? <StopCircleIcon className="w-10 h-10"/> : <Volume2Icon className="w-10 h-10"/>}
                   </button>
               )}
             </div>
@@ -120,17 +124,22 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
         <div ref={messagesEndRef} />
       </div>
       
-      <div className="p-6 border-t-4 border-gray-800">
-        <div className="flex gap-4 bg-gray-800 p-3 rounded-3xl border-4 border-gray-700">
+      <div className="p-8 border-t-8 border-black/20 bg-black/10">
+        <div className="flex gap-4 bg-white/5 p-4 rounded-[3rem] border-4 border-white/10 focus-within:border-yellow-500 transition-all shadow-2xl">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type or use mic..."
-            className="flex-grow bg-transparent text-white text-2xl p-4 focus:outline-none font-bold"
+            aria-label="Ask a question"
+            className="flex-grow bg-transparent text-white text-2xl p-4 focus:outline-none font-black placeholder:text-white/20"
           />
-          <button onClick={handleSend} className="p-5 bg-blue-600 text-white rounded-2xl">
+          <button 
+            onClick={handleSend} 
+            aria-label="Send message"
+            className="p-6 bg-yellow-500 text-[#001f3f] rounded-[2rem] hover:bg-yellow-600 transition-all active:scale-90 shadow-xl"
+          >
             <SendIcon className="w-10 h-10" />
           </button>
         </div>

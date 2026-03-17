@@ -25,6 +25,14 @@ const VoiceNoteItem: React.FC<{
     const [isEditing, setIsEditing] = useState(false);
     const [title, setTitle] = useState(memory.title);
     const titleInputRef = useRef<HTMLInputElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    const seekTo = (seconds: number) => {
+        if (videoRef.current) {
+            videoRef.current.currentTime = seconds;
+            videoRef.current.play();
+        }
+    };
 
     useEffect(() => {
         if (isEditing && titleInputRef.current) {
@@ -138,6 +146,7 @@ const VoiceNoteItem: React.FC<{
                     {memory.videoDataUrl && (
                         <div className="bg-black rounded-2xl overflow-hidden border-2 border-gray-700 shadow-inner">
                             <video
+                                ref={videoRef}
                                 src={memory.videoDataUrl}
                                 controls
                                 className="w-full aspect-video"
@@ -147,7 +156,22 @@ const VoiceNoteItem: React.FC<{
 
                     <div className="bg-gray-900 p-6 rounded-2xl max-h-96 overflow-y-auto border-4 border-gray-600">
                         <h4 className="text-xl font-black text-gray-400 mb-3 uppercase">Transcript</h4>
-                        <p className="text-gray-200 text-2xl whitespace-pre-wrap leading-relaxed">{memory.transcript}</p>
+                        <div className="text-gray-200 text-2xl whitespace-pre-wrap leading-relaxed">
+                            {memory.structuredTranscript && memory.structuredTranscript.length > 0 ? (
+                                memory.structuredTranscript.map((segment, idx) => (
+                                    <span 
+                                        key={idx} 
+                                        onClick={() => seekTo(segment.timestamp)}
+                                        className="cursor-pointer hover:bg-blue-600/30 hover:text-blue-300 transition-colors rounded px-1"
+                                        title={`Jump to ${Math.floor(segment.timestamp)}s`}
+                                    >
+                                        {segment.text}
+                                    </span>
+                                ))
+                            ) : (
+                                memory.transcript
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -248,15 +272,9 @@ const DocumentItem: React.FC<{
 }
 
 const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ voiceMemories, documents, onSave, onDelete, onUpdate, bulkDelete, onDocumentClick }) => {
-    const [isRecording, setIsRecording] = useState(false);
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     
-    const handleSaveNote = (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
-        onSave({ ...mem, category: 'personal' });
-        setIsRecording(false);
-    };
-
     const toggleSelection = (id: string) => {
         setSelectedIds(prev => {
             const newSet = new Set(prev);
@@ -276,20 +294,6 @@ const VoiceNotesView: React.FC<VoiceNotesViewProps> = ({ voiceMemories, document
 
     return (
         <div className="space-y-10">
-            {isRecording && (
-                <Recorder 
-                    onSave={handleSaveNote} 
-                    onCancel={() => setIsRecording(false)}
-                    titlePlaceholder={`Voice Note - ${new Date().toLocaleDateString()}`}
-                    saveButtonText="Save Note"
-                />
-            )}
-
-            <button onClick={() => setIsRecording(true)} className="w-full flex flex-col items-center justify-center gap-4 p-8 bg-blue-600 rounded-3xl hover:bg-blue-700 border-4 border-dashed border-blue-400 hover:border-blue-300 transition-all shadow-2xl group focus:ring-8 focus:ring-blue-400" aria-label="Record new thought or to-do">
-                <MicIcon className="w-20 h-20 text-white group-active:scale-110 transition-transform"/>
-                <span className="text-3xl font-black text-white uppercase tracking-tight">Record Thoughts</span>
-            </button>
-
             <div className="space-y-6">
                 <div className="flex justify-between items-center border-b-4 border-gray-700 pb-4">
                     <h2 className="text-3xl font-black text-white uppercase tracking-tight">My Notes</h2>

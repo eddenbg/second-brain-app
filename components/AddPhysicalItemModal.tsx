@@ -21,6 +21,8 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     const [tags, setTags] = useState('');
     const [voiceNote, setVoiceNote] = useState(''); 
     const [transcript, setTranscript] = useState(''); 
+    const [structuredTranscript, setStructuredTranscript] = useState<{text: string, timestamp: number}[]>([]);
+    const [audioDataUrl, setAudioDataUrl] = useState<string | null>(null);
     const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
     const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
@@ -34,6 +36,8 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const liveTranscriptRef = useRef('');
+
+    const startTimeRef = useRef<number>(0);
 
     const stopCamera = useCallback(() => {
         if (stream) {
@@ -109,6 +113,8 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         setVideoDataUrl(null);
         liveTranscriptRef.current = '';
         setTranscript('');
+        setStructuredTranscript([]);
+        startTimeRef.current = Date.now();
         
         const chunks: Blob[] = [];
         mediaRecorderRef.current = new MediaRecorder(stream);
@@ -145,9 +151,11 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
               },
               onmessage: (message) => {
                 if (message.serverContent?.inputTranscription) {
-                  const text = message.serverContent.inputTranscription.text;
+                  const text = message.serverContent.inputTranscription.text || '';
+                  const timestamp = (Date.now() - startTimeRef.current) / 1000;
                   liveTranscriptRef.current += text;
                   setTranscript(prev => prev + text);
+                  setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                 }
               },
               onerror: (e) => { console.error(e); setError('Transcription error.'); },
@@ -185,14 +193,20 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         if (mode === 'video' && videoDataUrl) {
             const newMemory: Omit<VideoItemMemory, 'id' | 'date' | 'category'> = {
                 type: 'video', title, description,
-                videoDataUrl, transcript, ...(location && { location }), tags: tagList,
+                videoDataUrl, transcript, structuredTranscript, ...(location && { location }), tags: tagList,
             };
             onSave(newMemory);
         } else if (mode === 'photo' && imageDataUrl) {
             const newMemory: Omit<PhysicalItemMemory, 'id' | 'date' | 'category'> = {
                 type: 'item', title, description,
                 imageDataUrl, ...(location && { location }),
-                ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote.trim() } }),
+                ...(voiceNote.trim() && { 
+                    voiceNote: { 
+                        transcript: voiceNote.trim(),
+                        audioDataUrl: audioDataUrl || undefined,
+                        structuredTranscript: structuredTranscript.length > 0 ? structuredTranscript : undefined
+                    } 
+                }),
                 tags: tagList,
             };
             onSave(newMemory);
@@ -285,7 +299,11 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                         </div>
 
                         <div>
-                            <MiniRecorder onTranscriptChange={setVoiceNote} />
+                            <MiniRecorder 
+                                onTranscriptChange={setVoiceNote} 
+                                onAudioDataUrlChange={setAudioDataUrl}
+                                onStructuredTranscriptChange={setStructuredTranscript}
+                            />
                             {(voiceNote || transcript) && (
                                 <div className="mt-3 bg-gray-900 p-4 rounded-2xl border border-gray-700 shadow-inner">
                                     <p className="text-xs text-gray-400 leading-relaxed font-medium">{voiceNote || transcript}</p>

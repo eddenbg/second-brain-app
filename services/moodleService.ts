@@ -5,12 +5,44 @@ import type { CalendarEvent, MoodleCourse, MoodleContent } from '../types';
  * to bypass CORS restrictions on the college server.
  */
 
+export const testMoodleConnection = async (token: string): Promise<boolean> => {
+    if (!token) return false;
+    try {
+        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_webservice_get_site_info`;
+        const response = await fetch(url);
+        if (!response.ok) return false;
+        const data = await response.json();
+        return !data.exception && !data.error;
+    } catch (e) {
+        return false;
+    }
+};
+
 export const fetchMoodleEvents = async (token: string): Promise<CalendarEvent[]> => {
     if (!token) return [];
     try {
-        const url = `/.netlify/functions/moodleProxy?token=${token}&wsfunction=core_calendar_get_calendar_events`;
+        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events`;
+        console.log(`[MoodleService] Fetching events...`);
         const response = await fetch(url);
+        
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`[MoodleService] Events fetch failed with status ${response.status}: ${text}`);
+            let errorData;
+            try {
+                errorData = JSON.parse(text);
+            } catch (e) {
+                errorData = { error: text || "Network response was not ok" };
+            }
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
         const data = await response.json();
+        console.log(`[MoodleService] Events fetched successfully`);
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
         
         if (data.events) {
             return data.events.map((e: any) => ({
@@ -33,10 +65,26 @@ export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]>
     if (!token) return [];
     try {
         // Switched to a more reliable Moodle function to fetch courses for the current user.
-        const url = `/.netlify/functions/moodleProxy?token=${token}&wsfunction=core_course_get_enrolled_courses_by_timeline_classification&classification=inprogress`;
+        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_course_get_enrolled_courses_by_timeline_classification&classification=inprogress`;
+        console.log(`[MoodleService] Fetching courses...`);
         const response = await fetch(url);
-        const data = await response.json();
         
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`[MoodleService] Courses fetch failed with status ${response.status}: ${text}`);
+            let errorData;
+            try {
+                errorData = JSON.parse(text);
+            } catch (e) {
+                errorData = { error: text || "Network response was not ok" };
+            }
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log(`[MoodleService] Courses fetched successfully`);
+        
+        if (data.error) throw new Error(data.error);
         if (data.exception) throw new Error(data.message);
         
         // This function returns an object with a 'courses' array
@@ -50,10 +98,26 @@ export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]>
 export const fetchCourseContents = async (token: string, courseId: number): Promise<MoodleContent[]> => {
     if (!token) return [];
     try {
-        const url = `/.netlify/functions/moodleProxy?token=${token}&wsfunction=core_course_get_contents&courseid=${courseId}`;
+        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_course_get_contents&courseid=${courseId}`;
+        console.log(`[MoodleService] Fetching contents for course ${courseId}...`);
         const response = await fetch(url);
-        const sections = await response.json();
         
+        if (!response.ok) {
+            const text = await response.text();
+            console.error(`[MoodleService] Contents fetch failed with status ${response.status}: ${text}`);
+            let errorData;
+            try {
+                errorData = JSON.parse(text);
+            } catch (e) {
+                errorData = { error: text || "Network response was not ok" };
+            }
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const sections = await response.json();
+        console.log(`[MoodleService] Contents fetched successfully for course ${courseId}`);
+        
+        if (sections.error) throw new Error(sections.error);
         if (sections.exception) throw new Error(sections.message);
 
         const contents: MoodleContent[] = [];
@@ -63,7 +127,7 @@ export const fetchCourseContents = async (token: string, courseId: number): Prom
                     // Append token to file URL to allow direct access without login redirection
                     let fileurl = mod.contents?.[0]?.fileurl;
                     if (fileurl && !fileurl.includes('token=')) {
-                        fileurl += (fileurl.includes('?') ? '&' : '?') + `token=${token}`;
+                        fileurl += (fileurl.includes('?') ? '&' : '?') + `token=${encodeURIComponent(token)}`;
                     }
 
                     contents.push({

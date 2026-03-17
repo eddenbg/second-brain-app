@@ -7,6 +7,8 @@ import type { StoredData } from '../hooks/useRecordings';
 import { auth } from '../utils/firebase';
 import { signOut } from 'firebase/auth';
 
+import { testMoodleConnection } from '../services/moodleService';
+
 interface SettingsModalProps {
     syncId: string;
     onClose: () => void;
@@ -22,6 +24,8 @@ interface SettingsModalProps {
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, isGoogleConnected, onConnectGoogle, onDisconnectGoogle }) => {
     const [manualToken, setManualToken] = useState('');
+    const [isTesting, setIsTesting] = useState(false);
+    const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
 
     const checkClipboard = useCallback(() => {
         navigator.clipboard.readText().then(text => {
@@ -41,10 +45,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     }, [moodleToken, checkClipboard]);
 
-    const handleSaveManualToken = () => {
-        if (manualToken.trim().length === 32) {
-            onSaveMoodleToken(manualToken.trim());
-            setManualToken('');
+    const handleSaveManualToken = async () => {
+        const token = manualToken.trim();
+        if (token.length === 32) {
+            setIsTesting(true);
+            setTestResult(null);
+            const isValid = await testMoodleConnection(token);
+            setIsTesting(false);
+            if (isValid) {
+                onSaveMoodleToken(token);
+                setManualToken('');
+                setTestResult('success');
+                setTimeout(() => setTestResult(null), 3000);
+            } else {
+                setTestResult('error');
+                alert("Moodle rejected this key. Please make sure you copied the 'Moodle Mobile additional features service' key from the Security Keys page.");
+            }
         } else {
             alert("Please enter a valid 32-character Moodle security key.");
         }
@@ -125,8 +141,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white font-mono text-center"
                                         aria-label="Moodle Security Key"
                                     />
-                                    <button onClick={handleSaveManualToken} className="w-full py-3 bg-green-600 text-white rounded-lg font-bold text-sm uppercase">
-                                        Save Security Key
+                                    <button 
+                                        onClick={handleSaveManualToken} 
+                                        disabled={isTesting}
+                                        className={`w-full py-3 rounded-lg font-bold text-sm uppercase flex items-center justify-center gap-2 ${isTesting ? 'bg-gray-600' : 'bg-green-600'} text-white`}
+                                    >
+                                        {isTesting ? <Loader2Icon className="w-4 h-4 animate-spin" /> : null}
+                                        {isTesting ? 'Testing...' : 'Save Security Key'}
                                     </button>
                                 </div>
                             )}

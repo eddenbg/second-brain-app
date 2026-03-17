@@ -59,50 +59,50 @@ const AddTaskModal: React.FC<{
     }
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-gray-800 rounded-lg shadow-2xl w-full max-w-md border border-gray-600 max-h-[90vh] flex flex-col">
-                <header className="flex justify-between items-center p-4 border-b border-gray-700">
-                    <h2 className="text-xl font-bold text-white">Add {category === 'personal' ? 'Task / Idea' : 'Task'}</h2>
-                    <button onClick={onClose}><XIcon className="w-6 h-6 text-gray-400" /></button>
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-[500] p-4 animate-fade-in">
+            <div className="bg-[#001f3f] rounded-[3rem] shadow-2xl w-full max-w-md border-4 border-white/10 max-h-[90vh] flex flex-col overflow-hidden">
+                <header className="flex justify-between items-center p-8 border-b-4 border-white/10 bg-black/20">
+                    <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Add {category === 'personal' ? 'Task / Idea' : 'Task'}</h2>
+                    <button onClick={onClose} aria-label="Close modal" className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors"><XIcon className="w-6 h-6 text-white" /></button>
                 </header>
-                <form onSubmit={handleSubmit} className="p-4 space-y-4 overflow-y-auto">
+                <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto">
                     <div>
-                        <label className="block text-gray-300 text-sm font-bold mb-2">Title</label>
-                        <input className="w-full bg-gray-700 text-white p-2 rounded border border-gray-600 focus:border-blue-500" value={title} onChange={e => setTitle(e.target.value)} required autoFocus/>
+                        <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Title</label>
+                        <input className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" value={title} onChange={e => setTitle(e.target.value)} required autoFocus placeholder="What needs to be done?"/>
                     </div>
                     <div>
-                        <label className="block text-gray-300 text-sm font-bold mb-2">Description</label>
-                        <textarea className="w-full bg-gray-700 text-white p-2 rounded border border-gray-600" rows={3} value={description} onChange={e => setDescription(e.target.value)} />
+                        <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Description</label>
+                        <textarea className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Add more details..." />
                     </div>
                     
                     <div>
-                        <label className="block text-gray-300 text-sm font-bold mb-2">Status</label>
+                        <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Status</label>
                         <select 
                             value={status} 
                             onChange={(e) => setStatus(e.target.value as TaskStatus)} 
-                            className="w-full bg-gray-700 text-white p-2 rounded border border-gray-600"
+                            className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold appearance-none"
                         >
-                            {category === 'personal' && <option value="idea">Idea</option>}
-                            <option value="todo">To Do</option>
-                            <option value="in-progress">In Progress</option>
-                            <option value="done">Done</option>
+                            {category === 'personal' && <option value="idea" className="bg-[#001f3f]">Idea</option>}
+                            <option value="todo" className="bg-[#001f3f]">To Do</option>
+                            <option value="in-progress" className="bg-[#001f3f]">In Progress</option>
+                            <option value="done" className="bg-[#001f3f]">Done</option>
                         </select>
                     </div>
 
                     <div>
-                         <label className="block text-gray-300 text-sm font-bold mb-2">Project</label>
+                         <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Project</label>
                          {existingProjects.length > 0 && (
                              <select 
                                 value={project} 
                                 onChange={(e) => setProject(e.target.value)} 
-                                className="w-full bg-gray-700 text-white p-2 rounded border border-gray-600 mb-2"
+                                className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold appearance-none mb-3"
                              >
-                                 <option value="">-- Select Existing Project --</option>
-                                 {existingProjects.map(p => <option key={p} value={p}>{p}</option>)}
+                                 <option value="" className="bg-[#001f3f]">-- Select Existing Project --</option>
+                                 {existingProjects.map(p => <option key={p} value={p} className="bg-[#001f3f]">{p}</option>)}
                              </select>
                          )}
                          <input 
-                            className="w-full bg-gray-700 text-white p-2 rounded border border-gray-600" 
+                            className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" 
                             placeholder="Or create new project..."
                             value={newProject}
                             onChange={(e) => setNewProject(e.target.value)}
@@ -111,21 +111,21 @@ const AddTaskModal: React.FC<{
                     
                     {availableMemories.length > 0 && (
                         <div>
-                             <label className="block text-gray-300 text-sm font-bold mb-2">Link Notes/Docs</label>
-                             <div className="bg-gray-700 rounded p-2 max-h-40 overflow-y-auto space-y-2">
+                             <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Link Notes/Docs</label>
+                             <div className="bg-black/20 rounded-2xl p-3 max-h-40 overflow-y-auto space-y-2 border-2 border-white/5">
                                  {availableMemories.map(mem => (
-                                     <div key={mem.id} onClick={() => toggleMemory(mem.id)} className={`p-2 rounded cursor-pointer border flex items-center justify-between ${selectedMemories.has(mem.id) ? 'bg-blue-900 border-blue-500' : 'border-gray-600 hover:bg-gray-600'}`}>
-                                         <span className="text-sm truncate">{mem.title}</span>
-                                         {selectedMemories.has(mem.id) && <CheckIcon className="w-4 h-4 text-blue-400"/>}
+                                     <div key={mem.id} onClick={() => toggleMemory(mem.id)} className={`p-3 rounded-xl cursor-pointer border-2 flex items-center justify-between transition-all ${selectedMemories.has(mem.id) ? 'bg-yellow-500/20 border-yellow-500' : 'border-white/10 hover:bg-white/5'}`}>
+                                         <span className="text-sm font-bold text-white truncate">{mem.title}</span>
+                                         {selectedMemories.has(mem.id) && <CheckIcon className="w-4 h-4 text-yellow-500"/>}
                                      </div>
                                  ))}
                              </div>
                         </div>
                     )}
 
-                    <div className="pt-4 flex justify-end gap-3">
-                        <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-600 rounded text-white">Cancel</button>
-                        <button type="submit" className="px-4 py-2 bg-blue-600 rounded text-white font-bold">Add</button>
+                    <div className="pt-6 flex gap-4">
+                        <button type="button" onClick={onClose} className="flex-1 py-4 bg-white/10 rounded-2xl text-white font-black uppercase tracking-widest hover:bg-white/20 transition-colors">Cancel</button>
+                        <button type="submit" className="flex-1 py-4 bg-yellow-500 rounded-2xl text-[#001f3f] font-black uppercase tracking-widest hover:bg-yellow-600 transition-colors shadow-xl">Add</button>
                     </div>
                 </form>
             </div>
@@ -164,60 +164,60 @@ const TaskCard: React.FC<{
     const handleDragStart = (e: React.DragEvent) => {
         e.dataTransfer.setData('text/plain', task.id);
         e.dataTransfer.effectAllowed = 'move';
-        // Add a slight transparency to the drag image if possible, 
-        // though browser default is usually fine.
     };
 
     return (
         <div 
             draggable
             onDragStart={handleDragStart}
-            className="bg-gray-700 p-3 rounded-lg shadow-sm border border-gray-600 mb-3 hover:border-blue-400 transition-colors group cursor-grab active:cursor-grabbing"
+            aria-label={`Task: ${task.title}`}
+            className="bg-white/5 p-4 rounded-2xl shadow-lg border-2 border-white/10 mb-3 hover:border-yellow-500 transition-all group cursor-grab active:cursor-grabbing"
         >
-            <div className="flex justify-between items-start mb-1">
-                <h4 className="font-semibold text-white text-sm">{task.title}</h4>
+            <div className="flex justify-between items-start mb-2">
+                <h4 className="font-black text-white text-sm uppercase tracking-tight">{task.title}</h4>
                 <div className="flex gap-1">
-                    <button onClick={() => onDelete(task.id)} className="text-gray-500 hover:text-red-400"><XIcon className="w-4 h-4"/></button>
+                    <button onClick={() => onDelete(task.id)} aria-label="Delete task" className="text-gray-500 hover:text-red-400 p-1"><XIcon className="w-4 h-4"/></button>
                 </div>
             </div>
-            {task.description && <p className="text-xs text-gray-300 mb-2">{task.description}</p>}
+            {task.description && <p className="text-xs text-gray-400 mb-3 font-medium leading-relaxed">{task.description}</p>}
             
-            <div className="flex flex-wrap gap-1 mb-2">
+            <div className="flex flex-wrap gap-1.5 mb-3">
                 {task.project && (
-                    <span className="inline-block bg-purple-900 text-purple-200 text-[10px] px-2 py-0.5 rounded-full">
+                    <span className="inline-block bg-yellow-500/10 text-yellow-500 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border border-yellow-500/20">
                         {task.project}
                     </span>
                 )}
                 {task.course && task.course !== 'General' && (
-                    <span className="inline-block bg-blue-900 text-blue-200 text-[10px] px-2 py-0.5 rounded-full">
+                    <span className="inline-block bg-white/10 text-gray-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border border-white/10">
                         {task.course}
                     </span>
                 )}
             </div>
 
             {/* Subtasks */}
-            <div className="mb-2">
+            <div className="mb-3 space-y-1.5">
                 {task.subtasks && task.subtasks.map(st => (
-                    <div key={st.id} className="flex items-center gap-2 mb-1">
+                    <div key={st.id} className="flex items-center gap-2">
                         <button 
                             onClick={() => handleSubtaskToggle(st.id)}
-                            className={`w-4 h-4 border rounded flex items-center justify-center ${st.done ? 'bg-green-600 border-green-600' : 'border-gray-500'}`}
+                            aria-label={st.done ? `Mark subtask ${st.title} as incomplete` : `Mark subtask ${st.title} as complete`}
+                            className={`w-5 h-5 border-2 rounded-lg flex items-center justify-center transition-colors ${st.done ? 'bg-yellow-500 border-yellow-400' : 'border-white/20 hover:border-white/40'}`}
                         >
-                            {st.done && <CheckIcon className="w-3 h-3 text-white"/>}
+                            {st.done && <CheckIcon className="w-3.5 h-3.5 text-[#001f3f]"/>}
                         </button>
-                        <span className={`text-xs ${st.done ? 'line-through text-gray-500' : 'text-gray-300'}`}>{st.title}</span>
+                        <span className={`text-xs font-bold ${st.done ? 'line-through text-gray-500' : 'text-gray-200'}`}>{st.title}</span>
                     </div>
                 ))}
-                <button onClick={addSubtask} className="text-[10px] text-gray-500 hover:text-blue-300 flex items-center gap-1 mt-1">
-                    <PlusIcon className="w-3 h-3"/> Subtask
+                <button onClick={addSubtask} aria-label="Add subtask" className="text-[10px] text-yellow-500/60 hover:text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-2 transition-colors">
+                    <PlusIcon className="w-3.5 h-3.5"/> Subtask
                 </button>
             </div>
 
             {linkedDocs.length > 0 && (
-                <div className="mb-2 space-y-1 border-t border-gray-600 pt-1">
+                <div className="mb-1 space-y-1.5 border-t-2 border-white/5 pt-3">
                     {linkedDocs.map(doc => (
-                        <button key={doc.id} onClick={() => onOpenMemory(doc)} className="flex items-center gap-1 text-[10px] text-blue-300 hover:underline w-full text-left truncate">
-                            <LinkIcon className="w-3 h-3 flex-shrink-0" /> {doc.title}
+                        <button key={doc.id} onClick={() => onOpenMemory(doc)} aria-label={`Open linked note ${doc.title}`} className="flex items-center gap-2 text-[10px] text-yellow-500/80 hover:text-yellow-500 font-black uppercase tracking-widest w-full text-left truncate transition-colors">
+                            <LinkIcon className="w-3.5 h-3.5 flex-shrink-0" /> {doc.title}
                         </button>
                     ))}
                 </div>
@@ -281,7 +281,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, category, courseFilter
     );
 
     return (
-        <div className="h-full flex flex-col">
+        <div className="h-full flex flex-col bg-[#001f3f]">
             {showAddModal && (
                 <AddTaskModal 
                     category={category}
@@ -293,37 +293,39 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, category, courseFilter
                 />
             )}
 
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-                    <span className="text-gray-400 text-sm whitespace-nowrap">Project:</span>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <div className="flex items-center gap-3 overflow-x-auto w-full sm:w-auto pb-1 scrollbar-hide">
+                    <span className="text-gray-400 text-xs font-black uppercase tracking-widest whitespace-nowrap">Project:</span>
                     <select 
                         value={projectFilter} 
                         onChange={(e) => setProjectFilter(e.target.value)}
-                        className="bg-gray-700 text-white text-sm p-2 rounded border border-gray-600"
+                        aria-label="Filter by project"
+                        className="bg-white/5 text-white text-xs font-black uppercase tracking-widest p-3 rounded-xl border-2 border-white/10 focus:border-yellow-500 outline-none appearance-none min-w-[140px]"
                     >
-                        <option value="All">All Projects</option>
-                        {availableProjects.map(p => <option key={p} value={p}>{p}</option>)}
+                        <option value="All" className="bg-[#001f3f]">All Projects</option>
+                        {availableProjects.map(p => <option key={p} value={p} className="bg-[#001f3f]">{p}</option>)}
                     </select>
                 </div>
-                <button onClick={() => setShowAddModal(true)} className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 w-full sm:w-auto justify-center">
-                    <PlusIcon className="w-4 h-4"/> Add Task / Idea
+                <button onClick={() => setShowAddModal(true)} aria-label="Add new task or idea" className="flex items-center gap-2 px-6 py-4 bg-yellow-500 text-[#001f3f] text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-yellow-600 w-full sm:w-auto justify-center shadow-xl transition-all active:scale-95">
+                    <PlusIcon className="w-5 h-5"/> Add Task / Idea
                 </button>
             </div>
             
-            <div className="flex-grow overflow-x-auto">
-                <div className="flex gap-4 min-w-[800px] h-full pb-4">
+            <div className="flex-grow overflow-x-auto scrollbar-hide">
+                <div className="flex gap-6 min-w-[900px] h-full pb-6">
                     {columns.map(col => (
                         <div 
                             key={col.id} 
-                            className={`flex-1 bg-gray-800 rounded-lg border flex flex-col min-w-[200px] transition-colors ${dragOverColumn === col.id ? 'border-blue-500 bg-gray-750' : 'border-gray-700'}`}
+                            className={`flex-1 bg-black/20 rounded-[2.5rem] border-4 flex flex-col min-w-[250px] transition-all ${dragOverColumn === col.id ? 'border-yellow-500 bg-black/40 scale-[1.02]' : 'border-white/5'}`}
                             onDragOver={(e) => handleDragOver(e, col.id)}
                             onDrop={(e) => handleDrop(e, col.id)}
                             onDragLeave={handleDragLeave}
+                            aria-label={`Column: ${col.label}`}
                         >
-                            <div className={`p-3 border-b-2 ${col.color} bg-gray-800 rounded-t-lg`}>
-                                <h4 className="font-bold text-gray-300">{col.label}</h4>
+                            <div className={`p-5 border-b-4 ${col.color} bg-black/10 rounded-t-[2.5rem]`}>
+                                <h4 className="font-black text-white uppercase tracking-tighter text-lg">{col.label}</h4>
                             </div>
-                            <div className="p-2 flex-grow overflow-y-auto">
+                            <div className="p-4 flex-grow overflow-y-auto space-y-1">
                                 {filteredTasks.filter(t => t.status === col.id).map(task => (
                                     <TaskCard 
                                         key={task.id} 

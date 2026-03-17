@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Session, Modality } from '@google/genai';
-import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayIcon, VideoIcon } from './Icons';
+import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayIcon, VideoIcon, GlobeIcon } from './Icons';
 import type { VoiceMemory } from '../types';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
@@ -37,17 +37,20 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText }) => {
     const [title, setTitle] = useState(titlePlaceholder);
     const [transcript, setTranscript] = useState('');
+    const [structuredTranscript, setStructuredTranscript] = useState<{text: string, timestamp: number}[]>([]);
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [captureMode, setCaptureMode] = useState<'physical' | 'remote'>('physical');
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const frameIntervalRef = useRef<number | null>(null);
+    const startTimeRef = useRef<number>(0);
 
     const stopAllMedia = useCallback(() => {
         if (stream) {
@@ -63,8 +66,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const startRecording = async () => {
         if (isRecording) return;
         setTranscript('');
-        setVideoDataUrl(null);
+        setStructuredTranscript([]);
         setError(null);
+        startTimeRef.current = Date.now();
 
         const ai = getGeminiInstance();
         if (!ai) {
@@ -73,10 +77,27 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
 
         try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
-                video: { facingMode: 'environment' } // Prefer back camera for lectures
-            });
+            let mediaStream: MediaStream;
+            
+            if (captureMode === 'remote') {
+                // Use getDisplayMedia for system audio and screen capture
+                mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                    video: true,
+                    audio: true
+                });
+                
+                // If the user didn't share audio, we might want to warn them or fallback
+                if (mediaStream.getAudioTracks().length === 0) {
+                    setError("No audio captured. Make sure to check 'Share system audio' when selecting the screen.");
+                }
+            } else {
+                // Use getUserMedia for physical camera and mic
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: true,
+                    video: { facingMode: 'environment' } // Prefer back camera for lectures
+                });
+            }
+
             setStream(mediaStream);
             setIsRecording(true);
 
@@ -136,8 +157,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         }, 1000 / FRAME_RATE);
                     },
                     onmessage: (message) => {
-                        if (message.serverContent?.inputTranscription?.text) {
-                            setTranscript(prev => prev + (message.serverContent?.inputTranscription?.text || ''));
+                        const text = message.serverContent?.inputTranscription?.text;
+                        if (text) {
+                            const timestamp = (Date.now() - startTimeRef.current) / 1000;
+                            setTranscript(prev => prev + text);
+                            setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                         }
                     },
                     onerror: (e) => { console.error(e); setError('Transcription error.'); },
@@ -200,6 +224,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 type: 'voice',
                 title: analysis.title || title,
                 transcript,
+                structuredTranscript,
                 videoDataUrl: videoDataUrl || undefined,
                 actionItems: analysis.actionItems.map(text => ({ text, done: false })),
                 ...(location && { location }),
@@ -215,15 +240,41 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     };
     
     return (
-        <div className="bg-gray-800 p-6 rounded-[3rem] border-4 border-gray-700 shadow-2xl flex flex-col gap-6 w-full">
+        <div className="bg-[#001f3f] p-6 rounded-[3rem] border-4 border-white/10 shadow-2xl flex flex-col gap-6 w-full">
             <canvas ref={canvasRef} className="hidden" />
-            <div className="w-full aspect-video bg-gray-900 rounded-[2rem] flex items-center justify-center relative overflow-hidden border-2 border-gray-700 shadow-inner">
+            
+            {!isRecording && (
+                <div className="flex gap-2 bg-black/20 p-2 rounded-2xl border-2 border-white/5">
+                    <button 
+                        onClick={() => setCaptureMode('physical')}
+                        className={`flex-1 py-3 rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${captureMode === 'physical' ? 'bg-yellow-500 text-[#001f3f]' : 'text-gray-400'}`}
+                    >
+                        <VideoIcon className="w-5 h-5" />
+                        <span>In-Person</span>
+                    </button>
+                    <button 
+                        onClick={() => setCaptureMode('remote')}
+                        className={`flex-1 py-3 rounded-xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${captureMode === 'remote' ? 'bg-yellow-500 text-[#001f3f]' : 'text-gray-400'}`}
+                    >
+                        <GlobeIcon className="w-5 h-5" />
+                        <span>Remote (Zoom)</span>
+                    </button>
+                </div>
+            )}
+
+            {!isRecording && captureMode === 'remote' && (
+                <p className="text-xs text-yellow-500 font-bold text-center animate-pulse">
+                    TIP: When the screen picker appears, select the Zoom window and check "Share system audio" for high-quality transcription.
+                </p>
+            )}
+
+            <div className="w-full aspect-video bg-black/40 rounded-[2rem] flex items-center justify-center relative overflow-hidden border-2 border-white/10 shadow-inner">
                 {videoDataUrl ? (
                     <video src={videoDataUrl} controls className="w-full h-full object-contain" />
                 ) : stream ? (
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                 ) : (
-                    <div className="text-center text-gray-600">
+                    <div className="text-center text-gray-400">
                         <VideoIcon className="w-20 h-20 mx-auto" />
                         <p className="mt-4 font-black uppercase text-xs tracking-tighter">Ready to Record Video</p>
                     </div>
@@ -231,10 +282,18 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             </div>
 
             <div className="flex justify-center gap-6">
-                 <button onClick={onCancel} className="p-5 bg-gray-700 rounded-2xl text-white active:scale-95 transition-transform"><XIcon className="w-10 h-10"/></button>
+                 <button 
+                    onClick={onCancel} 
+                    aria-label="Cancel recording"
+                    className="px-10 py-5 bg-white/10 rounded-2xl text-white active:scale-95 transition-transform flex items-center gap-4 font-black text-2xl uppercase shadow-xl border-2 border-white/10"
+                 >
+                    <XIcon className="w-10 h-10"/>
+                    <span>Cancel</span>
+                 </button>
                  <button 
                      onClick={isRecording ? stopRecording : startRecording} 
-                     className={`px-10 py-5 rounded-2xl font-black text-2xl uppercase shadow-xl transition-all flex items-center gap-4 ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-blue-600 text-white'}`}
+                     aria-label={isRecording ? "Stop recording" : "Start recording"}
+                     className={`px-10 py-5 rounded-2xl font-black text-2xl uppercase shadow-xl transition-all flex items-center gap-4 ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-yellow-500 text-[#001f3f]'}`}
                  >
                      {isRecording ? <StopCircleIcon className="w-10 h-10"/> : <VideoIcon className="w-10 h-10"/>}
                      {isRecording ? 'STOP' : 'RECORD'}
@@ -242,17 +301,38 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                  <button 
                     onClick={handleSave} 
                     disabled={isRecording || isProcessing || !transcript}
-                    className="p-5 bg-green-600 rounded-2xl text-white disabled:bg-gray-700 active:scale-95 transition-transform"
+                    aria-label={isProcessing ? "Saving recording" : "Save recording"}
+                    className="px-10 py-5 bg-yellow-500 rounded-2xl text-[#001f3f] disabled:bg-gray-700 disabled:text-gray-400 active:scale-95 transition-transform flex items-center gap-4 font-black text-2xl uppercase shadow-xl"
                 >
                     {isProcessing ? <Loader2Icon className="w-10 h-10 animate-spin"/> : <SaveIcon className="w-10 h-10"/>}
+                    <span>{isProcessing ? 'Saving...' : 'Save'}</span>
                 </button>
             </div>
              
              {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl">{error}</p>}
             
-             <div className="bg-gray-900 p-6 rounded-[2rem] max-h-96 overflow-y-auto border-2 border-gray-700 scroll-smooth">
-                 <h4 className="text-xl font-black text-blue-400 mb-3 uppercase tracking-tight">Live Transcript</h4>
-                 <p className="text-gray-200 text-2xl whitespace-pre-wrap leading-relaxed">{transcript || <span className="text-gray-600">Waiting for audio...</span>}</p>
+             <div className="bg-black/40 p-6 rounded-[2rem] max-h-96 overflow-y-auto border-2 border-white/10 scroll-smooth">
+                 <h4 className="text-xl font-black text-yellow-400 mb-3 uppercase tracking-tight">Live Transcript</h4>
+                 <div className="text-white text-2xl whitespace-pre-wrap leading-relaxed">
+                    {structuredTranscript.length > 0 ? (
+                        structuredTranscript.map((segment, idx) => (
+                            <span 
+                                key={idx} 
+                                onClick={() => {
+                                    if (videoDataUrl && videoRef.current) {
+                                        videoRef.current.currentTime = segment.timestamp;
+                                        videoRef.current.play();
+                                    }
+                                }}
+                                className={`cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300 transition-colors rounded px-1 ${videoDataUrl ? '' : 'pointer-events-none'}`}
+                            >
+                                {segment.text}
+                            </span>
+                        ))
+                    ) : (
+                        transcript || <span className="text-gray-500">Waiting for audio...</span>
+                    )}
+                 </div>
                  {isRecording && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mt-4"></div>}
             </div>
         </div>
