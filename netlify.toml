@@ -1,0 +1,20 @@
+<svg width="400" height="250" viewBox="0 0 400 250" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <rect width="400" height="250" fill="#f0f2f5"/>
+  <rect width="400" height="40" fill="#ffffff"/>
+  <text x="20" y="25" font-size="16" font-weight="bold" fill="#333">Preferences / העדפות</text>
+  
+  <text x="20" y="70" font-size="14" fill="#007bff">Edit profile / עריכת פרופיל</text>
+  <text x="20" y="95" font-size="14" fill="#007bff">Change password / שינוי סיסמה</text>
+  <text x="20" y="120" font-size="14" fill="#007bff">Preferred language / שפה מועדפת</text>
+  
+  <g>
+    <rect x="10" y="135" width="230" height="30" fill="rgba(217, 83, 79, 0.2)" stroke="#d9534f" stroke-width="2" rx="5"/>
+    <text x="20" y="155" font-size="14" fill="#007bff" font-weight="bold">Security keys / מפתחות אבטחה</text>
+  </g>
+  
+  <text x="20" y="180" font-size="14" fill="#007bff">Forum preferences / העדפות פורום</text>
+  <text x="20" y="205" font-size="14" fill="#007bff">Messaging / הודעות</text>
+  
+  <path d="M250 150 l20 -15 l30 30" stroke="#d9534f" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <text x="310" y="175" font-size="14" fill="#d9534f" font-weight="bold">Click Here!</text>
+</svg>

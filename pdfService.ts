@@ -1,39 +1,20 @@
-import type { CalendarEvent } from '../types';
+import type { Context } from "@netlify/functions";
+import { getStore } from "@netlify/blobs";
 
-export async function fetchGoogleCalendarEvents(accessToken: string): Promise<CalendarEvent[]> {
-    const timeMin = new Date().toISOString();
-    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&singleEvents=true&orderBy=startTime`;
-    
-    try {
-        const response = await fetch(url, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`
-            }
-        });
-
-        if (!response.ok) {
-            if (response.status === 401) {
-                console.warn("Google API token expired or invalid.");
-            }
-            throw new Error(`Google Calendar API error: ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        if (data.items) {
-            return data.items.map((e: any) => ({
-                id: `google_${e.id}`,
-                title: e.summary,
-                startTime: e.start.dateTime || e.start.date,
-                endTime: e.end.dateTime || e.end.date,
-                category: 'personal',
-                description: e.description,
-                source: 'google',
-            }));
-        }
-    } catch (error) {
-        console.error("Failed to fetch Google Calendar events:", error);
-        throw error;
+export default async (req: Request, context: Context) => {
+    if (req.method !== 'POST') {
+        return new Response("Method Not Allowed", { status: 405 });
     }
-
-    return [];
-}
+    try {
+        const { key } = await req.json();
+        if (!key) {
+            return new Response("Missing key", { status: 400 });
+        }
+        const store = getStore("shared-clips");
+        await store.delete(key);
+        return new Response("Clip deleted", { status: 200 });
+    } catch (error) {
+        console.error("Error deleting clip:", error);
+        return new Response("Internal Server Error", { status: 500 });
+    }
+};

@@ -1,86 +1,20 @@
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
+# Run and deploy your AI Studio app
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+This contains everything you need to run your app locally.
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+View your app in AI Studio: https://ai.studio/apps/52897860-9aa8-489a-ac0a-a0de8a937472
 
-app.use(cors());
-app.use(express.json());
+## Run Locally
 
-// --- IN-MEMORY DATABASE (Placeholder for Firebase) ---
-// When you migrate to Google Cloud fully, we will replace this object
-// with Firestore calls. For now, this lets the app run locally.
-const db = {
-  syncStore: new Map(), // key: syncId, value: { memories: [], courses: [] }
-  sharedClips: new Map() // key: id, value: clipData
-};
+**Prerequisites:**  Node.js
 
-// --- API ROUTES ---
 
-// 1. Sync Data (Get and Save)
-app.get('/api/sync', (req, res) => {
-  const { syncId } = req.query;
-  if (!syncId) return res.status(400).send('Missing syncId');
-
-  const data = db.syncStore.get(syncId) || { memories: [], courses: [] };
-  res.json(data);
-});
-
-app.post('/api/sync', (req, res) => {
-  const { syncId } = req.query;
-  const data = req.body;
-  
-  if (!syncId) return res.status(400).send('Missing syncId');
-  
-  db.syncStore.set(syncId, data);
-  res.send('Synced successfully');
-});
-
-// 2. Shared Clips (Get, Add, Delete)
-app.get('/api/shared-clips', (req, res) => {
-  const clips = Array.from(db.sharedClips.entries()).map(([key, data]) => ({ key, data }));
-  res.json(clips);
-});
-
-app.post('/api/shared-clips', (req, res) => {
-  const { url, title, text } = req.body;
-  if (!title) return res.status(400).send('Missing title');
-
-  const key = Date.now().toString();
-  const clipData = {
-    id: key,
-    url,
-    title,
-    content: text,
-    date: new Date().toISOString()
-  };
-
-  db.sharedClips.set(key, clipData);
-  res.send('Clip saved');
-});
-
-app.delete('/api/shared-clips', (req, res) => {
-  const { key } = req.body;
-  if (!key) return res.status(400).send('Missing key');
-
-  db.sharedClips.delete(key);
-  res.send('Clip deleted');
-});
-
-// --- SERVE REACT APP ---
-// In production (Cloud Run), we serve the built files from 'dist'
-app.use(express.static(path.join(__dirname, 'dist')));
-
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
