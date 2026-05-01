@@ -71,7 +71,7 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
             const context = buildContext(query);
             const results = searchMemories(query, memories, []);
 
-            const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY as string });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             const response = await ai.models.generateContent({
                 model: 'gemini-2.0-flash',
                 contents: `You are a personal AI assistant for a visually impaired student.
