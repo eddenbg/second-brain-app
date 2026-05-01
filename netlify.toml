@@ -11,9 +11,3 @@
   from = "/*"
   to = "/index.html"
   status = 200
-
-# Netlify functions prefix
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
