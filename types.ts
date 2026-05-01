@@ -15,6 +15,7 @@ export interface BaseMemory {
     latitude: number;
     longitude: number;
   };
+  locationName?: string;
 }
 
 export interface TranscriptSegment {

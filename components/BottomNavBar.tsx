@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { BookOpen, Brain, User } from 'lucide-react';
+import { Mic, BookOpen, Sparkles, Folder } from 'lucide-react';
 
-type View = 'college' | 'askai' | 'personal';
+export type View = 'personal' | 'college' | 'askai' | 'files';
 
 interface BottomNavBarProps {
   view: View;
@@ -18,18 +18,18 @@ const NavButton: React.FC<{
     <button
         onClick={onClick}
         className={`flex-1 flex flex-col items-center justify-center gap-2 transition-all h-full
-            ${isActive 
-                ? 'bg-white text-[#001F3F]' 
+            ${isActive
+                ? 'bg-white text-[#001F3F]'
                 : 'text-white hover:bg-white/10'
             }`}
         aria-label={label}
         aria-current={isActive ? 'page' : undefined}
     >
-        {React.cloneElement(icon as React.ReactElement, { 
-            className: `w-14 h-14`,
-            strokeWidth: 4
+        {React.cloneElement(icon as React.ReactElement, {
+            className: `w-12 h-12`,
+            strokeWidth: 3
         })}
-        <span className="text-sm font-black uppercase tracking-widest">
+        <span className="text-xs font-black uppercase tracking-widest">
             {label}
         </span>
     </button>
@@ -37,10 +37,16 @@ const NavButton: React.FC<{
 
 const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
   return (
-    <nav 
-        className="w-full h-32 grid grid-cols-3 bg-[#001F3F]"
+    <nav
+        className="w-full h-32 grid grid-cols-4 bg-[#001F3F]"
         aria-label="Main Navigation"
     >
+        <NavButton
+            label="Personal"
+            icon={<Mic />}
+            isActive={view === 'personal'}
+            onClick={() => setView('personal')}
+        />
         <NavButton
             label="College"
             icon={<BookOpen />}
@@ -49,15 +55,15 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
         />
         <NavButton
             label="Ask AI"
-            icon={<Brain />}
+            icon={<Sparkles />}
             isActive={view === 'askai'}
             onClick={() => setView('askai')}
         />
         <NavButton
-            label="Personal"
-            icon={<User />}
-            isActive={view === 'personal'}
-            onClick={() => setView('personal')}
+            label="Files"
+            icon={<Folder />}
+            isActive={view === 'files'}
+            onClick={() => setView('files')}
         />
     </nav>
   );

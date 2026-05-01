@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import BottomNavBar from './components/BottomNavBar';
+import type { View } from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
 import AskAIView from './components/AskAIView';
 import PersonalView from './components/PersonalView';
@@ -8,7 +9,6 @@ import FilesView from './components/FilesView';
 import UpdateNotification from './components/UpdateNotification';
 import SyncSetup from './components/SyncSetup';
 import SettingsModal from './components/SettingsModal';
-import AddWebMemoryModal from './components/AddWebMemoryModal';
 import TopInstallBanner from './components/TopInstallBanner';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
@@ -18,16 +18,15 @@ import { processSharedUrl } from './services/geminiService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
-export type View = 'college' | 'askai' | 'personal';
-
 const viewTitles: Record<View, string> = {
-    college: 'College Hub',
-    askai: 'Ask AI Hub',
     personal: 'Personal Hub',
+    college:  'College Hub',
+    askai:    'Ask AI',
+    files:    'Files Vault',
 };
 
 function App() {
-  const [view, setView] = useState<View>('college');
+  const [view, setView] = useState<View>('personal');
   const [showSettings, setShowSettings] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
@@ -37,20 +36,23 @@ function App() {
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
 
-  const { 
+  const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
-    tasks, addTask, updateTask, deleteTask, 
+    tasks, addTask, updateTask, deleteTask,
     courses, addCourse, user, loading,
     moodleToken, saveMoodleToken,
     isGoogleConnected, connectGoogleCalendar, disconnectGoogleCalendar
   } = useRecordings();
-  
+
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
-  const allCalendarEvents = useMemo(() => [...calendarEvents, ...moodleEvents, ...googleEvents], [calendarEvents, moodleEvents, googleEvents]);
+  const allCalendarEvents = useMemo(
+    () => [...calendarEvents, ...moodleEvents, ...googleEvents],
+    [calendarEvents, moodleEvents, googleEvents]
+  );
 
   useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
+    const handlePopState = () => {
       if (showSettings) setShowSettings(false);
       else if (showSchedule) setShowSchedule(false);
       else if (sharedContent) setSharedContent(null);
@@ -157,7 +159,7 @@ function App() {
     };
     getMoodleEvents();
   }, [moodleToken]);
-  
+
   useEffect(() => {
     const getGoogleEvents = async () => {
         if (isGoogleConnected) {
@@ -178,7 +180,6 @@ function App() {
     getGoogleEvents();
   }, [isGoogleConnected]);
 
-
   const addCalendarEvent = (event: Omit<CalendarEvent, 'id'>) => {
     const newEvent = { ...event, id: Date.now().toString(), source: 'manual' as const };
     setCalendarEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
@@ -190,47 +191,62 @@ function App() {
       }
   };
 
-  const handleSaveSharedClip = (memory: Omit<WebMemory, 'id' | 'date' | 'category'>) => {
-    addMemory({ ...memory, category: 'personal' });
-    setSharedContent(null);
-    if (window.history.state?.modal === 'share') window.history.back();
-  };
+  if (loading) return (
+    <div className="flex h-screen items-center justify-center bg-[#001F3F]">
+      <Loader2 className="w-24 h-24 animate-spin text-white" />
+    </div>
+  );
 
-  if (loading) return <div className="flex h-screen items-center justify-center bg-[#001F3F]"><Loader2 className="w-24 h-24 animate-spin text-white" /></div>;
   if (!user) return <SyncSetup onSyncIdSet={() => {}} />;
-  
+
+  const personalMemories = memories.filter(m => m.category === 'personal');
+  const collegeMemories = memories.filter(m => m.category === 'college');
+
   const renderView = () => {
     switch (view) {
-      case 'college': 
-        return <CollegeView 
-          lectures={memories.filter(m => m.category === 'college')} 
-          onDelete={deleteMemory} 
-          onUpdate={updateMemory} 
-          onSave={addMemory} 
-          bulkDelete={bulkDeleteMemories} 
-          courses={courses} 
-          addCourse={addCourse} 
-          tasks={tasks} 
-          addTask={addTask} 
-          updateTask={updateTask} 
-          deleteTask={deleteTask} 
-          moodleToken={moodleToken} 
-        />;
-      case 'askai': 
+      case 'personal':
+        return (
+          <PersonalView
+            memories={personalMemories}
+            tasks={tasks}
+            onSaveMemory={addMemory}
+            onDeleteMemory={deleteMemory}
+            onUpdateMemory={updateMemory}
+            bulkDeleteMemories={bulkDeleteMemories}
+            onAddTask={addTask}
+            onUpdateTask={updateTask}
+            onDeleteTask={deleteTask}
+          />
+        );
+      case 'college':
+        return (
+          <CollegeView
+            lectures={collegeMemories}
+            onDelete={deleteMemory}
+            onUpdate={updateMemory}
+            onSave={addMemory}
+            bulkDelete={bulkDeleteMemories}
+            courses={courses}
+            addCourse={addCourse}
+            tasks={tasks}
+            addTask={addTask}
+            updateTask={updateTask}
+            deleteTask={deleteTask}
+            moodleToken={moodleToken}
+          />
+        );
+      case 'askai':
         return <AskAIView memories={memories} />;
-      case 'personal': 
-        return <PersonalView 
-          memories={memories.filter(m => m.category === 'personal')} 
-          tasks={tasks} 
-          onSaveMemory={addMemory} 
-          onDeleteMemory={deleteMemory} 
-          onUpdateMemory={updateMemory} 
-          bulkDeleteMemories={bulkDeleteMemories} 
-          onAddTask={addTask} 
-          onUpdateTask={updateTask} 
-          onDeleteTask={deleteTask} 
-        />;
-      default: 
+      case 'files':
+        return (
+          <FilesView
+            memories={memories}
+            onSave={addMemory}
+            onDelete={deleteMemory}
+            onUpdate={updateMemory}
+          />
+        );
+      default:
         return <AskAIView memories={memories} />;
     }
   };
@@ -238,42 +254,65 @@ function App() {
   return (
     <div className="fixed inset-0 bg-[#001F3F] text-white flex flex-col overflow-hidden overscroll-none">
       <TopInstallBanner />
-      
+
       <header className="flex-shrink-0 bg-[#001F3F] border-b-4 border-white z-20" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="flex justify-between items-center px-6 py-6">
-            <button 
-              onClick={() => toggleSchedule(true)} 
-              aria-label="Schedule"
-              className="p-4 bg-white/10 rounded-2xl border-3 border-white text-white"
-            >
-              <Calendar className="w-10 h-10" strokeWidth={3} />
-            </button>
-            <div className="flex items-center gap-4">
-                <Brain className="w-12 h-12 text-white" strokeWidth={3} />
-                <h1 className="text-3xl font-black uppercase tracking-tighter text-white">{viewTitles[view]}</h1>
-            </div>
-            <button 
-              onClick={() => toggleSettings(true)} 
-              aria-label="Settings"
-              className="p-4 bg-white/10 rounded-2xl border-3 border-white text-white"
-            >
-              <Settings className="w-10 h-10" strokeWidth={3} />
-            </button>
+        <div className="flex justify-between items-center px-6 py-4">
+          <button
+            onClick={() => toggleSchedule(true)}
+            aria-label="Schedule"
+            className="p-4 bg-white/10 rounded-2xl border-3 border-white text-white"
+          >
+            <Calendar className="w-10 h-10" strokeWidth={3} />
+          </button>
+          <div className="flex items-center gap-3">
+            <Brain className="w-10 h-10 text-white" strokeWidth={3} />
+            <h1 className="text-2xl font-black uppercase tracking-tighter text-white">{viewTitles[view]}</h1>
+          </div>
+          <button
+            onClick={() => toggleSettings(true)}
+            aria-label="Settings"
+            className="p-4 bg-white/10 rounded-2xl border-3 border-white text-white"
+          >
+            <Settings className="w-10 h-10" strokeWidth={3} />
+          </button>
         </div>
       </header>
 
       <main className="flex-grow min-h-0 relative z-10 flex flex-col">
-        <div className="flex-grow overflow-y-auto p-6 scroll-smooth pb-32">
+        <div className="flex-grow overflow-y-auto p-4 scroll-smooth pb-36">
           <div className="max-w-4xl mx-auto h-full">{renderView()}</div>
         </div>
       </main>
 
-      <footer className="flex-shrink-0 bg-[#001F3F] border-t-4 border-white z-20" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <footer
+        className="flex-shrink-0 bg-[#001F3F] border-t-4 border-white z-20"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
         <BottomNavBar view={view} setView={setView} />
       </footer>
 
-      {showSchedule && <ScheduleView events={allCalendarEvents} onClose={() => toggleSchedule(false)} onAddEvent={addCalendarEvent} onDeleteEvent={deleteCalendarEvent} />}
-      {showSettings && <SettingsModal syncId={user.email || user.uid} onClose={() => toggleSettings(false)} onReset={() => {}} data={{ memories, courses, tasks }} onImport={() => {}} moodleToken={moodleToken} onSaveMoodleToken={saveMoodleToken} isGoogleConnected={isGoogleConnected} onConnectGoogle={connectGoogleCalendar} onDisconnectGoogle={disconnectGoogleCalendar} />}
+      {showSchedule && (
+        <ScheduleView
+          events={allCalendarEvents}
+          onClose={() => toggleSchedule(false)}
+          onAddEvent={addCalendarEvent}
+          onDeleteEvent={deleteCalendarEvent}
+        />
+      )}
+      {showSettings && (
+        <SettingsModal
+          syncId={user.email || user.uid}
+          onClose={() => toggleSettings(false)}
+          onReset={() => {}}
+          data={{ memories, courses, tasks }}
+          onImport={() => {}}
+          moodleToken={moodleToken}
+          onSaveMoodleToken={saveMoodleToken}
+          isGoogleConnected={isGoogleConnected}
+          onConnectGoogle={connectGoogleCalendar}
+          onDisconnectGoogle={disconnectGoogleCalendar}
+        />
+      )}
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
     </div>
   );
