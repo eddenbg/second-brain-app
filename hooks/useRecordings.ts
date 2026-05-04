@@ -9,14 +9,13 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, GoogleAuthProvider, linkWithPopup, unlink, signOut, signInWithPopup } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 
 export interface StoredData {
     memories: AnyMemory[];
     courses: string[];
     tasks: Task[];
     moodleToken?: string;
-    isGoogleConnected?: boolean;
 }
 
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
@@ -27,7 +26,6 @@ export const useRecordings = () => {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [moodleToken, setMoodleToken] = useState<string | null>(null);
-    const [isGoogleConnected, setIsGoogleConnected] = useState(false);
     const [courses, setCourses] = useState<string[]>([]);
     
     const [user, setUser] = useState<User | null>(null);
@@ -48,23 +46,31 @@ export const useRecordings = () => {
                 setTasks(data.tasks || []);
                 setSavedCourses(data.courses || []);
                 setMoodleToken(data.moodleToken || null);
-                setIsGoogleConnected(data.isGoogleConnected || false);
             } catch (e) {
                 console.error("Failed to parse local storage", e);
             }
         }
     }, []);
 
-    // 2. Handle Auth state & Setup Real-time Listeners
+    // 2. Handle Auth state — auto sign-in anonymously (no login screen)
     useEffect(() => {
         if (!auth) {
             setLoading(false);
             return;
         }
 
-        const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-            setLoading(false);
+        const authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
+                setLoading(false);
+            } else {
+                try {
+                    await signInAnonymously(auth);
+                } catch (e) {
+                    console.error("Anonymous sign-in failed", e);
+                    setLoading(false);
+                }
+            }
         });
 
         return () => authUnsubscribe();
@@ -105,11 +111,9 @@ export const useRecordings = () => {
                 const data = doc.data();
                 setSavedCourses(data.courses || []);
                 setMoodleToken(data.moodleToken || null);
-                setIsGoogleConnected(data.isGoogleConnected || false);
             } else {
                 setSavedCourses([]);
                 setMoodleToken(null);
-                setIsGoogleConnected(false);
             }
         });
 
@@ -133,9 +137,9 @@ export const useRecordings = () => {
 
     // 5. Save to local storage for offline persistent cache
     useEffect(() => {
-        const data = { memories, tasks, courses: savedCourses, moodleToken, isGoogleConnected };
+        const data = { memories, tasks, courses: savedCourses, moodleToken };
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-    }, [memories, tasks, savedCourses, moodleToken, isGoogleConnected]);
+    }, [memories, tasks, savedCourses, moodleToken]);
 
     // --- Cloud Sync Action ---
     const performSync = useCallback(async () => {
@@ -156,7 +160,7 @@ export const useRecordings = () => {
             }
 
             const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-            batch.set(settingsRef, { courses: savedCourses, moodleToken, isGoogleConnected }, { merge: true });
+            batch.set(settingsRef, { courses: savedCourses, moodleToken }, { merge: true });
 
             await batch.commit();
             setHasUnsavedChanges(false);
@@ -166,7 +170,7 @@ export const useRecordings = () => {
         } finally {
             setIsSyncing(false);
         }
-    }, [user, memories, tasks, savedCourses, moodleToken, isGoogleConnected]);
+    }, [user, memories, tasks, savedCourses, moodleToken]);
 
     // Auto-Sync Trigger
     useEffect(() => {
@@ -237,67 +241,10 @@ export const useRecordings = () => {
         setHasUnsavedChanges(true);
     }, []);
 
-    const connectGoogleCalendar = useCallback(async () => {
-        if (!auth.currentUser) return;
-        const provider = new GoogleAuthProvider();
-        provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-        try {
-            const result = await linkWithPopup(auth.currentUser, provider);
-            const credential = GoogleAuthProvider.credentialFromResult(result);
-            const accessToken = credential?.accessToken;
-            if (accessToken) {
-                localStorage.setItem('google_access_token', accessToken);
-                setIsGoogleConnected(true);
-                setHasUnsavedChanges(true);
-            }
-        } catch (error: any) {
-            console.error("Failed to link Google Account", error);
-            
-            // This error code means the user closed the pop-up. We can safely ignore it.
-            if (error.code === 'auth/popup-closed-by-user') {
-                return;
-            }
-    
-            if (error.code === 'auth/credential-already-in-use') {
-                const wantsToSwitch = window.confirm(
-                    "ACCOUNT CONFLICT\n\nThis Google Account is already linked to another profile.\n\n" +
-                    "Do you want to sign out and sign IN with this Google Account instead? This will let you manage the other profile (e.g., delete it).\n\n" +
-                    "WARNING: Unsaved changes will be lost."
-                );
-    
-                if (wantsToSwitch) {
-                    try {
-                        await signOut(auth);
-                        await signInWithPopup(auth, provider);
-                    } catch (switchError: any) {
-                        alert(`Failed to switch accounts: ${switchError.message}`);
-                    }
-                }
-            } else {
-                // For all other errors, show a detailed message for debugging.
-                alert(`Could not connect to Google. Please try again.\n\nError: ${error.message} (${error.code})`);
-            }
-        }
-    }, []);
-
-    const disconnectGoogleCalendar = useCallback(async () => {
-        if (!auth.currentUser) return;
-        try {
-            await unlink(auth.currentUser, 'google.com');
-            localStorage.removeItem('google_access_token');
-            setIsGoogleConnected(false);
-            setHasUnsavedChanges(true);
-        } catch (error: any) {
-            console.error("Failed to unlink Google Account", error);
-            alert(`Could not disconnect from Google: ${error.message}`);
-        }
-    }, []);
-
-    return { 
-        memories, tasks, courses, moodleToken, isGoogleConnected,
-        addMemory, deleteMemory, bulkDeleteMemories, updateMemory, 
+    return {
+        memories, tasks, courses, moodleToken,
+        addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, saveMoodleToken,
-        connectGoogleCalendar, disconnectGoogleCalendar,
         user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
         fetchFromCloud: performSync
     };

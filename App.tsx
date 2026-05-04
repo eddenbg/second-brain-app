@@ -7,13 +7,11 @@ import PersonalView from './components/PersonalView';
 import ScheduleView from './components/ScheduleView';
 import FilesView from './components/FilesView';
 import UpdateNotification from './components/UpdateNotification';
-import SyncSetup from './components/SyncSetup';
 import SettingsModal from './components/SettingsModal';
 import TopInstallBanner from './components/TopInstallBanner';
 import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
-import { fetchGoogleCalendarEvents } from './services/googleService';
 import { processSharedUrl } from './services/geminiService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
@@ -31,7 +29,6 @@ function App() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
-  const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
@@ -41,14 +38,13 @@ function App() {
     tasks, addTask, updateTask, deleteTask,
     courses, addCourse, user, loading,
     moodleToken, saveMoodleToken,
-    isGoogleConnected, connectGoogleCalendar, disconnectGoogleCalendar
   } = useRecordings();
 
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const allCalendarEvents = useMemo(
-    () => [...calendarEvents, ...moodleEvents, ...googleEvents],
-    [calendarEvents, moodleEvents, googleEvents]
+    () => [...calendarEvents, ...moodleEvents],
+    [calendarEvents, moodleEvents]
   );
 
   useEffect(() => {
@@ -160,26 +156,6 @@ function App() {
     getMoodleEvents();
   }, [moodleToken]);
 
-  useEffect(() => {
-    const getGoogleEvents = async () => {
-        if (isGoogleConnected) {
-            const token = localStorage.getItem('google_access_token');
-            if (token) {
-                try {
-                    const events = await fetchGoogleCalendarEvents(token);
-                    setGoogleEvents(events);
-                } catch (error) {
-                    console.error("Failed to fetch Google Calendar events", error);
-                    localStorage.removeItem('google_access_token');
-                }
-            }
-        } else {
-            setGoogleEvents([]);
-        }
-    };
-    getGoogleEvents();
-  }, [isGoogleConnected]);
-
   const addCalendarEvent = (event: Omit<CalendarEvent, 'id'>) => {
     const newEvent = { ...event, id: Date.now().toString(), source: 'manual' as const };
     setCalendarEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
@@ -196,8 +172,6 @@ function App() {
       <Loader2 className="w-24 h-24 animate-spin text-white" />
     </div>
   );
-
-  if (!user) return <SyncSetup onSyncIdSet={() => {}} />;
 
   const personalMemories = memories.filter(m => m.category === 'personal');
   const collegeMemories = memories.filter(m => m.category === 'college');
@@ -301,16 +275,9 @@ function App() {
       )}
       {showSettings && (
         <SettingsModal
-          syncId={user.email || user.uid}
           onClose={() => toggleSettings(false)}
-          onReset={() => {}}
-          data={{ memories, courses, tasks }}
-          onImport={() => {}}
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
-          isGoogleConnected={isGoogleConnected}
-          onConnectGoogle={connectGoogleCalendar}
-          onDisconnectGoogle={disconnectGoogleCalendar}
         />
       )}
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}

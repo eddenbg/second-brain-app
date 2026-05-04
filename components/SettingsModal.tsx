@@ -1,28 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { 
-    XIcon, LogOutIcon, CheckIcon, CalendarIcon, GraduationCapIcon, 
-    LinkIcon, Loader2Icon, BrainCircuitIcon, Volume2Icon, UserIcon, GlobeIcon, ArrowLeftIcon, PlusCircleIcon
+import {
+    XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
 } from './Icons';
-import type { StoredData } from '../hooks/useRecordings';
-import { auth } from '../utils/firebase';
-import { signOut } from 'firebase/auth';
-
 import { testMoodleConnection } from '../services/moodleService';
 
 interface SettingsModalProps {
-    syncId: string;
     onClose: () => void;
-    onReset: () => void;
-    data: StoredData;
-    onImport: (data: StoredData) => void;
     moodleToken: string | null;
     onSaveMoodleToken: (token: string) => void;
-    isGoogleConnected: boolean;
-    onConnectGoogle: () => void;
-    onDisconnectGoogle: () => void;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, isGoogleConnected, onConnectGoogle, onDisconnectGoogle }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken }) => {
     const [manualToken, setManualToken] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
@@ -66,13 +54,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
-    const handleSignOut = async () => {
-        if(window.confirm("Sign out?")) {
-            await signOut(auth);
-            window.location.reload();
-        }
-    };
-
     const openMoodleInNewTab = () => {
         window.open('https://online.dyellin.ac.il/user/preferences.php', '_blank', 'noopener,noreferrer');
     }
@@ -89,15 +70,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 </header>
 
                 <div className="flex-grow overflow-y-auto p-8 space-y-8">
-                    <div className="bg-gray-900 p-6 rounded-[2rem] border-2 border-gray-700 flex items-center gap-5">
-                        <div className="bg-blue-600 p-4 rounded-2xl"><UserIcon className="w-8 h-8 text-white" /></div>
-                        <div>
-                            <p className="text-gray-400 font-black text-[10px] uppercase tracking-widest">Connected User</p>
-                            <p className="text-xl font-bold text-white truncate max-w-[200px]">{auth.currentUser?.email}</p>
-                        </div>
-                        <button onClick={handleSignOut} className="ml-auto p-4 bg-red-900/20 text-red-500 rounded-2xl"><LogOutIcon className="w-6 h-6" /></button>
-                    </div>
-
                     <div className="space-y-6">
                         <h3 className="text-blue-400 font-black text-sm uppercase tracking-widest px-2">External Connections</h3>
                         
@@ -153,33 +125,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                             )}
                         </div>
 
-                        <div className={`p-6 rounded-[2rem] border-2 transition-all ${isGoogleConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
-                             <div className="flex items-center gap-4 mb-4">
-                                <CalendarIcon className={`w-8 h-8 ${isGoogleConnected ? 'text-green-400' : 'text-gray-500'}`} />
-                                <p className="text-lg font-black text-white uppercase">Google Calendar</p>
-                                {isGoogleConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
-                            </div>
-                            <p className="text-gray-400 font-bold text-xs mb-5 leading-relaxed">Sync your Google Calendar to see all your personal and academic events in one place.</p>
-                            
-                            {!isGoogleConnected && (
-                                <div className="mb-4 bg-gray-900/50 p-4 rounded-xl border border-gray-700 text-xs text-gray-300 font-medium space-y-2">
-                                    <p className="font-black text-yellow-400 text-xs uppercase tracking-widest">Important Note:</p>
-                                    <p>When connecting, Google will show a warning screen because this is a personal app.</p>
-                                    <ol className="list-decimal list-inside space-y-1 pl-2">
-                                        <li>On the warning screen, click <strong className="text-white">"Advanced"</strong>.</li>
-                                        <li>Then click <strong className="text-white">"Go to My Second Brain (unsafe)"</strong> to proceed.</li>
-                                    </ol>
-                                    <p className="text-gray-500 italic">This is safe. Your data remains private.</p>
-                                </div>
-                            )}
-
-                            <button 
-                                onClick={isGoogleConnected ? onDisconnectGoogle : onConnectGoogle}
-                                className={`w-full py-4 rounded-2xl font-black text-base uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 ${isGoogleConnected ? 'bg-gray-700 text-white' : 'bg-blue-600 text-white'}`}
-                            >
-                                {isGoogleConnected ? 'Disconnect' : 'Connect Now'}
-                            </button>
-                        </div>
                     </div>
                 </div>
                 
