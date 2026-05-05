@@ -6,6 +6,10 @@
 [build.environment]
   NODE_VERSION = "20"
 
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/blobs"]
+
 # Serve the SPA for all routes (handles client-side routing)
 [[redirects]]
   from = "/*"
