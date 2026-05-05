@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>My Second Brain — Preview</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root { --navy: #001F3F; --white: #fff; --border: 4px solid #fff; --radius: 16px; --font: system-ui, -apple-system, sans-serif; }
+  body { background: var(--navy); color: var(--white); font-family: var(--font); font-size: 18px; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; max-width: 480px; margin: 0 auto; position: relative; }
+
+  /* HEADER */
+  .header { flex-shrink: 0; border-bottom: var(--border); display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; min-height: 72px; background: var(--navy); }
+  .header-btn { background: rgba(255,255,255,0.1); color: #fff; border: 3px solid #fff; border-radius: 12px; padding: 10px 14px; font-size: 15px; font-weight: 900; cursor: pointer; min-width: 64px; min-height: 56px; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.15s; }
+  .header-btn:active { background: rgba(255,255,255,0.25); }
+  .header-title { font-size: 20px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+
+  /* MAIN */
+  .main { flex: 1; overflow-y: auto; padding: 16px; min-height: 0; }
+  .view { display: none; flex-direction: column; gap: 16px; }
+  .view.active { display: flex; }
+
+  /* BOTTOM NAV */
+  .bottom-nav { flex-shrink: 0; border-top: var(--border); display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; min-height: 88px; background: var(--navy); }
+  .nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; cursor: pointer; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.55); border-right: 3px solid rgba(255,255,255,0.3); transition: all 0.15s; padding: 8px 4px; }
+  .nav-btn:last-child { border-right: none; }
+  .nav-btn.active { background: #fff; color: var(--navy); }
+  .nav-btn svg { width: 28px; height: 28px; }
+
+  /* CARDS & BUTTONS */
+  .card { border: var(--border); border-radius: var(--radius); padding: 20px; }
+  .btn-primary { background: #fff; color: var(--navy); border: var(--border); border-radius: var(--radius); padding: 18px 20px; font-size: 18px; font-weight: 900; text-transform: uppercase; cursor: pointer; width: 100%; display: flex; align-items: center; gap: 14px; min-height: 80px; transition: opacity 0.15s; }
+  .btn-primary:active { opacity: 0.8; }
+  .btn-outline { background: transparent; color: #fff; border: var(--border); border-radius: var(--radius); padding: 16px 20px; font-size: 16px; font-weight: 900; text-transform: uppercase; cursor: pointer; width: 100%; display: flex; align-items: center; gap: 12px; min-height: 72px; transition: background 0.15s; }
+  .btn-outline:active { background: rgba(255,255,255,0.1); }
+  .section-label { font-size: 12px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; opacity: 0.55; padding-bottom: 8px; border-bottom: 2px solid rgba(255,255,255,0.2); }
+  .icon-lg { font-size: 32px; line-height: 1; }
+  .sub-text { font-size: 14px; font-weight: 600; opacity: 0.7; text-transform: none; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .badge { display: inline-block; background: #22c55e; color: #fff; font-size: 10px; font-weight: 900; padding: 3px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: 1px; }
+  .badge-blue { background: #3b82f6; }
+  .input { background: transparent; border: 3px solid rgba(255,255,255,0.5); border-radius: 12px; padding: 14px 16px; color: #fff; font-size: 16px; font-weight: 600; width: 100%; min-height: 56px; }
+  .input::placeholder { color: rgba(255,255,255,0.4); }
+  .input:focus { outline: none; border-color: #fff; }
+  .row { display: flex; gap: 12px; align-items: stretch; }
+  .row .input { flex: 1; }
+  .add-btn { background: #fff; color: var(--navy); border: 3px solid #fff; border-radius: 12px; font-size: 24px; font-weight: 900; min-width: 56px; min-height: 56px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* PERSONAL HUB */
+  .mic-btn { background: #fff; color: var(--navy); border: 5px solid #fff; border-radius: 24px; padding: 28px; font-size: 22px; font-weight: 900; text-transform: uppercase; cursor: pointer; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 140px; box-shadow: 0 0 40px rgba(255,255,255,0.15); transition: opacity 0.15s; }
+  .mic-btn:active { opacity: 0.85; }
+  .mic-btn svg { width: 52px; height: 52px; }
+  .section-card { border: var(--border); border-radius: var(--radius); padding: 18px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; min-height: 110px; transition: background 0.15s; }
+  .section-card:active { background: rgba(255,255,255,0.1); }
+  .section-card .card-icon { font-size: 30px; }
+  .section-card .card-title { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
+  .section-card .card-count { font-size: 13px; opacity: 0.65; }
+  .blue-card { border-color: #3b82f6; }
+  .green-card { border-color: #10b981; }
+  .amber-card { border-color: #f59e0b; }
+  .purple-card { border-color: #8b5cf6; }
+
+  /* MODAL / SUB-VIEW */
+  .subview { display: none; position: absolute; inset: 0; background: var(--navy); flex-direction: column; z-index: 100; }
+  .subview.open { display: flex; }
+  .subview-header { border-bottom: var(--border); display: flex; align-items: center; gap: 14px; padding: 12px 16px; min-height: 72px; flex-shrink: 0; }
+  .back-btn { background: rgba(255,255,255,0.1); border: 3px solid #fff; border-radius: 12px; color: #fff; font-size: 22px; font-weight: 900; min-width: 56px; min-height: 56px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .subview-title { font-size: 20px; font-weight: 900; text-transform: uppercase; }
+  .subview-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* AI VIEW */
+  .ai-messages { flex: 1; overflow-y: auto; padding: 4px 0; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .msg { padding: 14px 16px; border-radius: var(--radius); max-width: 88%; font-size: 16px; line-height: 1.5; }
+  .msg-user { background: rgba(255,255,255,0.12); border: 2px solid rgba(255,255,255,0.3); align-self: flex-end; }
+  .msg-ai { background: rgba(59,130,246,0.15); border: 2px solid rgba(59,130,246,0.4); align-self: flex-start; }
+  .msg-ai strong { color: #93c5fd; display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .ai-input-row { display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0; padding-top: 8px; }
+  .ai-input { flex: 1; background: rgba(255,255,255,0.08); border: 3px solid rgba(255,255,255,0.4); border-radius: 14px; padding: 14px 16px; color: #fff; font-size: 16px; resize: none; min-height: 56px; max-height: 120px; font-family: var(--font); }
+  .ai-input::placeholder { color: rgba(255,255,255,0.4); }
+  .ai-input:focus { outline: none; border-color: #fff; }
+  .send-btn { background: #fff; color: var(--navy); border: 3px solid #fff; border-radius: 14px; font-weight: 900; font-size: 20px; min-width: 56px; min-height: 56px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .voice-btn { background: rgba(255,255,255,0.1); color: #fff; border: 3px solid rgba(255,255,255,0.5); border-radius: 14px; font-size: 22px; min-width: 56px; min-height: 56px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.15s; }
+  .voice-btn.recording { background: #ef4444; border-color: #ef4444; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+  /* FILES */
+  .file-item { border: var(--border); border-radius: var(--radius); padding: 16px 18px; display: flex; align-items: center; gap: 14px; }
+  .file-icon { font-size: 28px; flex-shrink: 0; }
+  .file-info { flex: 1; min-width: 0; }
+  .file-name { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file-meta { font-size: 13px; opacity: 0.6; margin-top: 3px; }
+  .filter-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; flex-shrink: 0; }
+  .filter-chip { background: transparent; color: rgba(255,255,255,0.6); border: 2px solid rgba(255,255,255,0.4); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 900; cursor: pointer; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.5px; flex-shrink: 0; transition: all 0.15s; }
+  .filter-chip.active { background: #fff; color: var(--navy); border-color: #fff; }
+
+  /* SETTINGS MODAL */
+  .settings-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.92); z-index: 200; flex-direction: column; padding: 16px; align-items: center; justify-content: center; }
+  .settings-overlay.open { display: flex; }
+  .settings-card { background: #1e293b; border: 4px solid #334155; border-radius: 28px; width: 100%; max-height: 80vh; overflow-y: auto; }
+  .settings-header { padding: 20px 24px; border-bottom: 3px solid #334155; display: flex; align-items: center; justify-content: space-between; }
+  .settings-header h2 { font-size: 20px; font-weight: 900; text-transform: uppercase; }
+  .settings-body { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+  .settings-section { background: #0f172a; border: 2px solid #334155; border-radius: 16px; padding: 18px; }
+  .settings-section-title { font-size: 12px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; color: #60a5fa; margin-bottom: 14px; }
+
+  /* CALENDAR OVERLAY */
+  .cal-overlay { display: none; position: absolute; inset: 0; background: var(--navy); z-index: 200; flex-direction: column; }
+  .cal-overlay.open { display: flex; }
+  .cal-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .event-item { border: var(--border); border-radius: var(--radius); padding: 16px; display: flex; gap: 14px; align-items: flex-start; }
+  .event-date { background: rgba(255,255,255,0.1); border-radius: 10px; padding: 8px 10px; text-align: center; flex-shrink: 0; min-width: 52px; }
+  .event-date .day { font-size: 22px; font-weight: 900; display: block; }
+  .event-date .month { font-size: 12px; font-weight: 700; opacity: 0.7; text-transform: uppercase; }
+  .event-info .title { font-size: 16px; font-weight: 700; }
+  .event-info .time { font-size: 13px; opacity: 0.65; margin-top: 4px; }
+  .empty-state { text-align: center; padding: 40px 20px; opacity: 0.5; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .empty-state .empty-icon { font-size: 48px; }
+
+  /* KANBAN */
+  .kanban-col { border: var(--border); border-radius: var(--radius); padding: 16px; min-height: 120px; }
+  .kanban-col h4 { font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; opacity: 0.7; }
+  .task-chip { background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.25); border-radius: 10px; padding: 10px 12px; font-size: 14px; font-weight: 600; margin-bottom: 8px; cursor: pointer; }
+  .task-chip:last-child { margin-bottom: 0; }
+
+  /* TOAST */
+  .toast { position: absolute; bottom: 108px; left: 50%; transform: translateX(-50%); background: #22c55e; color: #fff; font-weight: 900; font-size: 15px; padding: 12px 24px; border-radius: 999px; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+
+  /* SCROLL */
+  .main::-webkit-scrollbar, .subview-body::-webkit-scrollbar, .ai-messages::-webkit-scrollbar { width: 4px; }
+  .main::-webkit-scrollbar-thumb, .subview-body::-webkit-scrollbar-thumb, .ai-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+  /* RECORDING ANIMATION */
+  .recording-ring { width: 80px; height: 80px; border-radius: 50%; background: #ef4444; display: flex; align-items: center; justify-content: center; font-size: 36px; animation: recordPulse 1.2s ease-in-out infinite; }
+  @keyframes recordPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); } 50% { box-shadow: 0 0 0 20px rgba(239,68,68,0); } }
+
+  .thinking { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .thinking span { width: 8px; height: 8px; background: #93c5fd; border-radius: 50%; animation: bounce 1.2s ease-in-out infinite; }
+  .thinking span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-8px); } }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ HEADER ═══════════════════════ -->
+<header class="header">
+  <button class="header-btn" onclick="openCal()" aria-label="Calendar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    CAL
+  </button>
+  <div class="header-title">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="26" height="26"><path d="M12 2a8 8 0 0 1 8 8c0 5.4-8 12-8 12S4 15.4 4 10a8 8 0 0 1 8-8z"/><circle cx="12" cy="10" r="3"/></svg>
+    <span id="headerTitle">Personal Hub</span>
+  </div>
+  <button class="header-btn" onclick="openSettings()" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    SET
+  </button>
+</header>
+
+<!-- ═══════════════════════ MAIN CONTENT ═══════════════════════ -->
+<main class="main" id="mainContent">
+
+  <!-- ── PERSONAL TAB ── -->
+  <div class="view active" id="view-personal">
+    <button class="mic-btn" onclick="simulateRecord()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      Record a Thought
+      <span class="sub-text">Tap to start voice note</span>
+    </button>
+
+    <div class="grid-2">
+      <div class="section-card blue-card" onclick="openSubview('voice-notes')">
+        <span class="card-icon">🎙</span>
+        <span class="card-title">Voice Notes</span>
+        <span class="card-count">2 recordings</span>
+      </div>
+      <div class="section-card green-card" onclick="openSubview('my-tasks')">
+        <span class="card-icon">✅</span>
+        <span class="card-title">My Tasks</span>
+        <span class="card-count">3 pending</span>
+      </div>
+      <div class="section-card amber-card" onclick="openSubview('belongings')">
+        <span class="card-icon">📦</span>
+        <span class="card-title">My Belongings</span>
+        <span class="card-count">1 item saved</span>
+      </div>
+      <div class="section-card purple-card" onclick="openSubview('web-clips')">
+        <span class="card-icon">🔗</span>
+        <span class="card-title">Web Clips</span>
+        <span class="card-count">1 saved</span>
+      </div>
+    </div>
+
+    <button class="btn-primary" onclick="openSubview('scan-doc')" style="background:rgba(239,68,68,0.15);color:#fff;border-color:#ef4444;">
+      <span class="icon-lg">📷</span>
+      <div>
+        <div>Scan Document</div>
+        <div class="sub-text">OCR + Read Aloud</div>
+      </div>
+    </button>
+  </div>
+
+  <!-- ── COLLEGE TAB ── -->
+  <div class="view" id="view-college">
+    <button class="btn-primary" onclick="openSubview('college-scan')">
+      <span class="icon-lg">📷</span>
+      <div>
+        <div>Scan College Doc</div>
+        <div class="sub-text">Timetable, handouts, notes…</div>
+      </div>
+    </button>
+
+    <div class="row">
+      <input class="input" id="courseInput" type="text" placeholder="New course name…" aria-label="New course name" onkeydown="if(event.key==='Enter')addCourse()">
+      <button class="add-btn" onclick="addCourse()" aria-label="Add course">+</button>
+    </div>
+
+    <div class="section-label">My Courses</div>
+    <div class="grid-2" id="coursesGrid">
+      <div class="section-card" onclick="openSubview('course-detail', 'Calculus')">
+        <span class="card-icon">📁</span>
+        <span class="card-title">Calculus</span>
+        <span class="card-count">4 items</span>
+      </div>
+      <div class="section-card" onclick="openSubview('course-detail', 'History')">
+        <span class="card-icon">📁</span>
+        <span class="card-title">History</span>
+        <span class="card-count">2 items</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ASK AI TAB ── -->
+  <div class="view" id="view-askai" style="height:100%;display:none;flex-direction:column;">
+    <div class="ai-messages" id="aiMessages">
+      <div class="msg msg-ai">
+        <strong>🧠 Second Brain AI</strong>
+        Hey! Ask me anything about your notes, tasks, or college materials. I reply in whichever language you write in — English or Hebrew.
+      </div>
+    </div>
+    <div class="ai-input-row">
+      <button class="voice-btn" id="voiceBtn" onclick="toggleVoice()" aria-label="Voice input">🎙</button>
+      <textarea class="ai-input" id="aiInput" rows="1" placeholder="Ask anything… שאל כל שאלה" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI()}" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'"></textarea>
+      <button class="send-btn" onclick="sendAI()" aria-label="Send">➤</button>
+    </div>
+  </div>
+
+  <!-- ── FILES TAB ── -->
+  <div class="view" id="view-files">
+    <input class="input" type="search" placeholder="🔍  Search all memories…" aria-label="Search memories">
+    <div class="filter-row" id="filterRow">
+      <button class="filter-chip active" onclick="setFilter(this,'all')">All</button>
+      <button class="filter-chip" onclick="setFilter(this,'audio')">🎙 Audio</button>
+      <button class="filter-chip" onclick="setFilter(this,'docs')">📄 Docs</button>
+      <button class="filter-chip" onclick="setFilter(this,'web')">🔗 Web</button>
+      <button class="filter-chip" onclick="setFilter(this,'moodle')">🎓 Moodle</button>
+    </div>
+    <div class="section-label">Recent Memories</div>
+    <div class="file-item">
+      <span class="file-icon">🎙</span>
+      <div class="file-info">
+        <div class="file-name">Morning Thought — To-do list</div>
+        <div class="file-meta">Personal · Today 08:30 · <span class="badge">audio</span></div>
+      </div>
+    </div>
+    <div class="file-item">
+      <span class="file-icon">📄</span>
+      <div class="file-info">
+        <div class="file-name">Calculus — Problem Set 3</div>
+        <div class="file-meta">College · Yesterday · <span class="badge badge-blue">doc</span></div>
+      </div>
+    </div>
+    <div class="file-item">
+      <span class="file-icon">🔗</span>
+      <div class="file-info">
+        <div class="file-name">Accessibility in React Apps</div>
+        <div class="file-meta">Personal · 2 days ago · <span class="badge" style="background:#8b5cf6">web</span></div>
+      </div>
+    </div>
+    <div class="file-item">
+      <span class="file-icon">📦</span>
+      <div class="file-info">
+        <div class="file-name">Laptop charger — Home (Tzor'on)</div>
+        <div class="file-meta">Personal · Today · <span class="badge" style="background:#f59e0b">item</span></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ═══════════════════════ BOTTOM NAV ═══════════════════════ -->
+<nav class="bottom-nav" aria-label="Main navigation">
+  <button class="nav-btn active" id="nav-personal" onclick="switchTab('personal')" aria-label="Personal tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+    Personal
+  </button>
+  <button class="nav-btn" id="nav-college" onclick="switchTab('college')" aria-label="College tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+    College
+  </button>
+  <button class="nav-btn" id="nav-askai" onclick="switchTab('askai')" aria-label="Ask AI tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 3c-4.97 0-9 3.58-9 8 0 1.9.68 3.65 1.82 5.05L4 21l5.1-1.58A9.7 9.7 0 0 0 12 20c4.97 0 9-3.58 9-8s-4.03-8-9-8z"/><path d="M8 11h.01M12 11h.01M16 11h.01" stroke-width="3" stroke-linecap="round"/></svg>
+    Ask AI
+  </button>
+  <button class="nav-btn" id="nav-files" onclick="switchTab('files')" aria-label="Files tab">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    Files
+  </button>
+</nav>
+
+<!-- ═══════════════════════ SUB-VIEWS (overlays) ═══════════════════════ -->
+
+<!-- Voice Notes -->
+<div class="subview" id="sv-voice-notes">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('voice-notes')" aria-label="Back">←</button>
+    <span class="subview-title">🎙 Voice Notes</span>
+  </div>
+  <div class="subview-body">
+    <button class="btn-primary" onclick="simulateRecord()">
+      <span class="icon-lg">🎙</span><div><div>New Recording</div><div class="sub-text">Tap to start</div></div>
+    </button>
+    <div class="section-label">Saved Recordings</div>
+    <div class="file-item">
+      <span class="file-icon">🎙</span>
+      <div class="file-info">
+        <div class="file-name">Morning Thought — To-do list</div>
+        <div class="file-meta">Today 08:30 · 1m 12s</div>
+      </div>
+    </div>
+    <div class="file-item">
+      <span class="file-icon">🎙</span>
+      <div class="file-info">
+        <div class="file-name">Idea for project</div>
+        <div class="file-meta">Yesterday · 0m 45s</div>
+      </div>
+    </div>
+    <button class="btn-outline" onclick="toast('🔊 Reading aloud…')">🔊 Read Aloud Last Note</button>
+  </div>
+</div>
+
+<!-- My Tasks / Kanban -->
+<div class="subview" id="sv-my-tasks">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('my-tasks')" aria-label="Back">←</button>
+    <span class="subview-title">✅ My Tasks</span>
+  </div>
+  <div class="subview-body">
+    <div class="row">
+      <input class="input" id="taskInput" type="text" placeholder="New task…" onkeydown="if(event.key==='Enter')addTask()">
+      <button class="add-btn" onclick="addTask()">+</button>
+    </div>
+    <div class="section-label">Kanban Board</div>
+    <div class="kanban-col">
+      <h4>📋 To Do</h4>
+      <div class="task-chip" onclick="toast('Task moved to In Progress')">Buy groceries</div>
+      <div class="task-chip" onclick="toast('Task moved to In Progress')">Email professor</div>
+    </div>
+    <div class="kanban-col">
+      <h4>⚡ In Progress</h4>
+      <div class="task-chip" onclick="toast('Task moved to Done')">Study for exam</div>
+    </div>
+    <div class="kanban-col">
+      <h4>✅ Done</h4>
+      <div class="task-chip">Submit assignment</div>
+    </div>
+  </div>
+</div>
+
+<!-- Belongings -->
+<div class="subview" id="sv-belongings">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('belongings')" aria-label="Back">←</button>
+    <span class="subview-title">📦 My Belongings</span>
+  </div>
+  <div class="subview-body">
+    <button class="btn-primary" onclick="toast('📍 GPS saved — Home (Tzor\'on)')">
+      <span class="icon-lg">📸</span><div><div>Photograph Item</div><div class="sub-text">Camera + GPS location</div></div>
+    </button>
+    <div class="section-label">Saved Items</div>
+    <div class="file-item">
+      <span class="file-icon">📦</span>
+      <div class="file-info">
+        <div class="file-name">Laptop charger</div>
+        <div class="file-meta">📍 Home (Tzor'on) · Today</div>
+      </div>
+    </div>
+    <div class="card" style="background:rgba(245,158,11,0.1);border-color:#f59e0b;">
+      <p style="font-size:14px;opacity:0.8;line-height:1.5;">💡 Ask AI: "Where is my laptop charger?" and it will tell you the last saved location.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Web Clips -->
+<div class="subview" id="sv-web-clips">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('web-clips')" aria-label="Back">←</button>
+    <span class="subview-title">🔗 Web Clips</span>
+  </div>
+  <div class="subview-body">
+    <div class="row">
+      <input class="input" id="clipInput" type="url" placeholder="Paste URL…">
+      <button class="add-btn" onclick="addClip()">+</button>
+    </div>
+    <div class="section-label">Saved Clips</div>
+    <div class="file-item">
+      <span class="file-icon">🔗</span>
+      <div class="file-info">
+        <div class="file-name">Accessibility in React Apps</div>
+        <div class="file-meta">2 days ago · personal</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scan Doc -->
+<div class="subview" id="sv-scan-doc">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('scan-doc')" aria-label="Back">←</button>
+    <span class="subview-title">📷 Scan Document</span>
+  </div>
+  <div class="subview-body">
+    <button class="btn-primary" onclick="simulateScan()">
+      <span class="icon-lg">📷</span><div><div>Open Camera</div><div class="sub-text">AI reads the text for you</div></div>
+    </button>
+    <div class="card" style="background:rgba(59,130,246,0.1);border-color:#3b82f6;">
+      <p style="font-size:14px;opacity:0.9;line-height:1.6;">📄 <strong>Last scan:</strong> Problem Set 3 — Calculus<br><br>
+      <em>"Find the derivative of f(x) = x³ + 2x² − 5x + 1…"</em></p>
+      <button class="btn-outline" style="margin-top:14px;border-color:#3b82f6;font-size:14px;min-height:52px;" onclick="toast('🔊 Reading aloud…')">🔊 Read Aloud</button>
+    </div>
+  </div>
+</div>
+
+<!-- College Scan -->
+<div class="subview" id="sv-college-scan">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('college-scan')" aria-label="Back">←</button>
+    <span class="subview-title">📷 College Scan</span>
+  </div>
+  <div class="subview-body">
+    <button class="btn-primary" onclick="simulateScan()">
+      <span class="icon-lg">📷</span><div><div>Open Camera</div><div class="sub-text">Scan timetable, handout, notes</div></div>
+    </button>
+    <div class="section-label">Scanned Docs</div>
+    <div class="file-item">
+      <span class="file-icon">📄</span>
+      <div class="file-info">
+        <div class="file-name">History — Lecture Notes 04/05</div>
+        <div class="file-meta">College · Today</div>
+      </div>
+    </div>
+    <button class="btn-outline" onclick="toast('🔊 Reading aloud…')">🔊 Read Aloud Last Scan</button>
+  </div>
+</div>
+
+<!-- Course Detail -->
+<div class="subview" id="sv-course-detail">
+  <div class="subview-header">
+    <button class="back-btn" onclick="closeSubview('course-detail')" aria-label="Back">←</button>
+    <span class="subview-title" id="courseDetailTitle">📁 Course</span>
+  </div>
+  <div class="subview-body">
+    <div class="grid-2">
+      <button class="btn-outline" onclick="toast('🎙 Recording lecture…')">
+        <span class="icon-lg">🎙</span><div><div style="font-size:14px;">Record Lecture</div></div>
+      </button>
+      <button class="btn-outline" onclick="openSubview('college-scan')">
+        <span class="icon-lg">📷</span><div><div style="font-size:14px;">Scan Doc</div></div>
+      </button>
+    </div>
+    <div class="section-label">Lectures</div>
+    <div class="file-item">
+      <span class="file-icon">🎙</span>
+      <div class="file-info">
+        <div class="file-name">Lecture 01 — Derivatives</div>
+        <div class="file-meta">01/05/26 · 45 min</div>
+      </div>
+    </div>
+    <div class="section-label">Scans</div>
+    <div class="file-item">
+      <span class="file-icon">📄</span>
+      <div class="file-info">
+        <div class="file-name">Problem Set 3</div>
+        <div class="file-meta">28/04/26</div>
+      </div>
+    </div>
+    <button class="btn-outline" onclick="toast('🔊 Reading aloud…')">🔊 Read Aloud</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════ CALENDAR OVERLAY ═══════════════════════ -->
+<div class="cal-overlay" id="calOverlay">
+  <div class="subview-header" style="border-bottom:var(--border);">
+    <button class="back-btn" onclick="closeCal()" aria-label="Close calendar">←</button>
+    <span class="subview-title">📅 Schedule</span>
+    <button class="header-btn" onclick="toast('Event added!')" style="margin-left:auto;">+ ADD</button>
+  </div>
+  <div class="cal-body">
+    <div class="section-label">Upcoming Events</div>
+    <div class="event-item">
+      <div class="event-date"><span class="day">06</span><span class="month">May</span></div>
+      <div class="event-info">
+        <div class="title">Calculus Exam</div>
+        <div class="time">09:00 – 11:00 · Room B204</div>
+      </div>
+    </div>
+    <div class="event-item">
+      <div class="event-date"><span class="day">07</span><span class="month">May</span></div>
+      <div class="event-info">
+        <div class="title">History Lecture</div>
+        <div class="time">14:00 – 15:30 · Online</div>
+      </div>
+    </div>
+    <div class="event-item">
+      <div class="event-date"><span class="day">09</span><span class="month">May</span></div>
+      <div class="event-info">
+        <div class="title">Assignment Deadline</div>
+        <div class="time">23:59 · Submit on Moodle</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SETTINGS OVERLAY ═══════════════════════ -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-card">
+    <div class="settings-header">
+      <h2>⚙️ Settings</h2>
+      <button class="back-btn" onclick="closeSettings()" aria-label="Close settings">✕</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-section">
+        <div class="settings-section-title">Moodle (Dyellin)</div>
+        <p style="font-size:14px;opacity:0.7;margin-bottom:14px;line-height:1.5;">Paste your 32-character security key from Moodle preferences to sync courses & files.</p>
+        <input class="input" type="text" placeholder="הדבק/י את המפתח כאן (32 תווים)" style="margin-bottom:10px;font-size:15px;" aria-label="Moodle security key">
+        <button class="btn-primary" style="font-size:15px;min-height:56px;" onclick="toast('✅ Moodle connected!')">Save Security Key</button>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">About</div>
+        <p style="font-size:13px;opacity:0.6;">My Second Brain v2.0<br>Personal edition — data syncs to your private Firebase.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ RECORDING OVERLAY ═══════════════════════ -->
+<div class="subview" id="sv-recording" style="align-items:center;justify-content:center;gap:24px;">
+  <div class="recording-ring">🎙</div>
+  <p style="font-size:22px;font-weight:900;">Recording…</p>
+  <p id="recText" style="font-size:16px;opacity:0.7;text-align:center;max-width:280px;min-height:48px;transition:all 0.3s;"></p>
+  <button class="btn-primary" style="max-width:220px;" onclick="stopRecord()">⏹ Stop & Save</button>
+</div>
+
+<!-- ═══════════════════════ SCAN OVERLAY ═══════════════════════ -->
+<div class="subview" id="sv-scanning" style="align-items:center;justify-content:center;gap:24px;">
+  <div style="font-size:64px;">📷</div>
+  <p style="font-size:22px;font-weight:900;">Scanning…</p>
+  <p style="font-size:16px;opacity:0.7;text-align:center;">AI is reading the document</p>
+  <div class="thinking"><span></span><span></span><span></span></div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const titles = { personal:'Personal Hub', college:'College Hub', askai:'Ask AI', files:'Files Vault' };
+  let currentTab = 'personal';
+
+  function switchTab(tab) {
+    document.querySelectorAll('.view').forEach(v => { v.classList.remove('active'); v.style.display = ''; });
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    const v = document.getElementById('view-' + tab);
+    if (tab === 'askai') { v.style.display = 'flex'; v.style.height = '100%'; } else { v.classList.add('active'); }
+    document.getElementById('nav-' + tab).classList.add('active');
+    document.getElementById('headerTitle').textContent = titles[tab];
+    currentTab = tab;
+  }
+
+  function openSubview(id, param) {
+    if (id === 'course-detail' && param) {
+      document.getElementById('courseDetailTitle').textContent = '📁 ' + param;
+    }
+    document.getElementById('sv-' + id).classList.add('open');
+  }
+
+  function closeSubview(id) {
+    document.getElementById('sv-' + id).classList.remove('open');
+  }
+
+  function openCal() { document.getElementById('calOverlay').classList.add('open'); }
+  function closeCal() { document.getElementById('calOverlay').classList.remove('open'); }
+  function openSettings() { document.getElementById('settingsOverlay').classList.add('open'); }
+  function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+
+  let recTimer, recWords = ['שלום','idea for','grocery list','need to remember','call mom','study for exam','lecture notes'];
+  let recIdx = 0;
+  function simulateRecord() {
+    document.getElementById('sv-recording').classList.add('open');
+    document.getElementById('recText').textContent = '';
+    recIdx = 0;
+    recTimer = setInterval(() => {
+      recIdx++;
+      document.getElementById('recText').textContent = recWords.slice(0, recIdx).join(' ') + '…';
+      if (recIdx >= recWords.length) clearInterval(recTimer);
+    }, 600);
+  }
+  function stopRecord() {
+    clearInterval(recTimer);
+    document.getElementById('sv-recording').classList.remove('open');
+    toast('✅ Voice note saved!');
+  }
+
+  let scanTimer;
+  function simulateScan() {
+    document.getElementById('sv-scanning').classList.add('open');
+    scanTimer = setTimeout(() => {
+      document.getElementById('sv-scanning').classList.remove('open');
+      toast('✅ Document scanned & saved!');
+    }, 2500);
+  }
+
+  function addCourse() {
+    const input = document.getElementById('courseInput');
+    const name = input.value.trim();
+    if (!name) return;
+    const grid = document.getElementById('coursesGrid');
+    const card = document.createElement('div');
+    card.className = 'section-card';
+    card.onclick = () => openSubview('course-detail', name);
+    card.innerHTML = `<span class="card-icon">📁</span><span class="card-title">${name}</span><span class="card-count">0 items</span>`;
+    grid.appendChild(card);
+    input.value = '';
+    toast('📁 Course added!');
+  }
+
+  function addTask() {
+    const input = document.getElementById('taskInput');
+    const name = input.value.trim();
+    if (!name) return;
+    const col = document.querySelector('#sv-my-tasks .kanban-col');
+    const chip = document.createElement('div');
+    chip.className = 'task-chip';
+    chip.textContent = name;
+    chip.onclick = () => toast('Task moved!');
+    col.appendChild(chip);
+    input.value = '';
+    toast('✅ Task added!');
+  }
+
+  function addClip() {
+    const input = document.getElementById('clipInput');
+    const url = input.value.trim();
+    if (!url) return;
+    toast('🔗 Clip saved!');
+    input.value = '';
+  }
+
+  function setFilter(btn, filter) {
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  let aiResponses = [
+    'Based on your notes, you have a Calculus exam on May 6th at 09:00 in Room B204. Good luck! 📚',
+    'I found your laptop charger — it was last saved at 📍 Home (Tzor\'on) earlier today.',
+    'You have 3 pending tasks: buying groceries, emailing your professor, and studying for the exam.',
+    'Your last voice note was about a grocery list, recorded this morning at 08:30.',
+    'בהתבסס על הרשימות שלך, יש לך מבחן בחשבון ב-6 במאי. הצלחה! 🎓',
+  ];
+  let aiIdx = 0;
+
+  function sendAI() {
+    const input = document.getElementById('aiInput');
+    const text = input.value.trim();
+    if (!text) return;
+    const msgs = document.getElementById('aiMessages');
+
+    const userMsg = document.createElement('div');
+    userMsg.className = 'msg msg-user';
+    userMsg.textContent = text;
+    msgs.appendChild(userMsg);
+    input.value = '';
+    input.style.height = 'auto';
+
+    const thinking = document.createElement('div');
+    thinking.className = 'msg msg-ai';
+    thinking.innerHTML = '<strong>🧠 Second Brain AI</strong><div class="thinking"><span></span><span></span><span></span></div>';
+    msgs.appendChild(thinking);
+    msgs.scrollTop = msgs.scrollHeight;
+
+    setTimeout(() => {
+      thinking.innerHTML = `<strong>🧠 Second Brain AI</strong>${aiResponses[aiIdx % aiResponses.length]}`;
+      aiIdx++;
+      msgs.scrollTop = msgs.scrollHeight;
+    }, 1200);
+  }
+
+  let voiceActive = false;
+  function toggleVoice() {
+    const btn = document.getElementById('voiceBtn');
+    voiceActive = !voiceActive;
+    if (voiceActive) {
+      btn.classList.add('recording');
+      btn.textContent = '⏹';
+      setTimeout(() => {
+        document.getElementById('aiInput').value = 'Where did I leave my laptop charger?';
+        toggleVoice();
+      }, 2000);
+    } else {
+      btn.classList.remove('recording');
+      btn.textContent = '🎙';
+    }
+  }
+
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+</script>
+</body>
+</html>
