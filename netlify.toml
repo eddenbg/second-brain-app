@@ -1,17 +1,19 @@
 [build]
   command = "npm run build"
-  publish = "dist"
-  functions = "netlify/functions"
+    publish = "dist"
+      functions = "netlify/functions"
 
-[build.environment]
-  NODE_VERSION = "20"
+      [build.environment]
+        NODE_VERSION = "20"
+          SECRETS_SCAN_OMIT_KEYS = "FIREBASE_AUTH_DOMAIN,FIREBASE_STORAGE_BUCKET,FIREBASE_PROJECT_ID,FIREBASE_API_KEY,FIREBASE_APP_ID,FIREBASE_MESSAGING_SENDER_ID"
 
-[functions]
-  node_bundler = "esbuild"
-  external_node_modules = ["@netlify/blobs"]
+          [functions]
+            node_bundler = "esbuild"
+              external_node_modules = ["@netlify/blobs"]
 
-# Serve the SPA for all routes (handles client-side routing)
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+              # Serve the SPA for all routes (handles client-side routing)
+              [[redirects]]
+                from = "/*"
+                  to = "/index.html"
+                    status = 200
+                    
