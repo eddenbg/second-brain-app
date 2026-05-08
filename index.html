@@ -8,17 +8,24 @@
     <link rel="icon" type="image/svg+xml" href="icon.svg">
     <link rel="apple-touch-icon" href="icon.svg">
     <meta name="theme-color" content="#0b0f1a">
-    
-    <!-- Android / Chrome Full Screen Specifics -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="application-name" content="Second Brain">
     <meta name="apple-mobile-web-app-title" content="Second Brain">
     <link rel="icon" sizes="192x192" href="icon.svg">
-    
-    <!-- iOS / Safari Full Screen Specifics -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    
+    <!-- Tailwind CSS (provides all layout and utility styles) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            borderWidth: { '3': '3px' },
+            spacing: { '18': '4.5rem' }
+          }
+        }
+      }
+    </script>
     <style>
         :root {
             --sat: env(safe-area-inset-top);
@@ -31,7 +38,7 @@
             width: 100%;
             margin: 0;
             padding: 0;
-            overflow: hidden; 
+            overflow: hidden;
             background-color: #0b0f1a;
             -webkit-tap-highlight-color: transparent;
         }
