@@ -57,11 +57,21 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         setVideoDataUrl(null);
         setError(null);
         try {
+            const camPerm = await navigator.permissions.query({ name: 'camera' as PermissionName });
+            if (camPerm.state === 'denied') {
+                setError("Camera is blocked. Tap the lock icon in your browser's address bar → Permissions → Camera → Allow, then try again.");
+                return;
+            }
+        } catch {}
+        try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: true });
             setStream(mediaStream);
         } catch (err) {
             console.error("Camera access error:", err);
-            setError("Could not access camera/mic. Please check permissions.");
+            const denied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+            setError(denied
+                ? "Camera access was denied. Tap the lock icon in your browser's address bar → Permissions → Camera → Allow, then try again."
+                : "Could not access camera. Please check your device.");
         }
     };
     

@@ -75,6 +75,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
 
         try {
+            try {
+                const micPerm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+                if (micPerm.state === 'denied') {
+                    setError("Microphone is blocked. Tap the lock icon in your browser's address bar → Permissions → Microphone → Allow, then try again.");
+                    return;
+                }
+            } catch {}
+
+            if (!audioOnly && captureMode !== 'remote') {
+                try {
+                    const camPerm = await navigator.permissions.query({ name: 'camera' as PermissionName });
+                    if (camPerm.state === 'denied') {
+                        setError("Camera is blocked. Tap the lock icon in your browser's address bar → Permissions → Camera → Allow, then try again.");
+                        return;
+                    }
+                } catch {}
+            }
+
             let mediaStream: MediaStream;
 
             if (audioOnly) {
@@ -172,7 +190,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             });
         } catch (err) {
             console.error(err);
-            setError("Could not access camera/mic. Please check permissions.");
+            const denied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+            setError(denied
+                ? "Camera or microphone access was denied. Tap the lock icon in your browser's address bar → Permissions → allow Camera and Microphone, then try again."
+                : "Could not access camera/mic. Please check your device.");
             setIsRecording(false);
             stopAllMedia();
         }

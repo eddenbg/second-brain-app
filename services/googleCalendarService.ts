@@ -1,9 +1,19 @@
 import type { CalendarEvent } from '../types';
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const CLIENT_ID_STORAGE_KEY = 'google_oauth_client_id';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 const TOKEN_KEY = 'google_cal_token';
 const TOKEN_EXPIRY_KEY = 'google_cal_token_expiry';
+
+const getClientId = (): string =>
+    localStorage.getItem(CLIENT_ID_STORAGE_KEY) || process.env.GOOGLE_CLIENT_ID || '';
+
+export const saveGoogleClientId = (id: string): void => {
+    localStorage.setItem(CLIENT_ID_STORAGE_KEY, id.trim());
+};
+
+export const getStoredGoogleClientId = (): string =>
+    localStorage.getItem(CLIENT_ID_STORAGE_KEY) || process.env.GOOGLE_CLIENT_ID || '';
 
 declare global {
     interface Window {
@@ -37,10 +47,11 @@ export const getStoredToken = (): string | null => {
 };
 
 export const connectGoogleCalendar = (): Promise<string> => {
-    if (!CLIENT_ID) return Promise.reject(new Error('GOOGLE_CLIENT_ID not set'));
+    const clientId = getClientId();
+    if (!clientId) return Promise.reject(new Error('No Google Client ID configured'));
     return loadGIS().then(() => new Promise((resolve, reject) => {
         const client = window.google.accounts.oauth2.initTokenClient({
-            client_id: CLIENT_ID,
+            client_id: clientId,
             scope: SCOPE,
             callback: (response: any) => {
                 if (response.error) { reject(new Error(response.error)); return; }

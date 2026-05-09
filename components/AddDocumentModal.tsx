@@ -32,14 +32,27 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
 
     const startCamera = useCallback(async (facing: 'environment' | 'user') => {
         stopCamera();
+        setStatusMessage('Starting camera…');
+        try {
+            const perm = await navigator.permissions.query({ name: 'camera' as PermissionName });
+            if (perm.state === 'denied') {
+                setPhase('error');
+                setStatusMessage("Camera is blocked. Tap the lock icon in your browser's address bar → Permissions → Camera → Allow, then tap \"Try Again\".");
+                return;
+            }
+        } catch {}
         try {
             const s = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } }
             });
             setStream(s);
             setStatusMessage('Tap anywhere on the preview to capture');
-        } catch {
-            setStatusMessage('Could not access camera. Please allow camera access and try again.');
+        } catch (err) {
+            setPhase('error');
+            const denied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
+            setStatusMessage(denied
+                ? "Camera access was denied. Tap the lock icon in your browser's address bar → Permissions → Camera → Allow, then tap \"Try Again\"."
+                : "Could not open camera. Please check your device and try again.");
         }
     }, []);
 

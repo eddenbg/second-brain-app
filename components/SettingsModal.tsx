@@ -7,7 +7,9 @@ import { testMoodleConnection } from '../services/moodleService';
 import {
     connectGoogleCalendar,
     disconnectGoogleCalendar,
-    getStoredToken
+    getStoredToken,
+    saveGoogleClientId,
+    getStoredGoogleClientId
 } from '../services/googleCalendarService';
 import { auth } from '../utils/firebase';
 
@@ -43,7 +45,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
     const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
-    const googleEnabled = !!process.env.GOOGLE_CLIENT_ID;
+    const [googleClientId, setGoogleClientId] = useState(getStoredGoogleClientId());
+    const [clientIdInput, setClientIdInput] = useState('');
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
@@ -161,9 +164,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 {isGoogleConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
                             </div>
                             <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connect to see your Google Calendar events in the monthly view.</p>
-                            {!googleEnabled && (
-                                <p className="text-yellow-400 font-bold text-xs mb-3">Set GOOGLE_CLIENT_ID in Netlify env vars to enable this.</p>
+
+                            {!isGoogleConnected && !googleClientId && (
+                                <div className="space-y-3 mb-4 bg-gray-800 p-4 rounded-2xl border border-gray-600">
+                                    <p className="text-yellow-400 font-black text-xs uppercase tracking-widest">One-time setup</p>
+                                    <ol className="text-gray-400 text-xs space-y-1.5 list-decimal list-inside leading-relaxed">
+                                        <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">console.cloud.google.com</a></li>
+                                        <li>Create a project &rarr; Enable <strong className="text-white">Google Calendar API</strong></li>
+                                        <li>APIs &amp; Services &rarr; Credentials &rarr; Create &rarr; OAuth 2.0 Client ID (Web app)</li>
+                                        <li>Copy the Client ID and paste it below</li>
+                                    </ol>
+                                    <input
+                                        type="text"
+                                        value={clientIdInput}
+                                        onChange={e => setClientIdInput(e.target.value)}
+                                        placeholder="123456789.apps.googleusercontent.com"
+                                        className="w-full bg-gray-900 p-3 rounded-xl border border-gray-600 text-white font-mono text-xs"
+                                        aria-label="Google OAuth Client ID"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            saveGoogleClientId(clientIdInput);
+                                            setGoogleClientId(clientIdInput.trim());
+                                            setClientIdInput('');
+                                        }}
+                                        disabled={!clientIdInput.includes('googleusercontent.com')}
+                                        className="w-full py-3 rounded-xl font-black text-xs uppercase bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500 active:scale-95 transition-all"
+                                    >
+                                        Save Client ID
+                                    </button>
+                                </div>
                             )}
+
+                            {!isGoogleConnected && googleClientId && (
+                                <p className="text-green-400 text-xs font-bold mb-3">Client ID configured. Ready to connect.</p>
+                            )}
+
                             {isGoogleConnected ? (
                                 <button
                                     onClick={handleDisconnectGoogle}
@@ -173,8 +209,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </button>
                             ) : (
                                 <button
-                                    onClick={handleConnectGoogle}
-                                    disabled={isConnectingGoogle || !googleEnabled}
+                                    onClick={googleClientId ? handleConnectGoogle : undefined}
+                                    disabled={isConnectingGoogle || !googleClientId}
                                     className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500"
                                 >
                                     {isConnectingGoogle ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
@@ -206,7 +242,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         <ol dir="rtl" className="list-decimal list-inside space-y-2 bg-gray-800 p-3 rounded-lg border border-gray-600 text-xs leading-relaxed text-right">
                                             <li>לחץ/י על השם שלך (בצד שמאל למעלה במודל), ואז לחץ/י על <strong className="text-white">"העדפות"</strong>.</li>
                                             <li>בדף ההעדפות, לחץ/י על <strong className="text-white">"מפתחות אבטחה"</strong>.</li>
-                                            <li>גלול/י לתחתית. העתק/י את המפתח תחת <strong className="text-white">"Moodle Mobile additional features service"</strong>.</li>
+                                            <li>גלול/י לתחתיתה. העתק/י את המפתח תחת <strong className="text-white">"Moodle Mobile additional features service"</strong>.</li>
                                             <li>חזור/י לכאן והדבק/י למטה.</li>
                                         </ol>
                                     </div>
