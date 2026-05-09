@@ -1,282 +1,179 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { DocumentMemory } from '../types';
 import { generateTitleForContent, extractTextFromImage } from '../services/geminiService';
 import { getCurrentLocation } from '../utils/location';
-import { generatePDF } from '../services/pdfService';
-import { CameraIcon, UploadIcon, SaveIcon, XIcon, BrainCircuitIcon, Loader2Icon, FileTextIcon, CheckIcon } from './Icons';
-import MiniRecorder from './MiniRecorder';
-import type { TranscriptSegment } from '../types';
+import { XIcon, Loader2Icon, CheckIcon } from './Icons';
+import { Camera, SwitchCamera } from 'lucide-react';
 
 interface AddDocumentModalProps {
-    course?: string; 
+    course?: string;
     onSave: (memory: Omit<DocumentMemory, 'id'|'date'>) => void;
     onClose: () => void;
 }
 
+type Phase = 'camera' | 'processing' | 'done' | 'error';
+
 const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onClose }) => {
-    const [title, setTitle] = useState('');
-    const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
-    const [extractedText, setExtractedText] = useState('');
-    const [isLoading, setIsLoading] = useState<string | null>(null);
-    const [error, setError] = useState<string|null>(null);
-    const [voiceNote, setVoiceNote] = useState('');
-    const [audioDataUrl, setAudioDataUrl] = useState<string | null>(null);
-    const [structuredTranscript, setStructuredTranscript] = useState<TranscriptSegment[]>([]);
+    const [phase, setPhase] = useState<Phase>('camera');
+    const [statusMessage, setStatusMessage] = useState('Starting camera…');
+    const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
     const [stream, setStream] = useState<MediaStream | null>(null);
-    const [statusMessage, setStatusMessage] = useState(''); 
-    
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const titleInputRef = useRef<HTMLInputElement>(null);
-    
-    const stopCamera = React.useCallback(() => {
+
+    const stopCamera = useCallback(() => {
         if (stream) {
-            stream.getTracks().forEach(track => track.stop());
+            stream.getTracks().forEach(t => t.stop());
             setStream(null);
         }
     }, [stream]);
 
-    useEffect(() => { return () => { stopCamera(); }; }, [stopCamera]);
+    const startCamera = useCallback(async (facing: 'environment' | 'user') => {
+        stopCamera();
+        try {
+            const s = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } }
+            });
+            setStream(s);
+            setStatusMessage('Tap anywhere on the preview to capture');
+        } catch {
+            setStatusMessage('Could not access camera. Please allow camera access and try again.');
+        }
+    }, []);
 
     useEffect(() => {
-        if (extractedText && titleInputRef.current) {
-            titleInputRef.current.focus();
-        }
-    }, [extractedText]);
+        startCamera(facingMode);
+        return () => stopCamera();
+    }, []);
 
-    const startCamera = async () => {
+    useEffect(() => {
+        if (stream && videoRef.current) {
+            videoRef.current.srcObject = stream;
+        }
+    }, [stream]);
+
+    const flipCamera = () => {
+        const next = facingMode === 'environment' ? 'user' : 'environment';
+        setFacingMode(next);
+        startCamera(next);
+    };
+
+    const capture = async () => {
+        if (!videoRef.current || !canvasRef.current || phase !== 'camera') return;
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d')?.drawImage(video, 0, 0);
+        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
         stopCamera();
-        setImageDataUrl(null);
-        setError(null);
-        setIsLoading('camera');
-        setStatusMessage("Starting camera...");
+
+        setPhase('processing');
+        setStatusMessage('Extracting text…');
+
         try {
-            const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-            setStream(mediaStream);
-            setStatusMessage("Camera started.");
-        } catch (err) { 
-            setError("Could not access camera."); 
-            setStatusMessage("Error: Could not access camera.");
-        }
-        finally { setIsLoading(null); }
-    };
+            const base64 = imageDataUrl.split(',')[1];
+            const mimeType = 'image/jpeg';
+            const [text, location] = await Promise.all([
+                extractTextFromImage(base64, mimeType),
+                getCurrentLocation()
+            ]);
 
-    useEffect(() => { if (stream && videoRef.current) { videoRef.current.srcObject = stream; } }, [stream]);
+            setStatusMessage('Generating title…');
+            const title = await generateTitleForContent(text || `Scanned – ${new Date().toLocaleDateString()}`);
 
-    const takePicture = () => {
-        if (videoRef.current && canvasRef.current) {
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d')?.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-            const dataUrl = canvas.toDataURL('image/jpeg');
-            setImageDataUrl(dataUrl);
-            stopCamera();
-            setStatusMessage("Picture taken.");
-        }
-    };
-    
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setImageDataUrl(e.target?.result as string);
-                stopCamera();
-                setStatusMessage("Image uploaded.");
-            };
-            reader.readAsDataURL(file);
-        } else {
-            setError('Please select a valid image file.');
+            onSave({
+                type: 'document',
+                title,
+                imageDataUrl,
+                extractedText: text || '',
+                category: course ? 'college' : 'personal',
+                course,
+                ...(location && { location })
+            });
+
+            setPhase('done');
+            setStatusMessage('Saved!');
+            setTimeout(onClose, 800);
+        } catch {
+            setPhase('error');
+            setStatusMessage('Could not extract text. Try again with better lighting.');
         }
     };
-
-    const handleExtractText = async () => {
-        if (!imageDataUrl) return;
-        setIsLoading('ocr');
-        setError(null);
-        setStatusMessage("Extracting Hebrew and English text from image...");
-        try {
-            const base64Data = imageDataUrl.split(',')[1];
-            const mimeType = imageDataUrl.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
-            const text = await extractTextFromImage(base64Data, mimeType);
-            setExtractedText(text);
-            setStatusMessage("Text extracted successfully.");
-            
-            // Auto-generate title if empty
-            if (!title) {
-                const generatedTitle = await generateTitleForContent(text);
-                setTitle(generatedTitle);
-            }
-        } catch (e) { 
-            setError("Text extraction failed. You can still save the image or try again."); 
-            setStatusMessage("Error extracting text.");
-        }
-        finally { setIsLoading(null); }
-    };
-    
-    const handleGenerateTitle = async () => {
-        if (!extractedText.trim()) return;
-        setIsLoading('title');
-        setTitle(await generateTitleForContent(extractedText));
-        setIsLoading(null);
-        setStatusMessage("Title generated.");
-    };
-
-    const handleSave = async () => {
-        if (!imageDataUrl) return;
-        
-        // Use default title if none provided
-        const finalTitle = title.trim() || `Scanned Doc - ${new Date().toLocaleDateString()}`;
-        const finalContent = extractedText.trim() || "No text extracted yet.";
-        
-        const location = await getCurrentLocation();
-        onSave({ 
-            type: 'document', 
-            title: finalTitle, 
-            imageDataUrl, 
-            extractedText: finalContent, 
-            category: course ? 'college' : 'personal',
-            course, 
-            ...(location && { location }),
-            ...(voiceNote.trim() && { 
-                voiceNote: { 
-                    transcript: voiceNote.trim(),
-                    audioDataUrl: audioDataUrl || undefined,
-                    structuredTranscript: structuredTranscript.length > 0 ? structuredTranscript : undefined
-                } 
-            })
-        });
-        onClose();
-    };
-
-    const isSaveDisabled = !imageDataUrl;
 
     return (
-        <div className="fixed inset-0 bg-black/90 flex flex-col justify-center items-center z-[130] p-4">
-             <div className="bg-gray-800 rounded-[2.5rem] shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col border-4 border-gray-600 overflow-hidden">
-                <header className="flex justify-between items-center p-6 border-b-4 border-gray-700 shrink-0 bg-gray-800">
-                    <h2 className="text-xl font-black text-white flex items-center gap-3 uppercase">
-                        <FileTextIcon className="w-8 h-8"/> SCAN DOCUMENT
-                    </h2>
-                    <div className="flex items-center gap-3">
-                        <button 
-                            onClick={handleSave} 
-                            disabled={isSaveDisabled} 
-                            className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white font-black rounded-xl text-sm uppercase shadow-xl disabled:bg-gray-700 active:scale-95 transition-all"
-                        >
-                            <SaveIcon className="w-5 h-5"/> SAVE
-                        </button>
-                        <button onClick={onClose} className="p-3 bg-gray-700 rounded-2xl active:scale-90 transition-transform"><XIcon className="w-6 h-6"/></button>
+        <div className="fixed inset-0 z-[130] bg-black flex flex-col" aria-label="Scan document">
+            <div role="status" aria-live="polite" className="sr-only">{statusMessage}</div>
+
+            {/* Full-screen camera preview */}
+            <div className="relative flex-grow bg-black overflow-hidden" onClick={phase === 'camera' && stream ? capture : undefined}>
+                <canvas ref={canvasRef} className="hidden" />
+                {phase === 'camera' && stream ? (
+                    <>
+                        <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="absolute inset-0 w-full h-full object-cover"
+                        />
+                        {/* Document frame guide */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-[88%] h-[70%] border-4 border-white/60 rounded-2xl" />
+                        </div>
+                        <div className="absolute bottom-8 left-0 right-0 flex justify-center">
+                            <p className="bg-black/60 text-white font-black text-xl px-6 py-3 rounded-full uppercase tracking-wide">
+                                Tap to Capture
+                            </p>
+                        </div>
+                    </>
+                ) : phase === 'processing' ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F]">
+                        <Loader2Icon className="w-24 h-24 text-white animate-spin" />
+                        <p className="text-white font-black text-2xl uppercase">{statusMessage}</p>
                     </div>
-                </header>
-                
-                <div role="status" aria-live="polite" className="sr-only">
-                    {statusMessage}
-                </div>
+                ) : phase === 'done' ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F]">
+                        <CheckIcon className="w-24 h-24 text-green-400" />
+                        <p className="text-white font-black text-2xl uppercase">Saved!</p>
+                    </div>
+                ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F] px-8 text-center">
+                        <p className="text-white font-black text-2xl uppercase">{statusMessage}</p>
+                        <button
+                            onClick={() => { setPhase('camera'); startCamera(facingMode); }}
+                            className="px-8 py-5 bg-white text-[#001F3F] font-black rounded-2xl text-xl uppercase"
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                )}
+            </div>
 
-                <div className="flex-grow overflow-y-auto p-6 space-y-6 scroll-smooth">
-                    {extractedText || isLoading === 'ocr' ? (
-                        <div className="space-y-6">
-                            <div className="w-full bg-gray-900 rounded-2xl p-2 border border-gray-700 flex justify-center items-center shadow-inner">
-                                <img src={imageDataUrl || ''} className="max-h-48 object-contain rounded-xl"/>
-                            </div>
-                             
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Document Name</label>
-                                <div className="flex gap-2">
-                                    <input 
-                                        ref={titleInputRef}
-                                        type="text" 
-                                        value={title} 
-                                        onChange={e => setTitle(e.target.value)} 
-                                        placeholder="Enter Title" 
-                                        className="flex-grow bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"
-                                    />
-                                    <button onClick={handleGenerateTitle} className="p-4 bg-purple-600 text-white rounded-2xl shadow-lg active:scale-95">
-                                        {isLoading === 'title' ? <Loader2Icon className="w-6 h-6 animate-spin"/> : <BrainCircuitIcon className="w-6 h-6"/>}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Extracted Content</label>
-                                {isLoading === 'ocr' ? (
-                                    <div className="w-full bg-gray-900 p-10 rounded-2xl border-2 border-gray-700 flex flex-col items-center justify-center gap-4 text-blue-400">
-                                        <Loader2Icon className="w-10 h-10 animate-spin" />
-                                        <p className="font-black uppercase tracking-widest text-xs">Analyzing Layout & Hebrew Text...</p>
-                                    </div>
-                                ) : (
-                                    <textarea 
-                                        value={extractedText} 
-                                        onChange={e => setExtractedText(e.target.value)} 
-                                        rows={8} 
-                                        className="w-full bg-gray-900 text-white text-sm p-5 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-medium leading-relaxed shadow-inner"
-                                    />
-                                )}
-                            </div>
-
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Voice Note (Optional)</label>
-                                <MiniRecorder 
-                                    onTranscriptChange={setVoiceNote} 
-                                    onAudioDataUrlChange={setAudioDataUrl}
-                                    onStructuredTranscriptChange={setStructuredTranscript}
-                                />
-                                {voiceNote && (
-                                    <div className="mt-2 bg-gray-900 p-4 rounded-2xl border border-gray-700">
-                                        <p className="text-xs text-gray-400 italic">{voiceNote}</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ) : imageDataUrl ? (
-                        <div className="space-y-6 text-center">
-                            <div className="rounded-[2rem] overflow-hidden border-2 border-gray-700 shadow-2xl">
-                                <img src={imageDataUrl} className="w-full max-h-80 object-contain bg-black" />
-                            </div>
-                            <div className="flex gap-3 justify-center">
-                                <button onClick={() => setImageDataUrl(null)} className="flex-1 py-4 bg-gray-700 text-white font-black rounded-2xl uppercase text-xs">Retake</button>
-                                <button onClick={handleExtractText} disabled={isLoading === 'ocr'} className="flex-grow py-4 bg-blue-600 text-white font-black rounded-2xl uppercase text-xs shadow-lg flex items-center justify-center gap-3">
-                                     {isLoading === 'ocr' ? <Loader2Icon className="animate-spin w-5 h-5"/> : <BrainCircuitIcon className="w-5 h-5"/>}
-                                     Extract Text
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="space-y-6 text-center">
-                            <div className="w-full aspect-square bg-gray-900 rounded-[2.5rem] flex items-center justify-center relative overflow-hidden border-2 border-gray-700 shadow-inner">
-                                <canvas ref={canvasRef} className="hidden" />
-                                {stream ? <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                                    : <CameraIcon className="w-24 h-24 mx-auto text-gray-500" />
-                                }
-                            </div>
-                            {stream ? (
-                                <button onClick={takePicture} className="px-10 py-5 bg-blue-600 text-white font-black rounded-2xl uppercase text-sm shadow-xl active:scale-95 transition-all">
-                                    CAPTURE
-                                </button>
-                            ) : (
-                                 <div className="flex gap-3">
-                                    <button onClick={startCamera} className="flex-1 py-4 bg-gray-700 text-white font-black rounded-2xl uppercase text-xs flex items-center justify-center gap-2">
-                                       <CameraIcon className="w-5 h-5"/> Camera
-                                    </button>
-                                     <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-4 bg-gray-700 text-white font-black rounded-2xl uppercase text-xs flex items-center justify-center gap-2">
-                                        <UploadIcon className="w-5 h-5"/> File
-                                    </button>
-                                     <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" className="hidden" />
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {error && <p className="text-center text-red-400 font-bold p-3 bg-red-900/20 rounded-xl">{error}</p>}
-                </div>
-
-                <footer className="p-4 bg-gray-800 border-t-2 border-gray-700 shrink-0 text-center">
-                    <button onClick={onClose} className="text-gray-500 font-black uppercase text-xs tracking-widest">Cancel Scan</button>
-                </footer>
+            {/* Top controls */}
+            <div
+                className="absolute top-0 left-0 right-0 flex justify-between items-center p-4 z-10"
+                style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
+            >
+                <button
+                    onClick={onClose}
+                    aria-label="Close camera"
+                    className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center"
+                >
+                    <XIcon className="w-8 h-8 text-white" />
+                </button>
+                {phase === 'camera' && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); flipCamera(); }}
+                        aria-label="Flip camera"
+                        className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center"
+                    >
+                        <SwitchCamera className="w-8 h-8 text-white" strokeWidth={2.5} />
+                    </button>
+                )}
             </div>
         </div>
     );

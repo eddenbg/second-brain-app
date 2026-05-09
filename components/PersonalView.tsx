@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
     Volume2, Loader2, X, Package, Camera, FileText,
@@ -107,16 +107,31 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const documents = useMemo(() => memories.filter(m => m.type === 'document'), [memories]);
     const personalTasks = useMemo(() => tasks.filter(t => t.category === 'personal'), [tasks]);
 
-    const goBack = () => setSubView('hub');
+    const goBack = useCallback(() => setSubView('hub'), []);
+
+    // Push a history entry whenever we leave the hub so the phone back button works
+    const navigateTo = useCallback((view: SubView) => {
+        if (view !== 'hub') window.history.pushState({ personalSubView: view }, '');
+        setSubView(view);
+    }, []);
+
+    useEffect(() => {
+        const handlePop = () => {
+            setSubView('hub');
+            setSelectedItem(null);
+        };
+        window.addEventListener('popstate', handlePop);
+        return () => window.removeEventListener('popstate', handlePop);
+    }, []);
 
     const handleSaveVoiceNote = (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
         onSaveMemory({ ...mem, category: 'personal' });
-        setSubView('voiceNotes');
+        navigateTo('voiceNotes');
     };
 
     const openDetail = (item: AnyMemory) => {
         setSelectedItem(item);
-        setSubView('detail');
+        navigateTo('detail');
     };
 
     // ── Hub ──────────────────────────────────────────────
@@ -125,7 +140,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
             <div className="flex flex-col gap-6">
                 {/* Big Mic CTA */}
                 <button
-                    onClick={() => setSubView('recording')}
+                    onClick={() => navigateTo('recording')}
                     aria-label="Record a new thought or idea"
                     className="w-full h-40 bg-white text-[#001F3F] rounded-3xl flex flex-col items-center justify-center gap-3 shadow-2xl"
                 >
@@ -137,7 +152,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 <div className="grid grid-cols-2 gap-4">
                     {/* Voice Notes */}
                     <button
-                        onClick={() => setSubView('voiceNotes')}
+                        onClick={() => navigateTo('voiceNotes')}
                         aria-label={`Voice Notes – ${voiceNotes.length} saved`}
                         className="h-36 bg-[#3B82F6] text-white rounded-3xl flex flex-col items-center justify-center gap-2"
                     >
@@ -148,7 +163,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
                     {/* Personal Kanban */}
                     <button
-                        onClick={() => setSubView('kanban')}
+                        onClick={() => navigateTo('kanban')}
                         aria-label={`My Tasks – ${personalTasks.length} tasks`}
                         className="h-36 bg-[#10B981] text-white rounded-3xl flex flex-col items-center justify-center gap-2"
                     >
@@ -159,7 +174,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
                     {/* Physical Items */}
                     <button
-                        onClick={() => setSubView('physicalItems')}
+                        onClick={() => navigateTo('physicalItems')}
                         aria-label={`My Belongings – ${physicalItems.length} items`}
                         className="h-36 bg-[#F59E0B] text-[#001F3F] rounded-3xl flex flex-col items-center justify-center gap-2"
                     >
@@ -170,7 +185,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
                     {/* Web Clips */}
                     <button
-                        onClick={() => setSubView('webClips')}
+                        onClick={() => navigateTo('webClips')}
                         aria-label={`Web Clips – ${webClips.length} saved`}
                         className="h-36 bg-[#8B5CF6] text-white rounded-3xl flex flex-col items-center justify-center gap-2"
                     >
@@ -182,7 +197,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
                 {/* Scan Document – full width */}
                 <button
-                    onClick={() => setSubView('scanning')}
+                    onClick={() => navigateTo('scanning')}
                     aria-label={`Scan Document – ${documents.length} scanned`}
                     className="w-full h-28 bg-[#EF4444] text-white rounded-3xl flex items-center justify-center gap-4"
                 >
@@ -211,6 +226,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     onCancel={goBack}
                     titlePlaceholder={`Thought – ${new Date().toLocaleDateString()}`}
                     saveButtonText="Save Thought"
+                    audioOnly={true}
                 />
             </div>
         );
@@ -226,7 +242,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                     <h2 className="text-2xl font-black uppercase flex-grow">Voice Notes</h2>
                     <button
-                        onClick={() => setSubView('recording')}
+                        onClick={() => navigateTo('recording')}
                         aria-label="Record new voice note"
                         className="btn-primary w-20 h-14"
                     >
@@ -295,7 +311,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                     <h2 className="text-2xl font-black uppercase flex-grow">My Belongings</h2>
                     <button
-                        onClick={() => setSubView('addItem')}
+                        onClick={() => navigateTo('addItem')}
                         aria-label="Add physical item"
                         className="btn-primary w-20 h-14"
                     >
@@ -303,7 +319,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                 </header>
                 <button
-                    onClick={() => setSubView('addItem')}
+                    onClick={() => navigateTo('addItem')}
                     aria-label="Photograph a belonging"
                     className="w-full h-32 bg-[#F59E0B] text-[#001F3F] rounded-3xl flex items-center justify-center gap-4"
                 >
@@ -355,11 +371,11 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     if (subView === 'addItem') {
         return (
             <AddPhysicalItemModal
-                onClose={() => setSubView('physicalItems')}
+                onClose={() => navigateTo('physicalItems')}
                 onSave={async (mem) => {
                     const locationName = await getLocationName();
                     onSaveMemory({ ...mem, category: 'personal', ...(locationName && { locationName }) } as any);
-                    setSubView('physicalItems');
+                    navigateTo('physicalItems');
                 }}
             />
         );
@@ -375,7 +391,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                     <h2 className="text-2xl font-black uppercase flex-grow">Web Clips</h2>
                     <button
-                        onClick={() => setSubView('addWebClip')}
+                        onClick={() => navigateTo('addWebClip')}
                         aria-label="Add web clip"
                         className="btn-primary w-20 h-14"
                     >
@@ -433,10 +449,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     if (subView === 'addWebClip') {
         return (
             <AddWebMemoryModal
-                onClose={() => setSubView('webClips')}
+                onClose={() => navigateTo('webClips')}
                 onSave={(mem) => {
                     onSaveMemory({ ...mem, category: 'personal' });
-                    setSubView('webClips');
+                    navigateTo('webClips');
                 }}
             />
         );
@@ -452,7 +468,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                     <h2 className="text-2xl font-black uppercase flex-grow">Documents</h2>
                     <button
-                        onClick={() => setSubView('scanning')}
+                        onClick={() => navigateTo('scanning')}
                         aria-label="Scan new document"
                         className="btn-primary w-20 h-14"
                     >
@@ -507,10 +523,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     if (subView === 'scanning') {
         return (
             <AddDocumentModal
-                onClose={() => setSubView('documents')}
+                onClose={() => navigateTo('documents')}
                 onSave={(mem) => {
                     onSaveMemory({ ...mem, category: 'personal' });
-                    setSubView('documents');
+                    navigateTo('documents');
                 }}
             />
         );

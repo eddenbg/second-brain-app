@@ -13,6 +13,7 @@ import { useRecordings } from './hooks/useRecordings';
 import { useServiceWorker } from './hooks/useServiceWorker';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
+import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
@@ -29,6 +30,7 @@ function App() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
+  const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
@@ -43,9 +45,23 @@ function App() {
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
   const allCalendarEvents = useMemo(
-    () => [...calendarEvents, ...moodleEvents],
-    [calendarEvents, moodleEvents]
+    () => [...calendarEvents, ...moodleEvents, ...googleEvents],
+    [calendarEvents, moodleEvents, googleEvents]
   );
+
+  const loadGoogleEvents = useCallback(async () => {
+    const token = getStoredToken();
+    if (!token) return;
+    try {
+        const events = await fetchGoogleCalendarEvents(token);
+        setGoogleEvents(events);
+    } catch (e) {
+        console.error('Google Calendar fetch failed', e);
+    }
+  }, []);
+
+  // Load Google events on mount if already connected
+  useEffect(() => { loadGoogleEvents(); }, [loadGoogleEvents]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -278,6 +294,7 @@ function App() {
           onClose={() => toggleSettings(false)}
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
+          onGoogleConnected={loadGoogleEvents}
         />
       )}
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
