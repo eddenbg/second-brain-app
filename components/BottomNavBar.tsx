@@ -42,16 +42,16 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
         aria-label="Main Navigation"
     >
         <NavButton
-            label="Personal"
-            icon={<Mic />}
-            isActive={view === 'personal'}
-            onClick={() => setView('personal')}
-        />
-        <NavButton
             label="College"
             icon={<BookOpen />}
             isActive={view === 'college'}
             onClick={() => setView('college')}
+        />
+        <NavButton
+            label="Files"
+            icon={<Folder />}
+            isActive={view === 'files'}
+            onClick={() => setView('files')}
         />
         <NavButton
             label="Ask AI"
@@ -60,10 +60,10 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ view, setView }) => {
             onClick={() => setView('askai')}
         />
         <NavButton
-            label="Files"
-            icon={<Folder />}
-            isActive={view === 'files'}
-            onClick={() => setView('files')}
+            label="Personal"
+            icon={<Mic />}
+            isActive={view === 'personal'}
+            onClick={() => setView('personal')}
         />
     </nav>
   );

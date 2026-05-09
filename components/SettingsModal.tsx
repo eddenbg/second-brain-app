@@ -2,13 +2,20 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
 } from './Icons';
+import { Calendar } from 'lucide-react';
 import { testMoodleConnection } from '../services/moodleService';
+import {
+    connectGoogleCalendar,
+    disconnectGoogleCalendar,
+    getStoredToken
+} from '../services/googleCalendarService';
 import { auth } from '../utils/firebase';
 
 interface SettingsModalProps {
     onClose: () => void;
     moodleToken: string | null;
     onSaveMoodleToken: (token: string) => void;
+    onGoogleConnected?: () => void;
 }
 
 const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) => {
@@ -30,19 +37,20 @@ const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) 
     );
 };
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected }) => {
     const [manualToken, setManualToken] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+    const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
+    const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+    const googleEnabled = !!process.env.GOOGLE_CLIENT_ID;
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
 
-    // Load Firebase user info
     useEffect(() => {
         if (auth?.currentUser) {
             setFirebaseUID(auth.currentUser.uid);
-            // refreshToken is available on the Firebase user object
             const rt = (auth.currentUser as any).stsTokenManager?.refreshToken ?? '';
             setRefreshToken(rt);
         }
@@ -61,9 +69,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
             if (text && text.length === 32 && /^[a-f0-9]{32}$/.test(text)) {
                 setManualToken(text);
             }
-        }).catch(err => {
-            console.warn('Could not read clipboard:', err);
-        });
+        }).catch(() => {});
     }, []);
 
     useEffect(() => {
@@ -93,6 +99,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         } else {
             alert("Please enter a valid 32-character Moodle security key.");
         }
+    };
+
+    const handleConnectGoogle = async () => {
+        setIsConnectingGoogle(true);
+        try {
+            await connectGoogleCalendar();
+            setIsGoogleConnected(true);
+            onGoogleConnected?.();
+        } catch (e) {
+            console.error('Google auth failed', e);
+            alert('Could not connect to Google Calendar. Please try again.');
+        } finally {
+            setIsConnectingGoogle(false);
+        }
+    };
+
+    const handleDisconnectGoogle = () => {
+        disconnectGoogleCalendar();
+        setIsGoogleConnected(false);
     };
 
     const openMoodleInNewTab = () => {
@@ -125,11 +150,40 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 </header>
 
                 <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
-
-                    {/* ── Moodle Section ── */}
                     <div className="space-y-4 sm:space-y-6">
                         <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>
 
+                        {/* Google Calendar */}
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${isGoogleConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                <Calendar className={`w-7 h-7 sm:w-8 sm:h-8 ${isGoogleConnected ? 'text-green-400' : 'text-gray-500'}`} />
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Google Calendar</p>
+                                {isGoogleConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                            </div>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connect to see your Google Calendar events in the monthly view.</p>
+                            {!googleEnabled && (
+                                <p className="text-yellow-400 font-bold text-xs mb-3">Set GOOGLE_CLIENT_ID in Netlify env vars to enable this.</p>
+                            )}
+                            {isGoogleConnected ? (
+                                <button
+                                    onClick={handleDisconnectGoogle}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Disconnect
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleConnectGoogle}
+                                    disabled={isConnectingGoogle || !googleEnabled}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500"
+                                >
+                                    {isConnectingGoogle ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
+                                    {isConnectingGoogle ? 'Connecting…' : 'Connect Google Calendar'}
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Moodle */}
                         <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${moodleToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
                             <div className="flex items-center gap-3 sm:gap-4 mb-3">
                                 <GlobeIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${moodleToken ? 'text-green-400' : 'text-gray-500'}`} />
@@ -175,30 +229,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         {isTesting ? <Loader2Icon className="w-4 h-4 animate-spin" /> : null}
                                         {isTesting ? 'Testing...' : 'Save Security Key'}
                                     </button>
+                                    {testResult === 'success' && <p className="text-green-400 text-center font-bold text-sm">Connected!</p>}
                                 </div>
                             )}
                         </div>
                     </div>
 
-                    {/* ── MCP / Claude Integration Section ── */}
+                    {/* MCP / Claude Integration Section */}
                     <div className="space-y-4">
-                        <h3 className="text-purple-400 font-black text-xs uppercase tracking-widest px-2">🤖 Claude AI Integration (MCP)</h3>
+                        <h3 className="text-purple-400 font-black text-xs uppercase tracking-widest px-2">Claude AI Integration (MCP)</h3>
 
                         <div className="bg-gray-900 border-2 border-purple-800 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 space-y-4">
                             <p className="text-gray-300 text-xs font-bold leading-relaxed">
-                                Connect your Second Brain to Claude Desktop or Cowork so you can ask Claude questions about your notes and thoughts directly.
+                                Connect your Second Brain to Claude Desktop so you can ask Claude questions about your notes and thoughts directly.
                             </p>
 
                             <button
                                 onClick={() => setShowMCPSetup(!showMCPSetup)}
                                 className="w-full py-3 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
                             >
-                                {showMCPSetup ? '▲ Hide Setup' : '▼ Show MCP Setup'}
+                                {showMCPSetup ? 'Hide Setup' : 'Show MCP Setup'}
                             </button>
 
                             {showMCPSetup && (
                                 <div className="space-y-4 animate-fade-in">
-                                    {/* Step 1: UID */}
                                     <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
                                         <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 1 — Your Firebase User ID</p>
                                         <p className="text-gray-400 text-xs">Add this as <code className="text-yellow-300">FIREBASE_USER_ID</code> in Netlify env vars.</p>
@@ -210,7 +264,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         </div>
                                     </div>
 
-                                    {/* Step 2: Refresh Token */}
                                     <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
                                         <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 2 — Firebase Refresh Token</p>
                                         <p className="text-gray-400 text-xs">Add this as <code className="text-yellow-300">FIREBASE_REFRESH_TOKEN</code> in Netlify env vars. Keep it secret!</p>
@@ -224,13 +277,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         </div>
                                     </div>
 
-                                    {/* Step 3: MCP API Key */}
                                     <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
                                         <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 3 — Set MCP API Key</p>
                                         <p className="text-gray-400 text-xs">In Netlify → Site Settings → Environment Variables, add <code className="text-yellow-300">MCP_API_KEY</code> with any long random string you choose.</p>
                                     </div>
 
-                                    {/* Step 4: Claude config */}
                                     <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
                                         <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 4 — Claude Desktop Config</p>
                                         <p className="text-gray-400 text-xs">Add this to your <code className="text-yellow-300">claude_desktop_config.json</code> (replace YOUR_MCP_API_KEY):</p>
@@ -246,7 +297,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
                                     <div className="bg-blue-900/30 border border-blue-700 rounded-xl p-3">
                                         <p className="text-blue-300 text-xs font-bold">
-                                            💡 Once connected, you can ask Claude things like: "What did I record last week?" or "What are my pending tasks?" or "Search my notes about the lecture on algorithm complexity."
+                                            Once connected, you can ask Claude: "What did I record last week?" or "What are my pending tasks?" or "Search my notes about algorithm complexity."
                                         </p>
                                     </div>
                                 </div>
@@ -257,7 +308,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 </div>
 
                 <footer className="p-4 sm:p-6 bg-gray-900/50 border-t-4 border-gray-700 text-center">
-                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">Second Brain v2.0 — Secure Sync + MCP</p>
+                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">My Second Brain v2.1</p>
                 </footer>
             </div>
         </div>
