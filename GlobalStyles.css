@@ -1,5 +1,4 @@
-
-/* GlobalStyles.css - High Contrast Design System */
+/* GlobalStyles.css - High Contrast Design System — Responsive Edition */
 
 :root {
   --bg-navy: #001F3F;
@@ -16,19 +15,18 @@ body {
   background-color: var(--bg-navy) !important;
   color: var(--text-white) !important;
   font-family: 'Inter', sans-serif !important;
-  font-weight: 700 !important; /* bold */
-  font-size: 22px !important; /* Base size 22px as requested */
+  font-weight: 700 !important;
+  font-size: 18px !important;
   margin: 0;
   padding: 0;
   overflow: hidden;
   line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
 }
 
-@media (min-width: 768px) {
-  body {
-    font-size: 24px !important;
-  }
-}
+/* Scale font on larger screens */
+@media (min-width: 640px) { body { font-size: 20px !important; } }
+@media (min-width: 1024px) { body { font-size: 22px !important; } }
 
 h1, h2, h3, h4 {
   font-weight: 700 !important;
@@ -37,79 +35,102 @@ h1, h2, h3, h4 {
   margin: 0;
 }
 
-h1 { font-size: 40px !important; }
-h2 { font-size: 32px !important; }
-h3 { font-size: 28px !important; }
+/* Mobile-first heading scale */
+h1 { font-size: clamp(22px, 5vw, 48px) !important; }
+h2 { font-size: clamp(18px, 4vw, 36px) !important; }
+h3 { font-size: clamp(16px, 3vw, 28px) !important; }
 
-@media (min-width: 768px) {
-  h1 { font-size: 56px !important; }
-  h2 { font-size: 40px !important; }
-  h3 { font-size: 32px !important; }
-}
-
-/* Interactive Elements */
+/* ─── Buttons ────────────────────────────────────────────────
+   min-height uses clamp so touch targets stay accessible on
+   small phones but scale up on tablets/desktop.
+   Buttons that should be smaller (icon-only) use .btn-icon.
+────────────────────────────────────────────────────────────── */
 button {
-  min-height: 72px !important; 
+  min-height: clamp(44px, 9vw, 72px) !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.1em !important;
   border-radius: 16px !important;
-  transition: all 0.2s ease !important;
-  border: 4px solid var(--accent-blue) !important;
+  transition: transform 0.15s ease, background 0.15s ease !important;
+  border: 3px solid var(--accent-blue) !important;
 }
 
 @media (min-width: 768px) {
-  button {
-    min-height: 88px !important;
-  }
+  button { min-height: 72px !important; border-width: 4px !important; }
+}
+@media (min-width: 1280px) {
+  button { min-height: 80px !important; }
 }
 
-button:active {
-  transform: scale(0.95) !important;
+/* Icon-only buttons in the header — let them shrink naturally */
+button.btn-icon {
+  min-height: unset !important;
+  border: none !important;
 }
+
+button:active { transform: scale(0.95) !important; }
 
 /* Cards */
 .card-brutal {
-  border: 4px solid var(--accent-blue) !important;
-  border-radius: 24px !important;
-  padding: 24px !important;
+  border: 3px solid var(--accent-blue) !important;
+  border-radius: 20px !important;
+  padding: 16px !important;
   background-color: transparent !important;
+}
+@media (min-width: 768px) {
+  .card-brutal {
+    border-width: 4px !important;
+    border-radius: 24px !important;
+    padding: 24px !important;
+  }
 }
 
 /* Navigation */
 .nav-bar {
   background-color: var(--bg-navy) !important;
-  border-top: 4px solid var(--accent-blue) !important;
-  height: 120px !important;
+  border-top: 3px solid var(--accent-blue) !important;
+}
+@media (min-width: 768px) {
+  .nav-bar { border-top-width: 4px !important; }
 }
 
 /* Inputs */
 input, textarea {
   background-color: transparent !important;
-  border: 4px solid var(--accent-blue) !important;
+  border: 3px solid var(--accent-blue) !important;
   color: var(--text-white) !important;
-  padding: 24px !important;
-  font-size: 24px !important;
+  padding: 16px !important;
+  font-size: clamp(16px, 3vw, 22px) !important;
   font-weight: 700 !important;
-  border-radius: 16px !important;
+  border-radius: 14px !important;
   width: 100% !important;
+}
+@media (min-width: 768px) {
+  input, textarea {
+    border-width: 4px !important;
+    padding: 20px !important;
+    border-radius: 16px !important;
+  }
 }
 
 input:focus {
   outline: none !important;
-  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.35) !important;
 }
 
 /* RTL Support */
-[dir="rtl"] {
-  text-align: right !important;
-}
+[dir="rtl"] { text-align: right !important; }
 
 /* Scrollbar */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
+.scrollbar-hide::-webkit-scrollbar { display: none; }
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Landscape compact mode – reduce chrome when phone is sideways */
+@media (max-height: 500px) and (orientation: landscape) {
+  body { font-size: 15px !important; }
+  button { min-height: 40px !important; border-width: 2px !important; }
+  h1 { font-size: 18px !important; }
 }
