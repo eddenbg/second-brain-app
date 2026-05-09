@@ -2,19 +2,32 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <!-- viewport-fit=cover enables safe-area-inset on notched phones -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>My Second Brain</title>
+
+    <!-- PWA / install -->
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/svg+xml" href="icon.svg">
-    <link rel="apple-touch-icon" href="icon.svg">
-    <meta name="theme-color" content="#0b0f1a">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="application-name" content="Second Brain">
-    <meta name="apple-mobile-web-app-title" content="Second Brain">
-    <link rel="icon" sizes="192x192" href="icon.svg">
+    <meta name="theme-color" content="#001F3F">
+
+    <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <!-- Tailwind CSS (provides all layout and utility styles) -->
+    <meta name="apple-mobile-web-app-title" content="Second Brain">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <!-- Android / Chrome -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Second Brain">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+
+    <!-- MS tiles -->
+    <meta name="msapplication-TileColor" content="#001F3F">
+    <meta name="msapplication-TileImage" content="icon-192.png">
+
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -26,12 +39,14 @@
         }
       }
     </script>
+
     <style>
+        /* CSS custom properties for safe-area insets */
         :root {
-            --sat: env(safe-area-inset-top);
-            --sar: env(safe-area-inset-right);
-            --sab: env(safe-area-inset-bottom);
-            --sal: env(safe-area-inset-left);
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
         }
         html, body, #root {
             height: 100%;
@@ -39,9 +54,13 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background-color: #0b0f1a;
-            -webkit-tap-highlight-color: transparent;
+            background-color: #001F3F;
+            /* Prevent iOS overscroll bounce */
+            overscroll-behavior: none;
+            -webkit-overflow-scrolling: touch;
         }
+        /* Disable iOS text size adjustment */
+        html { -webkit-text-size-adjust: 100%; }
     </style>
 </head>
 <body>
