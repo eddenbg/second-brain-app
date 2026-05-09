@@ -3,6 +3,7 @@ import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
 } from './Icons';
 import { testMoodleConnection } from '../services/moodleService';
+import { auth } from '../utils/firebase';
 
 interface SettingsModalProps {
     onClose: () => void;
@@ -10,10 +11,50 @@ interface SettingsModalProps {
     onSaveMoodleToken: (token: string) => void;
 }
 
+const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
+    return (
+        <button
+            onClick={handleCopy}
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-black uppercase tracking-widest transition-all active:scale-95 flex-shrink-0"
+            style={{ minHeight: 'unset' }}
+        >
+            {copied ? '✅ Copied!' : label}
+        </button>
+    );
+};
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken }) => {
     const [manualToken, setManualToken] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+    const [firebaseUID, setFirebaseUID] = useState<string>('');
+    const [refreshToken, setRefreshToken] = useState<string>('');
+    const [showMCPSetup, setShowMCPSetup] = useState(false);
+
+    // Load Firebase user info
+    useEffect(() => {
+        if (auth?.currentUser) {
+            setFirebaseUID(auth.currentUser.uid);
+            // refreshToken is available on the Firebase user object
+            const rt = (auth.currentUser as any).stsTokenManager?.refreshToken ?? '';
+            setRefreshToken(rt);
+        }
+        const unsubscribe = auth?.onAuthStateChanged?.((user) => {
+            if (user) {
+                setFirebaseUID(user.uid);
+                const rt = (user as any).stsTokenManager?.refreshToken ?? '';
+                setRefreshToken(rt);
+            }
+        });
+        return () => unsubscribe?.();
+    }, []);
 
     const checkClipboard = useCallback(() => {
         navigator.clipboard.readText().then(text => {
@@ -27,7 +68,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
     useEffect(() => {
         if (!moodleToken) {
-            checkClipboard(); // on mount
+            checkClipboard();
             window.addEventListener('focus', checkClipboard);
             return () => window.removeEventListener('focus', checkClipboard);
         }
@@ -56,67 +97,80 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
     const openMoodleInNewTab = () => {
         window.open('https://online.dyellin.ac.il/user/preferences.php', '_blank', 'noopener,noreferrer');
+    };
+
+    const mcpConfigSnippet = `{
+  "mcpServers": {
+    "second-brain": {
+      "url": "https://eddenbg-second-brain.netlify.app/.netlify/functions/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
+      }
     }
+  }
+}`;
 
     return (
-        <div className="fixed inset-0 bg-black/95 z-[200] flex flex-col p-4 animate-fade-in" style={{ paddingTop: 'var(--sat)' }}>
-            <div className="bg-gray-800 w-full max-w-2xl mx-auto my-auto rounded-[3rem] border-4 border-gray-700 flex flex-col max-h-[90vh] overflow-hidden shadow-2xl">
-                <header className="p-8 border-b-4 border-gray-700 flex justify-between items-center bg-gray-900/50">
-                    <div className="flex items-center gap-4">
-                        <BrainCircuitIcon className="w-10 h-10 text-blue-500" />
-                        <h2 className="text-2xl font-black text-white uppercase tracking-tighter">Settings</h2>
+        <div className="fixed inset-0 bg-black/95 z-[200] flex flex-col p-3 sm:p-4 animate-fade-in"
+             style={{ paddingTop: 'max(var(--sat), 12px)' }}>
+            <div className="bg-gray-800 w-full max-w-2xl mx-auto my-auto rounded-[2rem] sm:rounded-[3rem] border-4 border-gray-700 flex flex-col max-h-[92vh] overflow-hidden shadow-2xl">
+                <header className="p-5 sm:p-8 border-b-4 border-gray-700 flex justify-between items-center bg-gray-900/50">
+                    <div className="flex items-center gap-3 sm:gap-4">
+                        <BrainCircuitIcon className="w-8 h-8 sm:w-10 sm:h-10 text-blue-500" />
+                        <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tighter">Settings</h2>
                     </div>
-                    <button onClick={onClose} className="p-4 bg-gray-700 rounded-2xl active:scale-90 transition-transform"><XIcon className="w-8 h-8 text-white"/></button>
+                    <button onClick={onClose} className="p-3 sm:p-4 bg-gray-700 rounded-xl sm:rounded-2xl active:scale-90 transition-transform">
+                        <XIcon className="w-6 h-6 sm:w-8 sm:h-8 text-white"/>
+                    </button>
                 </header>
 
-                <div className="flex-grow overflow-y-auto p-8 space-y-8">
-                    <div className="space-y-6">
-                        <h3 className="text-blue-400 font-black text-sm uppercase tracking-widest px-2">External Connections</h3>
-                        
-                        <div className={`p-6 rounded-[2rem] border-2 transition-all ${moodleToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
-                            <div className="flex items-center gap-4 mb-4">
-                                <GlobeIcon className={`w-8 h-8 ${moodleToken ? 'text-green-400' : 'text-gray-500'}`} />
-                                <p className="text-lg font-black text-white uppercase">Moodle (Dyellin)</p>
+                <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
+
+                    {/* ── Moodle Section ── */}
+                    <div className="space-y-4 sm:space-y-6">
+                        <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>
+
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${moodleToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                <GlobeIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${moodleToken ? 'text-green-400' : 'text-gray-500'}`} />
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Moodle (Dyellin)</p>
                                 {moodleToken && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
                             </div>
-                            <p className="text-gray-400 font-bold text-xs mb-5 leading-relaxed">Connect to import course materials and sync your college schedule automatically.</p>
-                            
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connect to import course materials and sync your college schedule automatically.</p>
+
                             {moodleToken ? (
-                                <button 
+                                <button
                                     onClick={() => onSaveMoodleToken('')}
-                                    className="w-full py-4 rounded-2xl font-black text-base uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
                                 >
                                     Disconnect
                                 </button>
                             ) : (
-                                <div className="space-y-4 mt-4 bg-gray-900/50 p-4 rounded-xl border border-gray-700 animate-fade-in">
+                                <div className="space-y-3 mt-3 bg-gray-900/50 p-4 rounded-xl border border-gray-700 animate-fade-in">
                                     <div className="space-y-3 text-sm text-gray-300 font-medium">
                                         <p className="font-black text-gray-400 text-xs uppercase tracking-widest">איך מתחברים:</p>
-                                        <ol dir="rtl" className="list-decimal list-inside space-y-2.5 bg-gray-800 p-4 rounded-lg border border-gray-600 text-xs leading-relaxed text-right">
+                                        <ol dir="rtl" className="list-decimal list-inside space-y-2 bg-gray-800 p-3 rounded-lg border border-gray-600 text-xs leading-relaxed text-right">
                                             <li>לחץ/י על השם שלך (בצד שמאל למעלה במודל), ואז לחץ/י על <strong className="text-white">"העדפות"</strong>.</li>
-                                            <li>בדף ההעדפות, לחץ/י על הקישור שנקרא <strong className="text-white">"מפתחות אבטחה"</strong>.</li>
-                                            <li>גלול/י לתחתית העמוד הבא. תראה/י מפתח שכבר קיים.</li>
-                                            <li>העתק/י את המפתח שנמצא תחת השירות שנקרא <strong className="text-white">"Moodle Mobile additional features service"</strong>. הוא עשוי להיות ליד תווית "RSS". <strong>אל תיצור/י מפתח חדש</strong>.</li>
-                                            <li>חזור/י לכאן. ננסה להדביק אותו אוטומטית, אבל אפשר גם להדביק אותו ידנית למטה.</li>
+                                            <li>בדף ההעדפות, לחץ/י על <strong className="text-white">"מפתחות אבטחה"</strong>.</li>
+                                            <li>גלול/י לתחתית. העתק/י את המפתח תחת <strong className="text-white">"Moodle Mobile additional features service"</strong>.</li>
+                                            <li>חזור/י לכאן והדבק/י למטה.</li>
                                         </ol>
                                     </div>
-
-                                    <button onClick={openMoodleInNewTab} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 text-sm uppercase">
+                                    <button onClick={openMoodleInNewTab} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 text-xs uppercase">
                                         <LinkIcon className="w-4 h-4" /> Open Moodle
                                     </button>
-                                    
                                     <input
                                         type="text"
                                         value={manualToken}
                                         onChange={(e) => setManualToken(e.target.value)}
                                         placeholder="הדבק/י את המפתח באורך 32 תווים כאן"
-                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white font-mono text-center"
+                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white font-mono text-center text-sm"
                                         aria-label="Moodle Security Key"
                                     />
-                                    <button 
-                                        onClick={handleSaveManualToken} 
+                                    <button
+                                        onClick={handleSaveManualToken}
                                         disabled={isTesting}
-                                        className={`w-full py-3 rounded-lg font-bold text-sm uppercase flex items-center justify-center gap-2 ${isTesting ? 'bg-gray-600' : 'bg-green-600'} text-white`}
+                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase flex items-center justify-center gap-2 ${isTesting ? 'bg-gray-600' : 'bg-green-600'} text-white`}
                                     >
                                         {isTesting ? <Loader2Icon className="w-4 h-4 animate-spin" /> : null}
                                         {isTesting ? 'Testing...' : 'Save Security Key'}
@@ -124,12 +178,86 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </div>
                             )}
                         </div>
-
                     </div>
+
+                    {/* ── MCP / Claude Integration Section ── */}
+                    <div className="space-y-4">
+                        <h3 className="text-purple-400 font-black text-xs uppercase tracking-widest px-2">🤖 Claude AI Integration (MCP)</h3>
+
+                        <div className="bg-gray-900 border-2 border-purple-800 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 space-y-4">
+                            <p className="text-gray-300 text-xs font-bold leading-relaxed">
+                                Connect your Second Brain to Claude Desktop or Cowork so you can ask Claude questions about your notes and thoughts directly.
+                            </p>
+
+                            <button
+                                onClick={() => setShowMCPSetup(!showMCPSetup)}
+                                className="w-full py-3 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
+                            >
+                                {showMCPSetup ? '▲ Hide Setup' : '▼ Show MCP Setup'}
+                            </button>
+
+                            {showMCPSetup && (
+                                <div className="space-y-4 animate-fade-in">
+                                    {/* Step 1: UID */}
+                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
+                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 1 — Your Firebase User ID</p>
+                                        <p className="text-gray-400 text-xs">Add this as <code className="text-yellow-300">FIREBASE_USER_ID</code> in Netlify env vars.</p>
+                                        <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-3 border border-gray-600">
+                                            <code className="text-yellow-300 text-xs flex-1 truncate font-mono">
+                                                {firebaseUID || 'Loading... (open this after signing in)'}
+                                            </code>
+                                            {firebaseUID && <CopyButton text={firebaseUID} label="Copy" />}
+                                        </div>
+                                    </div>
+
+                                    {/* Step 2: Refresh Token */}
+                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
+                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 2 — Firebase Refresh Token</p>
+                                        <p className="text-gray-400 text-xs">Add this as <code className="text-yellow-300">FIREBASE_REFRESH_TOKEN</code> in Netlify env vars. Keep it secret!</p>
+                                        <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-3 border border-gray-600">
+                                            <code className="text-yellow-300 text-xs flex-1 font-mono" style={{ wordBreak: 'break-all' }}>
+                                                {refreshToken
+                                                    ? `${refreshToken.slice(0, 40)}...`
+                                                    : 'Not available (sign in first)'}
+                                            </code>
+                                            {refreshToken && <CopyButton text={refreshToken} label="Copy" />}
+                                        </div>
+                                    </div>
+
+                                    {/* Step 3: MCP API Key */}
+                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
+                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 3 — Set MCP API Key</p>
+                                        <p className="text-gray-400 text-xs">In Netlify → Site Settings → Environment Variables, add <code className="text-yellow-300">MCP_API_KEY</code> with any long random string you choose.</p>
+                                    </div>
+
+                                    {/* Step 4: Claude config */}
+                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
+                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 4 — Claude Desktop Config</p>
+                                        <p className="text-gray-400 text-xs">Add this to your <code className="text-yellow-300">claude_desktop_config.json</code> (replace YOUR_MCP_API_KEY):</p>
+                                        <div className="relative">
+                                            <pre className="bg-gray-900 rounded-lg p-3 text-xs text-green-300 font-mono overflow-x-auto leading-relaxed whitespace-pre-wrap">
+                                                {mcpConfigSnippet}
+                                            </pre>
+                                            <div className="mt-2">
+                                                <CopyButton text={mcpConfigSnippet} label="Copy Config" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-blue-900/30 border border-blue-700 rounded-xl p-3">
+                                        <p className="text-blue-300 text-xs font-bold">
+                                            💡 Once connected, you can ask Claude things like: "What did I record last week?" or "What are my pending tasks?" or "Search my notes about the lecture on algorithm complexity."
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                 </div>
-                
-                <footer className="p-6 bg-gray-900/50 border-t-4 border-gray-700 text-center">
-                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">Second Brain v2.0 - Secure Sync</p>
+
+                <footer className="p-4 sm:p-6 bg-gray-900/50 border-t-4 border-gray-700 text-center">
+                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">Second Brain v2.0 — Secure Sync + MCP</p>
                 </footer>
             </div>
         </div>
