@@ -15,6 +15,8 @@ import AddWebMemoryModal from './AddWebMemoryModal';
 import { generateSpeechFromText } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
 import { getLocationName } from '../utils/location';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+import { PlusCircleIcon } from './Icons';
 
 interface PersonalViewProps {
     memories: AnyMemory[];
@@ -100,6 +102,9 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 }) => {
     const [subView, setSubView] = useState<SubView>('hub');
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
+    const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
+    const { isInstallable, installApp } = useInstallPrompt();
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
     const voiceNotes = useMemo(() => memories.filter(m => m.type === 'voice'), [memories]);
     const physicalItems = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
@@ -138,6 +143,41 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     if (subView === 'hub') {
         return (
             <div className="flex flex-col gap-6">
+                {/* Install App Banner */}
+                {!isStandalone && !installDismissed && (
+                    <div className={`w-full rounded-3xl p-5 relative flex flex-col gap-3 ${isInstallable ? 'bg-blue-600' : 'bg-[#0a3060]  border-2 border-blue-500'}`}>
+                        <button
+                            onClick={() => { localStorage.setItem('install_card_dismissed', '1'); setInstallDismissed(true); }}
+                            className="absolute top-3 right-3 p-2 text-white/60 active:text-white"
+                            aria-label="Dismiss"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                        <div className="flex items-center gap-3">
+                            <PlusCircleIcon className="w-8 h-8 text-white flex-shrink-0" />
+                            <span className="text-lg font-black text-white uppercase tracking-tight">Install App</span>
+                        </div>
+                        <p className="text-blue-100 text-sm font-bold leading-snug">
+                            Unlock fullscreen mode and save links from Chrome's share menu.
+                        </p>
+                        {isInstallable ? (
+                            <button
+                                onClick={installApp}
+                                className="w-full py-4 bg-white text-blue-600 rounded-2xl font-black text-base uppercase tracking-wide shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"
+                            >
+                                <PlusCircleIcon className="w-6 h-6" />
+                                Install Now
+                            </button>
+                        ) : (
+                            <div className="bg-white/10 rounded-2xl p-4 space-y-1">
+                                <p className="text-white font-black text-xs uppercase tracking-widest mb-2">How to install:</p>
+                                <p className="text-blue-100 text-sm font-bold">In Chrome tap <strong className="text-white">⋮</strong> → <strong className="text-white">Add to Home Screen</strong> → Install</p>
+                                <p className="text-blue-200/70 text-xs mt-1">Then reopen from your home screen icon.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* Big Mic CTA */}
                 <button
                     onClick={() => navigateTo('recording')}
