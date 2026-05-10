@@ -160,34 +160,61 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
                 <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
 
-                    {/* Install / Reinstall App */}
-                    {(isInstallable || isStandalone) && (
-                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 ${isStandalone ? 'bg-green-900/20 border-green-700' : 'bg-blue-900/30 border-blue-600'}`}>
-                            <div className="flex items-center gap-3 mb-3">
-                                <PlusCircleIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${isStandalone ? 'text-green-400' : 'text-blue-400'}`} />
-                                <p className="text-base sm:text-lg font-black text-white uppercase">Install App</p>
-                                {isStandalone && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Installed</div>}
-                            </div>
-                            {isStandalone ? (
-                                <p className="text-gray-400 font-bold text-xs leading-relaxed">
-                                    App is installed. To enable fullscreen, remove it from your home screen and tap Install below after reopening in the browser.
-                                </p>
-                            ) : (
-                                <>
-                                    <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                        Install for the full experience — fullscreen, share target, and offline use.
-                                    </p>
-                                    <button
-                                        onClick={installApp}
-                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-blue-600 text-white"
-                                    >
-                                        <PlusCircleIcon className="w-6 h-6" />
-                                        Install App
-                                    </button>
-                                </>
-                            )}
+                    {/* Install / Fullscreen — always visible */}
+                    <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 ${isStandalone ? 'bg-green-900/20 border-green-700' : 'bg-blue-900/30 border-blue-600'}`}>
+                        <div className="flex items-center gap-3 mb-3">
+                            <PlusCircleIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${isStandalone ? 'text-green-400' : 'text-blue-400'}`} />
+                            <p className="text-base sm:text-lg font-black text-white uppercase">Install App</p>
+                            {isStandalone && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Installed ✓</div>}
                         </div>
-                    )}
+                        {isStandalone ? (
+                            <>
+                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                    App is installed. Tap below to go fullscreen (hides the status bar).
+                                </p>
+                                <button
+                                    onClick={() => {
+                                        document.documentElement.requestFullscreen?.().catch(() => {});
+                                        onClose();
+                                    }}
+                                    className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-green-700 text-white"
+                                >
+                                    Enter Fullscreen
+                                </button>
+                                <p className="text-gray-500 font-bold text-[10px] mt-3 leading-relaxed text-center">
+                                    Not in the share menu? Remove the app from your home screen, open in Chrome, and tap Install below to get a proper PWA install.
+                                </p>
+                            </>
+                        ) : isInstallable ? (
+                            <>
+                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                    Install for fullscreen, share target (save links from Chrome), and offline use.
+                                </p>
+                                <button
+                                    onClick={installApp}
+                                    className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-blue-600 text-white"
+                                >
+                                    <PlusCircleIcon className="w-6 h-6" />
+                                    Install App
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-gray-400 font-bold text-xs mb-3 leading-relaxed">
+                                    Install for fullscreen, share target (save links from Chrome), and offline use.
+                                </p>
+                                <div className="bg-gray-800 rounded-xl p-4 border border-gray-600">
+                                    <p className="text-yellow-400 font-black text-xs uppercase tracking-widest mb-2">How to install</p>
+                                    <p className="text-gray-300 text-xs leading-relaxed">
+                                        Tap Chrome's menu <strong className="text-white">⋮</strong> → <strong className="text-white">"Add to Home Screen"</strong> → Install. Then reopen the app from your home screen.
+                                    </p>
+                                    <p className="text-gray-500 text-[10px] mt-2 leading-relaxed">
+                                        Already added but don't see it in the share menu? Remove it and reinstall — the share target only works with a proper PWA install.
+                                    </p>
+                                </div>
+                            </>
+                        )}
+                    </div>
 
                     <div className="space-y-4 sm:space-y-6">
                         <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>

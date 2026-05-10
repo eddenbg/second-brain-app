@@ -63,18 +63,6 @@ function App() {
   // Load Google events on mount if already connected
   useEffect(() => { loadGoogleEvents(); }, [loadGoogleEvents]);
 
-  // Request fullscreen on first interaction (maximises immersion in PWA mode)
-  useEffect(() => {
-    const requestFS = () => {
-      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    };
-    requestFS();
-    document.addEventListener('click', requestFS, { once: true });
-    return () => document.removeEventListener('click', requestFS);
-  }, []);
-
   useEffect(() => {
     const handlePopState = () => {
       if (showSettings) setShowSettings(false);
