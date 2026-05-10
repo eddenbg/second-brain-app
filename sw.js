@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v17';
+const CACHE_NAME = 'second-brain-v18';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -31,17 +31,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  
-  // Handle shared intent navigation
-  if (url.searchParams.has('shared') || url.searchParams.has('url') || url.searchParams.has('text') || url.searchParams.has('title')) {
-      // Redirect to the root with the search params
-      event.respondWith(
-          Response.redirect('./' + url.search, 303)
-      );
-      return;
-  }
-
   event.respondWith(
     caches.match(event.request).then(response => {
       return response || fetch(event.request);
