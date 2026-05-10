@@ -4,19 +4,18 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './GlobalStyles.css';
 
-// Capture beforeinstallprompt before React mounts to avoid missing the event
-let _deferredInstallPrompt: Event | null = null;
+// Capture beforeinstallprompt as early as possible (before React mounts)
+// Stored on window to avoid circular module imports
+(window as any).__installPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
-  _deferredInstallPrompt = e;
+  (window as any).__installPrompt = e;
   window.dispatchEvent(new CustomEvent('installpromptready'));
 });
-export const getInstallPrompt = () => _deferredInstallPrompt;
-export const clearInstallPrompt = () => { _deferredInstallPrompt = null; };
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+  throw new Error('Could not find root element to mount to');
 }
 
 const root = ReactDOM.createRoot(rootElement);

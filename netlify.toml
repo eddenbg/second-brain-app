@@ -1,19 +1,42 @@
 [build]
   command = "npm run build"
-    publish = "dist"
-      functions = "netlify/functions"
+  publish = "dist"
+  functions = "netlify/functions"
 
-      [build.environment]
-        NODE_VERSION = "20"
-          SECRETS_SCAN_OMIT_KEYS = "FIREBASE_AUTH_DOMAIN,FIREBASE_STORAGE_BUCKET,FIREBASE_PROJECT_ID,FIREBASE_API_KEY,FIREBASE_APP_ID,FIREBASE_MESSAGING_SENDER_ID"
+[build.environment]
+  NODE_VERSION = "20"
+  SECRETS_SCAN_OMIT_KEYS = "FIREBASE_AUTH_DOMAIN,FIREBASE_STORAGE_BUCKET,FIREBASE_PROJECT_ID,FIREBASE_API_KEY,FIREBASE_APP_ID,FIREBASE_MESSAGING_SENDER_ID"
 
-          [functions]
-            node_bundler = "esbuild"
-              external_node_modules = ["@netlify/blobs"]
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@netlify/blobs"]
 
-              # Serve the SPA for all routes (handles client-side routing)
-              [[redirects]]
-                from = "/*"
-                  to = "/index.html"
-                    status = 200
-                    
+# Correct MIME types for PWA files
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Content-Type = "application/javascript"
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/icon-192.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/icon-512.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+# SPA fallback — only applies when no real file matches
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false

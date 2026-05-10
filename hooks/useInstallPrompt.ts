@@ -1,6 +1,5 @@
 
 import { useState, useEffect } from 'react';
-import { getInstallPrompt, clearInstallPrompt } from '../index';
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
@@ -11,27 +10,25 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+const getPrompt = (): BeforeInstallPromptEvent | null =>
+  (window as any).__installPrompt ?? null;
+
 export const useInstallPrompt = () => {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(
-    () => getInstallPrompt() as BeforeInstallPromptEvent | null
-  );
-  const [isInstallable, setIsInstallable] = useState(
-    () => getInstallPrompt() !== null
-  );
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(getPrompt);
+  const [isInstallable, setIsInstallable] = useState(() => getPrompt() !== null);
 
   useEffect(() => {
-    // Pick up prompt if it was already captured before React mounted
-    const existing = getInstallPrompt();
-    if (existing) {
-      setDeferredPrompt(existing as BeforeInstallPromptEvent);
+    // Pick up prompt captured before React mounted
+    const existing = getPrompt();
+    if (existing && !deferredPrompt) {
+      setDeferredPrompt(existing);
       setIsInstallable(true);
     }
 
-    // Also listen for future firings (e.g. after dismissal + re-visit)
     const onReady = () => {
-      const prompt = getInstallPrompt();
+      const prompt = getPrompt();
       if (prompt) {
-        setDeferredPrompt(prompt as BeforeInstallPromptEvent);
+        setDeferredPrompt(prompt);
         setIsInstallable(true);
       }
     };
@@ -41,12 +38,12 @@ export const useInstallPrompt = () => {
 
   const installApp = async () => {
     if (!deferredPrompt) return;
-    (deferredPrompt as BeforeInstallPromptEvent).prompt();
-    const { outcome } = await (deferredPrompt as BeforeInstallPromptEvent).userChoice;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
-      setIsInstallable(false);
+      (window as any).__installPrompt = null;
       setDeferredPrompt(null);
-      clearInstallPrompt();
+      setIsInstallable(false);
     }
   };
 
