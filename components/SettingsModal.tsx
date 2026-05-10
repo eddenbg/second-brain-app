@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-    XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
+    XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon, PlusCircleIcon
 } from './Icons';
 import { Calendar } from 'lucide-react';
 import { testMoodleConnection } from '../services/moodleService';
@@ -12,6 +12,9 @@ import {
     getStoredGoogleClientId
 } from '../services/googleCalendarService';
 import { auth } from '../utils/firebase';
+import { useInstallPrompt } from '../hooks/useInstallPrompt';
+
+declare const __BUILD_DATE__: string;
 
 interface SettingsModalProps {
     onClose: () => void;
@@ -40,6 +43,9 @@ const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) 
 };
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected }) => {
+    const { isInstallable, installApp } = useInstallPrompt();
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
+
     const [manualToken, setManualToken] = useState('');
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
@@ -153,6 +159,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 </header>
 
                 <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
+
+                    {/* Install / Reinstall App */}
+                    {(isInstallable || isStandalone) && (
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 ${isStandalone ? 'bg-green-900/20 border-green-700' : 'bg-blue-900/30 border-blue-600'}`}>
+                            <div className="flex items-center gap-3 mb-3">
+                                <PlusCircleIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${isStandalone ? 'text-green-400' : 'text-blue-400'}`} />
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Install App</p>
+                                {isStandalone && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Installed</div>}
+                            </div>
+                            {isStandalone ? (
+                                <p className="text-gray-400 font-bold text-xs leading-relaxed">
+                                    App is installed. To enable fullscreen, remove it from your home screen and tap Install below after reopening in the browser.
+                                </p>
+                            ) : (
+                                <>
+                                    <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                        Install for the full experience — fullscreen, share target, and offline use.
+                                    </p>
+                                    <button
+                                        onClick={installApp}
+                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-blue-600 text-white"
+                                    >
+                                        <PlusCircleIcon className="w-6 h-6" />
+                                        Install App
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+
                     <div className="space-y-4 sm:space-y-6">
                         <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>
 
@@ -344,7 +380,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 </div>
 
                 <footer className="p-4 sm:p-6 bg-gray-900/50 border-t-4 border-gray-700 text-center">
-                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">My Second Brain v2.1</p>
+                    <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">
+                        My Second Brain v2.2 · deployed {typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '—'}
+                    </p>
                 </footer>
             </div>
         </div>

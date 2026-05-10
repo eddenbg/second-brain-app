@@ -8,6 +8,7 @@ export default defineConfig({
   define: {
     'process.env.API_KEY': JSON.stringify(process.env.API_KEY),
     'process.env.GOOGLE_CLIENT_ID': JSON.stringify(process.env.GOOGLE_CLIENT_ID),
+    '__BUILD_DATE__': JSON.stringify(new Date().toISOString().slice(0, 10)),
   },
   server: {
     port: 3000,
