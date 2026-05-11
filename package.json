@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.js",
-    "build": "npx vite build && cp icon-192.png icon-512.png dist/",
+    "build": "python3 generate-icons.py && npx vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
   },
