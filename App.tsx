@@ -34,6 +34,13 @@ function App() {
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
+  const [webCategories, setWebCategories] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('web_categories') || '[]'); } catch { return []; }
+  });
+  const updateWebCategories = useCallback((cats: string[]) => {
+    setWebCategories(cats);
+    localStorage.setItem('web_categories', JSON.stringify(cats));
+  }, []);
 
   const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
@@ -127,7 +134,7 @@ function App() {
   const handleProcessShare = useCallback(async (url: string, title: string, text: string) => {
     setIsProcessingShare(true);
     try {
-      const analysis = await processSharedUrl(url, title, text);
+      const analysis = await processSharedUrl(url, title, text, webCategories);
       await addMemory({
         type: 'web',
         url: url,
@@ -135,7 +142,7 @@ function App() {
         content: analysis.summary,
         contentType: analysis.type,
         category: 'personal',
-        tags: analysis.takeaways
+        tags: analysis.suggestedTags.length > 0 ? analysis.suggestedTags : analysis.takeaways
       } as Omit<WebMemory, 'id' | 'date'>);
       setView('personal');
     } catch (error) {
@@ -206,6 +213,8 @@ function App() {
             onAddTask={addTask}
             onUpdateTask={updateTask}
             onDeleteTask={deleteTask}
+            webCategories={webCategories}
+            onUpdateWebCategories={updateWebCategories}
           />
         );
       case 'college':

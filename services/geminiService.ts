@@ -182,18 +182,19 @@ export async function analyzeVoiceNote(content: string): Promise<{ title: string
     } catch (error) { return { title: "Voice Note", actionItems: [] }; }
 }
 
-export async function processSharedUrl(url: string, title: string, text: string): Promise<{ 
-    title: string; 
-    summary: string; 
-    type: 'Article' | 'Video'; 
-    takeaways: string[] 
-}> {
+export async function processSharedUrl(
+    url: string, title: string, text: string,
+    availableTags?: string[]
+): Promise<{ title: string; summary: string; type: 'Article' | 'Video'; takeaways: string[]; suggestedTags: string[] }> {
     const ai = getGeminiInstance();
     if (!ai) throw new Error("AI Unavailable");
     try {
+        const tagInstruction = availableTags && availableTags.length > 0
+            ? ` Also pick which of these tags apply (can be multiple, or empty array if none fit): ${JSON.stringify(availableTags)}.`
+            : '';
         const response = await ai.models.generateContent({
             model,
-            contents: `URL: ${url}. Analyze and return JSON with summary and takeaways.`,
+            contents: `URL: ${url}. Title: "${title}". Analyze and return JSON with summary and takeaways.${tagInstruction}`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -202,12 +203,18 @@ export async function processSharedUrl(url: string, title: string, text: string)
                         title: { type: Type.STRING },
                         summary: { type: Type.STRING },
                         type: { type: Type.STRING, enum: ['Article', 'Video'] },
-                        takeaways: { type: Type.ARRAY, items: { type: Type.STRING } }
+                        takeaways: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        suggestedTags: { type: Type.ARRAY, items: { type: Type.STRING } }
                     },
-                    required: ["title", "summary", "type", "takeaways"]
+                    required: ["title", "summary", "type", "takeaways", "suggestedTags"]
                 }
             }
         });
-        return JSON.parse(response.text || "{}");
-    } catch (error) { return { title: title || "Shared Link", summary: text, type: 'Article', takeaways: [] }; }
+        const result = JSON.parse(response.text || "{}");
+        // Only keep tags that are actually in the available list
+        if (availableTags && availableTags.length > 0) {
+            result.suggestedTags = (result.suggestedTags || []).filter((t: string) => availableTags.includes(t));
+        }
+        return { ...result, suggestedTags: result.suggestedTags || [] };
+    } catch (error) { return { title: title || "Shared Link", summary: text, type: 'Article', takeaways: [], suggestedTags: [] }; }
 }

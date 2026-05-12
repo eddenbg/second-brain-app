@@ -28,6 +28,8 @@ interface PersonalViewProps {
     onAddTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
     onUpdateTask: (id: string, updates: Partial<Task>) => void;
     onDeleteTask: (id: string) => void;
+    webCategories: string[];
+    onUpdateWebCategories: (cats: string[]) => void;
 }
 
 type SubView =
@@ -98,13 +100,20 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
 const PersonalView: React.FC<PersonalViewProps> = ({
     memories, tasks,
     onSaveMemory, onDeleteMemory, onUpdateMemory, bulkDeleteMemories,
-    onAddTask, onUpdateTask, onDeleteTask
+    onAddTask, onUpdateTask, onDeleteTask,
+    webCategories, onUpdateWebCategories
 }) => {
     const [subView, setSubView] = useState<SubView>('hub');
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
     const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
     const { isInstallable, installApp } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
+
+    // Web clips state
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+    const [filterTag, setFilterTag] = useState<string | null>(null);
+    const [showTagManager, setShowTagManager] = useState(false);
+    const [newTagInput, setNewTagInput] = useState('');
 
     const voiceNotes = useMemo(() => memories.filter(m => m.type === 'voice'), [memories]);
     const physicalItems = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
@@ -423,43 +432,146 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
     // ── Web Clips list ───────────────────────────────────────────
     if (subView === 'webClips') {
+        const sortedClips = [...webClips].sort((a, b) => {
+            const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
+            return sortOrder === 'newest' ? -diff : diff;
+        });
+        const filteredClips = filterTag
+            ? sortedClips.filter(m => m.tags?.includes(filterTag))
+            : sortedClips;
+
+        const addTag = () => {
+            const t = newTagInput.trim();
+            if (t && !webCategories.includes(t)) {
+                onUpdateWebCategories([...webCategories, t]);
+            }
+            setNewTagInput('');
+        };
+        const removeTag = (t: string) => {
+            onUpdateWebCategories(webCategories.filter(c => c !== t));
+            if (filterTag === t) setFilterTag(null);
+        };
+
         return (
-            <div className="flex flex-col gap-6">
-                <header className="flex items-center gap-4">
+            <div className="flex flex-col gap-4">
+                {/* Header */}
+                <header className="flex items-center gap-3">
                     <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
                         <ArrowLeft size={32} strokeWidth={3} />
                     </button>
                     <h2 className="text-2xl font-black uppercase flex-grow">Web Clips</h2>
+                    {/* Sort toggle */}
+                    <button
+                        onClick={() => setSortOrder(s => s === 'newest' ? 'oldest' : 'newest')}
+                        className="h-14 px-3 bg-white/10 rounded-2xl text-xs font-black uppercase tracking-wide flex items-center gap-1"
+                        aria-label="Toggle sort order"
+                    >
+                        {sortOrder === 'newest' ? '↓ New' : '↑ Old'}
+                    </button>
+                    {/* Tag manager toggle */}
+                    <button
+                        onClick={() => setShowTagManager(v => !v)}
+                        className={`h-14 px-3 rounded-2xl text-xs font-black uppercase tracking-wide flex items-center gap-1 ${showTagManager ? 'bg-[#8B5CF6] text-white' : 'bg-white/10'}`}
+                        aria-label="Manage tags"
+                    >
+                        Tags
+                    </button>
                     <button
                         onClick={() => navigateTo('addWebClip')}
                         aria-label="Add web clip"
-                        className="btn-primary w-20 h-14"
+                        className="btn-primary w-14 h-14"
                     >
-                        <Plus size={32} strokeWidth={3} />
+                        <Plus size={28} strokeWidth={3} />
                     </button>
                 </header>
+
+                {/* Tag manager panel */}
+                {showTagManager && (
+                    <div className="bg-white/5 border border-white/10 rounded-3xl p-4 flex flex-col gap-3">
+                        <p className="text-xs font-black uppercase tracking-widest text-white/50">Your Categories</p>
+                        <div className="flex flex-wrap gap-2">
+                            {webCategories.map(t => (
+                                <span key={t} className="flex items-center gap-1 bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 text-[#C4B5FD] rounded-full px-3 py-1 text-sm font-bold">
+                                    {t}
+                                    <button onClick={() => removeTag(t)} className="ml-1 text-white/40 active:text-white" aria-label={`Remove ${t}`}>×</button>
+                                </span>
+                            ))}
+                            {webCategories.length === 0 && <p className="text-white/30 text-sm">No categories yet</p>}
+                        </div>
+                        <div className="flex gap-2">
+                            <input
+                                value={newTagInput}
+                                onChange={e => setNewTagInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && addTag()}
+                                placeholder="New category name..."
+                                className="flex-grow bg-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white placeholder:text-white/30 outline-none"
+                            />
+                            <button
+                                onClick={addTag}
+                                disabled={!newTagInput.trim()}
+                                className="px-4 py-3 bg-[#8B5CF6] text-white rounded-2xl text-sm font-black disabled:opacity-30"
+                            >
+                                Add
+                            </button>
+                        </div>
+                        <p className="text-white/30 text-xs">AI will auto-assign these categories when you share links to the app.</p>
+                    </div>
+                )}
+
+                {/* Tag filter pills */}
+                {webCategories.length > 0 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                        <button
+                            onClick={() => setFilterTag(null)}
+                            className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-black uppercase tracking-wide ${filterTag === null ? 'bg-[#8B5CF6] text-white' : 'bg-white/10 text-white/60'}`}
+                        >
+                            All
+                        </button>
+                        {webCategories.map(t => (
+                            <button
+                                key={t}
+                                onClick={() => setFilterTag(f => f === t ? null : t)}
+                                className={`flex-shrink-0 px-4 py-2 rounded-full text-xs font-black uppercase tracking-wide ${filterTag === t ? 'bg-[#8B5CF6] text-white' : 'bg-white/10 text-white/60'}`}
+                            >
+                                {t}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {/* Clips list */}
                 <div className="flex flex-col gap-4">
-                    {webClips.map(mem => {
+                    {filteredClips.map(mem => {
                         const w = mem as WebMemory;
+                        const clipTags = (mem.tags || []).filter(t => webCategories.includes(t));
                         return (
-                            <div key={mem.id} className="card-brutal flex flex-col gap-4">
+                            <div key={mem.id} className="card-brutal flex flex-col gap-3">
                                 <div className="flex items-start gap-4">
-                                    <Globe size={36} strokeWidth={3} className="text-[#8B5CF6] flex-shrink-0 mt-1" />
+                                    <Globe size={32} strokeWidth={3} className="text-[#8B5CF6] flex-shrink-0 mt-1" />
                                     <div className="flex-grow overflow-hidden">
-                                        <p className="text-xl font-black">{mem.title}</p>
-                                        <p className="text-sm text-[#60A5FA] uppercase tracking-widest">
-                                            {new Date(mem.date).toLocaleDateString()}
+                                        <p className="text-lg font-black leading-tight">{mem.title}</p>
+                                        <p className="text-xs text-[#60A5FA] uppercase tracking-widest mt-0.5">
+                                            {new Date(mem.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                                         </p>
                                         {w.content && (
-                                            <p className="mt-2 text-base text-white/70 line-clamp-2">{w.content}</p>
+                                            <p className="mt-2 text-sm text-white/70 line-clamp-2">{w.content}</p>
+                                        )}
+                                        {clipTags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                {clipTags.map(t => (
+                                                    <span key={t} className="bg-[#8B5CF6]/25 text-[#C4B5FD] rounded-full px-2 py-0.5 text-xs font-bold">
+                                                        {t}
+                                                    </span>
+                                                ))}
+                                            </div>
                                         )}
                                     </div>
                                     <button
                                         onClick={() => onDeleteMemory(mem.id)}
                                         aria-label="Delete clip"
-                                        className="p-3 bg-white/10 rounded-xl"
+                                        className="p-3 bg-white/10 rounded-xl flex-shrink-0"
                                     >
-                                        <Trash2 size={24} strokeWidth={3} />
+                                        <Trash2 size={20} strokeWidth={3} />
                                     </button>
                                 </div>
                                 <a
@@ -467,17 +579,17 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     aria-label={`Open ${mem.title}`}
-                                    className="w-full h-14 bg-[#8B5CF6] text-white rounded-2xl flex items-center justify-center font-black text-lg uppercase"
+                                    className="w-full h-12 bg-[#8B5CF6] text-white rounded-2xl flex items-center justify-center font-black uppercase tracking-wide"
                                 >
                                     Open Link
                                 </a>
                             </div>
                         );
                     })}
-                    {webClips.length === 0 && (
+                    {filteredClips.length === 0 && (
                         <div className="py-20 text-center opacity-40">
                             <Globe size={64} className="mx-auto mb-4" strokeWidth={2} />
-                            <p className="text-xl uppercase">No web clips yet</p>
+                            <p className="text-xl uppercase">{filterTag ? `No clips tagged "${filterTag}"` : 'No web clips yet'}</p>
                         </div>
                     )}
                 </div>
