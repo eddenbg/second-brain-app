@@ -73,7 +73,7 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
 
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-3-flash-preview',
                 contents: `You are a personal AI assistant for a visually impaired student.
 Your job is to answer questions using ONLY the context below from their "Second Brain".
 
