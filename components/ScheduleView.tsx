@@ -102,38 +102,38 @@ const ScheduleView: React.FC<ScheduleViewProps> = ({ events, onClose, onAddEvent
             )}
 
             {/* Header */}
-            <header className="flex items-center justify-between px-4 py-3 border-b-2 border-white/10 shrink-0">
+            <header className="flex items-center justify-between px-3 py-2 border-b-2 border-white/10 shrink-0">
                 <button
                     onClick={onClose}
                     aria-label="Close calendar"
-                    className="p-3 bg-white/10 rounded-2xl active:scale-90 transition-transform"
+                    className="btn-icon p-2 bg-white/10 rounded-2xl active:scale-90 transition-transform"
                 >
-                    <ArrowLeftIcon className="w-6 h-6 text-white" />
+                    <ArrowLeftIcon className="w-5 h-5 text-white" />
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                     <button
                         onClick={() => changeMonth(-1)}
                         aria-label="Previous month"
-                        className="p-2.5 bg-white/10 rounded-xl active:scale-90 transition-transform"
+                        className="btn-icon p-2 bg-white/10 rounded-xl active:scale-90 transition-transform"
                     >
-                        <ChevronDownIcon className="w-5 h-5 text-white rotate-90" />
+                        <ChevronDownIcon className="w-4 h-4 text-white rotate-90" />
                     </button>
-                    <h2 className="text-base font-black text-white uppercase tracking-tighter w-40 text-center">
+                    <h2 className="text-sm font-black text-white uppercase tracking-tighter w-32 text-center">
                         {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
                     </h2>
                     <button
                         onClick={() => changeMonth(1)}
                         aria-label="Next month"
-                        className="p-2.5 bg-white/10 rounded-xl active:scale-90 transition-transform"
+                        className="btn-icon p-2 bg-white/10 rounded-xl active:scale-90 transition-transform"
                     >
-                        <ChevronDownIcon className="w-5 h-5 text-white -rotate-90" />
+                        <ChevronDownIcon className="w-4 h-4 text-white -rotate-90" />
                     </button>
                 </div>
 
                 <button
                     onClick={jumpToToday}
-                    className="px-4 py-2 bg-yellow-500 text-[#001f3f] font-black text-xs uppercase rounded-xl active:scale-90 transition-transform"
+                    className="btn-icon px-3 py-1.5 bg-yellow-500 text-[#001f3f] font-black text-[10px] uppercase rounded-xl active:scale-90 transition-transform"
                 >
                     Today
                 </button>

@@ -9,7 +9,7 @@
   "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "background_color": "#001F3F",
   "theme_color": "#001F3F",
-  "orientation": "portrait",
+  "orientation": "any",
   "categories": ["productivity", "education", "utilities"],
   "icons": [
     {
