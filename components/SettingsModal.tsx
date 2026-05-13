@@ -16,6 +16,7 @@ import {
     disconnectGoogleDrive,
     getStoredDriveToken
 } from '../services/googleDriveService';
+import { getStoredNotionToken, saveNotionToken, clearNotionToken } from '../services/notionService';
 import { auth } from '../utils/firebase';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
@@ -69,6 +70,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
     const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+    const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
+    const [notionInput, setNotionInput] = useState('');
     const [googleClientId, setGoogleClientId] = useState(getStoredGoogleClientId());
     const [clientIdInput, setClientIdInput] = useState('');
     const [firebaseUID, setFirebaseUID] = useState<string>('');
@@ -163,6 +166,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const handleDisconnectDrive = () => {
         disconnectGoogleDrive();
         setIsDriveConnected(false);
+    };
+
+    const handleSaveNotionToken = () => {
+        const t = notionInput.trim();
+        if (!t) return;
+        saveNotionToken(t);
+        setNotionToken(t);
+        setNotionInput('');
+    };
+
+    const handleClearNotionToken = () => {
+        clearNotionToken();
+        setNotionToken('');
+        setNotionInput('');
     };
 
     const openMoodleInNewTab = () => {
@@ -350,6 +367,49 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                             )}
                         </div>
 
+                        {/* Notion */}
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${notionToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                <div className="w-8 h-8 bg-black rounded-xl flex items-center justify-center shrink-0">
+                                    <span className="text-white font-black text-base">N</span>
+                                </div>
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Notion</p>
+                                {notionToken && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                            </div>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                Connect your Notion workspace to import pages directly into Web Clips. You need an Internal Integration token from{' '}
+                                <span className="text-purple-400">notion.so/my-integrations</span>.
+                            </p>
+                            {notionToken ? (
+                                <button
+                                    onClick={handleClearNotionToken}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Disconnect Notion
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <input
+                                        type="password"
+                                        value={notionInput}
+                                        onChange={e => setNotionInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
+                                        placeholder="secret_... or ntn_..."
+                                        className="flex-grow bg-gray-900 border-gray-600 rounded-xl text-sm px-3 py-2 text-white font-mono placeholder:text-gray-600"
+                                        style={{ minHeight: 'unset', border: '1px solid #4B5563', padding: '10px 12px', fontSize: '12px' }}
+                                    />
+                                    <button
+                                        onClick={handleSaveNotionToken}
+                                        disabled={!notionInput.trim()}
+                                        className="px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
+                                        style={{ minHeight: 'unset' }}
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
                         {/* Moodle */}
                         <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${moodleToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
                             <div className="flex items-center gap-3 sm:gap-4 mb-3">
@@ -476,7 +536,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
                 <footer className="p-4 sm:p-6 bg-gray-900/50 border-t-4 border-gray-700 text-center">
                     <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">
-                        My Second Brain v2.3 · deployed {typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '—'}
+                        My Second Brain v2.4 · deployed {typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '—'}
                     </p>
                 </footer>
             </div>

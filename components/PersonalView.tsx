@@ -12,7 +12,10 @@ import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
 import AddPhysicalItemModal from './AddPhysicalItemModal';
 import AddWebMemoryModal from './AddWebMemoryModal';
+import NotionPickerModal from './NotionPickerModal';
 import { generateSpeechFromText } from '../services/geminiService';
+import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
+import type { NotionPage } from '../services/notionService';
 import { decode, decodeAudioData } from '../utils/audio';
 import { getLocationName } from '../utils/location';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
@@ -114,6 +117,12 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const [filterTag, setFilterTag] = useState<string | null>(null);
     const [showTagManager, setShowTagManager] = useState(false);
     const [newTagInput, setNewTagInput] = useState('');
+    const [showNotionPicker, setShowNotionPicker] = useState(false);
+    const notionToken = useMemo(() => getStoredNotionToken(), [showNotionPicker]);
+    const importedNotionUrls = useMemo(
+        () => new Set((memories.filter(m => m.type === 'web') as WebMemory[]).map(m => m.url)),
+        [memories]
+    );
 
     const voiceNotes = useMemo(() => memories.filter(m => m.type === 'voice'), [memories]);
     const physicalItems = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
@@ -137,6 +146,22 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         window.addEventListener('popstate', handlePop);
         return () => window.removeEventListener('popstate', handlePop);
     }, []);
+
+    const handleImportFromNotion = async (page: NotionPage) => {
+        const token = getStoredNotionToken();
+        let content = page.title;
+        if (token) {
+            const text = await fetchNotionPageContent(token, page.id);
+            if (text) content = text;
+        }
+        onSaveMemory({
+            type: 'web',
+            title: page.title || 'Untitled Notion Page',
+            url: page.url,
+            content,
+            category: 'personal',
+        } as Omit<WebMemory, 'id' | 'date'>);
+    };
 
     const handleSaveVoiceNote = (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
         onSaveMemory({ ...mem, category: 'personal' });
@@ -454,6 +479,14 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
         return (
             <div className="flex flex-col gap-4">
+                {showNotionPicker && notionToken && (
+                    <NotionPickerModal
+                        token={notionToken}
+                        onClose={() => setShowNotionPicker(false)}
+                        onImport={page => { handleImportFromNotion(page); }}
+                        importedUrls={importedNotionUrls}
+                    />
+                )}
                 {/* Header */}
                 <header className="flex items-center gap-3">
                     <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
@@ -516,6 +549,20 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         </div>
                         <p className="text-white/30 text-xs">AI will auto-assign these categories when you share links to the app.</p>
                     </div>
+                )}
+
+                {/* Notion quick import */}
+                {notionToken && (
+                    <button
+                        onClick={() => setShowNotionPicker(true)}
+                        className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl border-2 border-white/10 w-full text-left active:scale-95 transition-transform"
+                        aria-label="Import from Notion"
+                    >
+                        <div className="w-6 h-6 bg-black rounded-md flex items-center justify-center shrink-0">
+                            <span className="text-white font-black text-sm leading-none">N</span>
+                        </div>
+                        <span className="text-xs font-black text-gray-300 uppercase tracking-widest">Import from Notion</span>
+                    </button>
                 )}
 
                 {/* Tag filter pills */}
