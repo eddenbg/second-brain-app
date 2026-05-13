@@ -86,8 +86,9 @@ export interface FileMemory extends BaseMemory {
   fileUrl: string;
   mimeType: string;
   size?: number;
-  sourceType?: 'moodle' | 'upload';
+  sourceType?: 'moodle' | 'upload' | 'drive';
   moodleId?: string;
+  driveId?: string;
   summary?: string;
 }
 
