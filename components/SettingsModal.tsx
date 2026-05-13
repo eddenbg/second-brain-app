@@ -11,6 +11,11 @@ import {
     saveGoogleClientId,
     getStoredGoogleClientId
 } from '../services/googleCalendarService';
+import {
+    connectGoogleDrive,
+    disconnectGoogleDrive,
+    getStoredDriveToken
+} from '../services/googleDriveService';
 import { auth } from '../utils/firebase';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
@@ -42,6 +47,17 @@ const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) 
     );
 };
 
+const DRIVE_LOGO = (
+    <svg viewBox="0 0 87.3 78" className="w-7 h-7 sm:w-8 sm:h-8 shrink-0">
+        <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
+        <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 48.6C.4 50 0 51.55 0 53.1h27.5z" fill="#00AC47"/>
+        <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.85l5.9 11.9z" fill="#EA4335"/>
+        <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.95 0H34.35c-1.55 0-3.1.4-4.45 1.2z" fill="#00832D"/>
+        <path d="M59.85 53.1H27.5L13.75 76.9c1.35.8 2.9 1.1 4.45 1.1h50.9c1.55 0 3.1-.4 4.45-1.2z" fill="#2684FC"/>
+        <path d="M73.4 26.85l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.2 28.1H87.3c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/>
+    </svg>
+);
+
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected }) => {
     const { isInstallable, installApp } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
@@ -51,6 +67,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
     const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+    const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
+    const [isConnectingDrive, setIsConnectingDrive] = useState(false);
     const [googleClientId, setGoogleClientId] = useState(getStoredGoogleClientId());
     const [clientIdInput, setClientIdInput] = useState('');
     const [firebaseUID, setFirebaseUID] = useState<string>('');
@@ -129,6 +147,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setIsGoogleConnected(false);
     };
 
+    const handleConnectDrive = async () => {
+        setIsConnectingDrive(true);
+        try {
+            await connectGoogleDrive();
+            setIsDriveConnected(true);
+        } catch (e) {
+            console.error('Drive auth failed', e);
+            alert('Could not connect to Google Drive. Make sure your Google Client ID is set up in the Calendar section above.');
+        } finally {
+            setIsConnectingDrive(false);
+        }
+    };
+
+    const handleDisconnectDrive = () => {
+        disconnectGoogleDrive();
+        setIsDriveConnected(false);
+    };
+
     const openMoodleInNewTab = () => {
         window.open('https://online.dyellin.ac.il/user/preferences.php', '_blank', 'noopener,noreferrer');
     };
@@ -160,7 +196,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
                 <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
 
-                    {/* Install / Fullscreen — always visible */}
+                    {/* Install / Fullscreen */}
                     <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 ${isStandalone ? 'bg-green-900/20 border-green-700' : 'bg-blue-900/30 border-blue-600'}`}>
                         <div className="flex items-center gap-3 mb-3">
                             <PlusCircleIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${isStandalone ? 'text-green-400' : 'text-blue-400'}`} />
@@ -209,12 +245,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         Chrome hides the install button once you've added this site to your home screen. To reset:
                                     </p>
                                     <ol className="text-gray-300 text-xs space-y-1.5 list-decimal list-inside leading-relaxed">
-                                        <li>Long-press \"Second Brain\" on your home screen → <strong className="text-white">Remove</strong></li>
+                                        <li>Long-press "Second Brain" on your home screen → <strong className="text-white">Remove</strong></li>
                                         <li>In Chrome tap <strong className="text-white">⋮</strong> → Settings → Site settings → find this site → <strong className="text-white">Clear &amp; reset</strong></li>
                                         <li>Reload this page — the blue Install button will appear here</li>
                                     </ol>
                                     <p className="text-gray-500 text-[10px] leading-relaxed">
-                                        Only a proper install (not \"Add to Home Screen\") registers the app in Android's share menu.
+                                        Only a proper install (not "Add to Home Screen") registers the app in Android's share menu.
                                     </p>
                                 </div>
                             </>
@@ -238,7 +274,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     <p className="text-yellow-400 font-black text-xs uppercase tracking-widest">One-time setup</p>
                                     <ol className="text-gray-400 text-xs space-y-1.5 list-decimal list-inside leading-relaxed">
                                         <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">console.cloud.google.com</a></li>
-                                        <li>Create a project &rarr; Enable <strong className="text-white">Google Calendar API</strong></li>
+                                        <li>Create a project &rarr; Enable <strong className="text-white">Google Calendar API</strong> and <strong className="text-white">Google Drive API</strong></li>
                                         <li>APIs &amp; Services &rarr; Credentials &rarr; Create &rarr; OAuth 2.0 Client ID (Web app)</li>
                                         <li>Copy the Client ID and paste it below</li>
                                     </ol>
@@ -283,6 +319,33 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 >
                                     {isConnectingGoogle ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
                                     {isConnectingGoogle ? 'Connecting…' : 'Connect Google Calendar'}
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Google Drive */}
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${isDriveConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                {DRIVE_LOGO}
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Google Drive</p>
+                                {isDriveConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                            </div>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Browse and import files from your Google Drive into the Files Vault. Uses the same Client ID as Calendar.</p>
+                            {isDriveConnected ? (
+                                <button
+                                    onClick={handleDisconnectDrive}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Disconnect Drive
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={googleClientId ? handleConnectDrive : undefined}
+                                    disabled={isConnectingDrive || !googleClientId}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500"
+                                >
+                                    {isConnectingDrive ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
+                                    {isConnectingDrive ? 'Connecting…' : 'Connect Google Drive'}
                                 </button>
                             )}
                         </div>
@@ -413,7 +476,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
                 <footer className="p-4 sm:p-6 bg-gray-900/50 border-t-4 border-gray-700 text-center">
                     <p className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em]">
-                        My Second Brain v2.2 · deployed {typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '—'}
+                        My Second Brain v2.3 · deployed {typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '—'}
                     </p>
                 </footer>
             </div>

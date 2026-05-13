@@ -9,6 +9,8 @@ import AddDocumentModal from './AddDocumentModal';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import DrivePickerModal from './DrivePickerModal';
+import type { DriveFile } from '../services/googleDriveService';
 
 interface FilesViewProps {
     memories: AnyMemory[];
@@ -17,7 +19,7 @@ interface FilesViewProps {
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
 }
 
-// ── Media Preview Drawer ─────────────────────────────────────────────────────────────────
+// ── Media Preview Drawer ─────────────────────────────────────────────────────────────────────────────────────────
 const MediaPreviewDrawer: React.FC<{
     memory: AnyMemory;
     onClose: () => void;
@@ -94,7 +96,9 @@ const MediaPreviewDrawer: React.FC<{
                                 {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <StopCircleIcon className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
                                 {isPlaying ? 'STOP READING' : 'READ SUMMARY'}
                             </button>
-                            <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">Download Original</a>
+                            <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">
+                                {(memory as FileMemory).sourceType === 'drive' ? 'Open in Drive' : 'Download Original'}
+                            </a>
                         </div>
                     )}
                     {(memory as VoiceMemory).summary && (
@@ -116,10 +120,34 @@ const MediaPreviewDrawer: React.FC<{
     );
 };
 
-// ── Files View ────────────────────────────────────────────────────────────────────────────────
+const DRIVE_BADGE = (
+    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center">
+        <svg viewBox="0 0 87.3 78" className="w-2.5 h-2.5">
+            <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
+            <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 48.6C.4 50 0 51.55 0 53.1h27.5z" fill="#00AC47"/>
+            <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.85l5.9 11.9z" fill="#EA4335"/>
+            <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.95 0H34.35c-1.55 0-3.1.4-4.45 1.2z" fill="#00832D"/>
+            <path d="M59.85 53.1H27.5L13.75 76.9c1.35.8 2.9 1.1 4.45 1.1h50.9c1.55 0 3.1-.4 4.45-1.2z" fill="#2684FC"/>
+            <path d="M73.4 26.85l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.2 28.1H87.3c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/>
+        </svg>
+    </div>
+);
+
+const DRIVE_BUTTON_ICON = (
+    <svg viewBox="0 0 87.3 78" className="w-4 h-4 shrink-0">
+        <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
+        <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 48.6C.4 50 0 51.55 0 53.1h27.5z" fill="#00AC47"/>
+        <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.85l5.9 11.9z" fill="#EA4335"/>
+        <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.95 0H34.35c-1.55 0-3.1.4-4.45 1.2z" fill="#00832D"/>
+        <path d="M59.85 53.1H27.5L13.75 76.9c1.35.8 2.9 1.1 4.45 1.1h50.9c1.55 0 3.1-.4 4.45-1.2z" fill="#2684FC"/>
+        <path d="M73.4 26.85l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.2 28.1H87.3c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/>
+    </svg>
+);
+
+// ── Files View ────────────────────────────────────────────────────────────────────────────────────────────
 const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate }) => {
     const [searchQuery, setSearchQuery] = useState('');
-    const [filter, setFilter] = useState<'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'hidden'>('all');
+    const [filter, setFilter] = useState<'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'drive' | 'hidden'>('all');
     const [previewMemory, setPreviewMemory] = useState<AnyMemory | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectMode, setIsSelectMode] = useState(false);
@@ -127,6 +155,24 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
     const [summaryInitialType, setSummaryInitialType] = useState<'written' | 'audio' | 'video' | 'research'>('written');
     const [isGeneratingMulti, setIsGeneratingMulti] = useState(false);
     const [activeStudyHub, setActiveStudyHub] = useState<{ type: any; content: string; title: string; videoUri?: string } | null>(null);
+    const [showDrivePicker, setShowDrivePicker] = useState(false);
+
+    const importedDriveIds = useMemo(
+        () => new Set(memories.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive').map(m => (m as FileMemory).driveId || '')),
+        [memories]
+    );
+
+    const handleImportFromDrive = (file: DriveFile) => {
+        onSave({
+            type: 'file',
+            title: file.name,
+            fileUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
+            mimeType: file.mimeType,
+            sourceType: 'drive',
+            driveId: file.id,
+            category: 'personal',
+        } as Omit<FileMemory, 'id' | 'date'>);
+    };
 
     const filteredMemories = useMemo(() => {
         let results = memories;
@@ -134,6 +180,7 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
         if (filter === 'image') results = results.filter(m => m.type === 'item' || m.type === 'video');
         if (filter === 'doc') results = results.filter(m => m.type === 'document');
         if (filter === 'moodle') results = results.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'moodle');
+        if (filter === 'drive') results = results.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive');
         if (filter === 'hidden') results = results.filter(m => m.isHidden);
         else results = results.filter(m => !m.isHidden);
 
@@ -176,9 +223,16 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             {previewMemory && <MediaPreviewDrawer memory={previewMemory} onUpdate={onUpdate} onClose={() => setPreviewMemory(null)} />}
             {showSummaryPrompt && <SummaryFocusModal onClose={() => setShowSummaryPrompt(false)} onGenerate={handleMultiStudy} isGenerating={isGeneratingMulti} initialType={summaryInitialType} />}
             {activeStudyHub && <StudyHubOverlay overview={activeStudyHub} memories={memories} onClose={() => setActiveStudyHub(null)} />}
+            {showDrivePicker && (
+                <DrivePickerModal
+                    onClose={() => setShowDrivePicker(false)}
+                    onImport={handleImportFromDrive}
+                    importedIds={importedDriveIds}
+                />
+            )}
 
             <header className="flex flex-col gap-3 shrink-0">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                     <div className="relative flex-grow">
                         <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <input
@@ -191,9 +245,17 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                         />
                     </div>
                     <button
+                        onClick={() => setShowDrivePicker(true)}
+                        aria-label="Import from Google Drive"
+                        className="px-4 py-4 rounded-2xl font-black text-xs uppercase border-2 bg-white/10 text-gray-400 border-white/10 flex items-center gap-1.5 shrink-0"
+                    >
+                        {DRIVE_BUTTON_ICON}
+                        Drive
+                    </button>
+                    <button
                         onClick={() => { setIsSelectMode(!isSelectMode); setSelectedIds(new Set()); }}
                         aria-label={isSelectMode ? 'Cancel selection' : 'Select items'}
-                        className={`ml-3 px-6 py-4 rounded-2xl font-black text-xs uppercase border-2 transition-all ${isSelectMode ? 'bg-yellow-500 text-[#001f3f] border-yellow-400' : 'bg-white/10 text-gray-400 border-white/10'}`}
+                        className={`px-4 py-4 rounded-2xl font-black text-xs uppercase border-2 transition-all shrink-0 ${isSelectMode ? 'bg-yellow-500 text-[#001f3f] border-yellow-400' : 'bg-white/10 text-gray-400 border-white/10'}`}
                     >
                         {isSelectMode ? 'CANCEL' : 'SELECT'}
                     </button>
@@ -201,14 +263,14 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             </header>
 
             <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 scrollbar-hide">
-                {(['all', 'audio', 'image', 'doc', 'moodle', 'hidden'] as const).map(id => (
+                {(['all', 'audio', 'image', 'doc', 'moodle', 'drive', 'hidden'] as const).map(id => (
                     <button
                         key={id}
                         onClick={() => setFilter(id)}
                         aria-label={`Filter by ${id}`}
                         className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex-shrink-0 ${filter === id ? 'bg-yellow-500 text-[#001f3f]' : 'bg-white/10 text-gray-400 hover:text-gray-200'}`}
                     >
-                        {id === 'moodle' ? 'Moodle' : id === 'hidden' ? 'Archived' : id}
+                        {id === 'moodle' ? 'Moodle' : id === 'hidden' ? 'Archived' : id === 'drive' ? 'Drive' : id}
                     </button>
                 ))}
             </div>
@@ -233,10 +295,11 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                                         {selectedIds.has(mem.id) && <CheckIcon className="w-4 h-4 text-[#001f3f]" />}
                                     </div>
                                 )}
-                                <div className="p-4 bg-black/20 rounded-2xl w-fit">
+                                <div className="p-4 bg-black/20 rounded-2xl w-fit relative">
                                     {mem.type === 'file' ? <FileTextIcon className="w-6 h-6 text-yellow-500" /> :
                                      mem.type === 'voice' ? <MicIcon className="w-6 h-6 text-yellow-500" /> :
                                      <CameraIcon className="w-6 h-6 text-yellow-500" />}
+                                    {mem.type === 'file' && (mem as FileMemory).sourceType === 'drive' && DRIVE_BADGE}
                                 </div>
                                 <div className="overflow-hidden">
                                     <h3 className="text-sm font-black text-white truncate uppercase tracking-tight">{mem.title}</h3>
