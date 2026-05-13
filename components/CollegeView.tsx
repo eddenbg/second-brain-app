@@ -1,16 +1,16 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
     Folder, Mic, FileText, ArrowLeft, Plus,
     Trash2, X, LayoutGrid, ListTodo, FileStack, Camera,
-    Volume2, Loader2, StopCircle
+    Volume2, Loader2, StopCircle, Brain
 } from 'lucide-react';
 import type { AnyMemory, VoiceMemory, DocumentMemory, Task, FileMemory } from '../types';
 import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
-import { generateSpeechFromText } from '../services/geminiService';
+import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
+import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
 
 interface CollegeViewProps {
@@ -90,6 +90,11 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [newCourseName, setNewCourseName] = useState('');
     const [fileFilter, setFileFilter] = useState<'all' | 'recordings' | 'docs'>('all');
 
+    // Study Session
+    const [showStudyPrompt, setShowStudyPrompt] = useState(false);
+    const [isGeneratingStudy, setIsGeneratingStudy] = useState(false);
+    const [activeStudyHub, setActiveStudyHub] = useState<{ type: any; content: string; title: string; videoUri?: string } | null>(null);
+
     const collegeTasks = useMemo(() => tasks.filter(t => t.category === 'college'), [tasks]);
     const courseTasks = useMemo(() => {
         if (!selectedCourse) return [];
@@ -131,8 +136,21 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         setMainTab('courses');
     };
 
+    const handleGenerateStudy = async (focus: string, type: 'written' | 'audio' | 'video' | 'research') => {
+        if (!selectedCourse) return;
+        const courseMaterials = memoriesByCourse[selectedCourse] || [];
+        if (courseMaterials.length === 0) return;
+        setIsGeneratingStudy(true);
+        try {
+            const result = await generateStudyOverview(courseMaterials, focus || selectedCourse, type);
+            setActiveStudyHub({ ...result, type });
+            setShowStudyPrompt(false);
+        } catch (e) { console.error(e); }
+        finally { setIsGeneratingStudy(false); }
+    };
+
     const renderCourses = () => {
-        // ── General Scan (not course-specific) ────────────────
+        // ── General Scan (not course-specific) ────────────────────
         if (view === 'generalScan') {
             return (
                 <AddDocumentModal
@@ -145,7 +163,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Course List ────────────────────────────────────────
+        // ── Course List ──────────────────────────────────────────────
         if (view === 'list') {
             return (
                 <div className="flex flex-col gap-6">
@@ -220,7 +238,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Course Dashboard ───────────────────────────────────
+        // ── Course Dashboard ───────────────────────────────────────────────
         if (view === 'dashboard' && selectedCourse) {
             return (
                 <div className="flex flex-col gap-6">
@@ -250,6 +268,21 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </button>
                     </div>
 
+                    {/* Study Session — only shown when course has materials */}
+                    {(memoriesByCourse[selectedCourse] || []).length > 0 && (
+                        <button
+                            onClick={() => setShowStudyPrompt(true)}
+                            className="w-full h-24 bg-purple-700 text-white rounded-3xl flex items-center justify-center gap-4 shadow-xl"
+                            aria-label="Generate study session from course materials"
+                        >
+                            <Brain size={40} strokeWidth={3} />
+                            <div className="text-left">
+                                <div className="text-lg font-black uppercase">Study Session</div>
+                                <div className="text-sm opacity-70">Audio · Video · Written · Research</div>
+                            </div>
+                        </button>
+                    )}
+
                     {/* Lectures */}
                     <div className="space-y-4">
                         <h3 className="text-xl font-black uppercase tracking-widest border-b-4 border-white pb-2">
@@ -275,7 +308,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         )}
                     </div>
 
-                    {/* Scans */}
+                    {/* Scans & Files */}
                     <div className="space-y-4">
                         <h3 className="text-xl font-black uppercase tracking-widest border-b-4 border-white pb-2">
                             Scans ({(memoriesByCourse[selectedCourse] || []).filter(m => m.type === 'document' || m.type === 'file').length})
@@ -308,7 +341,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Record Lecture ─────────────────────────────────────
+        // ── Record Lecture ────────────────────────────────────────────────
         if (view === 'recording') {
             return (
                 <div className="flex flex-col gap-6">
@@ -331,7 +364,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Scan for course ────────────────────────────────────
+        // ── Scan for course ────────────────────────────────────────────────
         if (view === 'scanning') {
             return (
                 <AddDocumentModal
@@ -344,7 +377,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Detail ─────────────────────────────────────────────
+        // ── Detail ───────────────────────────────────────────────────────────────────
         if (view === 'detail' && selectedItem) {
             return (
                 <div className="flex flex-col gap-6">
@@ -403,6 +436,22 @@ const CollegeView: React.FC<CollegeViewProps> = ({
 
     return (
         <div className="flex flex-col gap-6">
+            {showStudyPrompt && (
+                <SummaryFocusModal
+                    onClose={() => setShowStudyPrompt(false)}
+                    onGenerate={handleGenerateStudy}
+                    isGenerating={isGeneratingStudy}
+                    defaultFocus={selectedCourse || ''}
+                />
+            )}
+            {activeStudyHub && (
+                <StudyHubOverlay
+                    overview={activeStudyHub}
+                    memories={memoriesByCourse[selectedCourse || ''] || []}
+                    onClose={() => setActiveStudyHub(null)}
+                />
+            )}
+
             {/* Main Tabs */}
             <div className="flex gap-2 bg-white/10 rounded-2xl p-2">
                 <button
