@@ -9,7 +9,8 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously, linkWithPopup, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import { googleProvider } from '../utils/firebase';
 
 export interface StoredData {
     memories: AnyMemory[];
@@ -241,11 +242,31 @@ export const useRecordings = () => {
         setHasUnsavedChanges(true);
     }, []);
 
+    const signInWithGoogle = useCallback(async () => {
+        if (!auth || !auth.currentUser) return;
+        try {
+            await linkWithPopup(auth.currentUser, googleProvider);
+        } catch (e: any) {
+            if (e.code === 'auth/credential-already-in-use') {
+                await signInWithPopup(auth, googleProvider);
+            } else {
+                throw e;
+            }
+        }
+    }, []);
+
+    const signOut = useCallback(async () => {
+        if (!auth) return;
+        await firebaseSignOut(auth);
+    }, []);
+
     return {
         memories, tasks, courses, moodleToken,
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, saveMoodleToken,
         user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
-        fetchFromCloud: performSync
+        fetchFromCloud: performSync,
+        signInWithGoogle, signOut,
+        isAnonymous: user?.isAnonymous ?? true,
     };
 };

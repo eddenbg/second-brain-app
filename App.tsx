@@ -47,6 +47,7 @@ function App() {
     tasks, addTask, updateTask, deleteTask,
     courses, addCourse, user, loading,
     moodleToken, saveMoodleToken,
+    signInWithGoogle, signOut: signOutUser,
   } = useRecordings();
 
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
@@ -319,6 +320,9 @@ function App() {
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
           onGoogleConnected={loadGoogleEvents}
+          user={user}
+          onSignIn={signInWithGoogle}
+          onSignOut={signOutUser}
         />
       )}
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
