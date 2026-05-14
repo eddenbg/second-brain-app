@@ -9,7 +9,7 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously, linkWithPopup, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { googleProvider } from '../utils/firebase';
 
 export interface StoredData {
@@ -59,6 +59,18 @@ export const useRecordings = () => {
             setLoading(false);
             return;
         }
+
+        // Handle post-redirect after Google sign-in (fires once when app loads back after redirect)
+        getRedirectResult(auth).catch((e: any) => {
+            if (e.code === 'auth/credential-already-in-use') {
+                // Google account already linked to another Firebase UID (the first device's linked account).
+                // Sign into that account so this device gets the same UID and sees all synced data.
+                const credential = GoogleAuthProvider.credentialFromError(e);
+                if (credential) {
+                    signInWithCredential(auth, credential).catch(console.error);
+                }
+            }
+        });
 
         const authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             if (currentUser) {
@@ -244,15 +256,10 @@ export const useRecordings = () => {
 
     const signInWithGoogle = useCallback(async () => {
         if (!auth || !auth.currentUser) return;
-        try {
-            await linkWithPopup(auth.currentUser, googleProvider);
-        } catch (e: any) {
-            if (e.code === 'auth/credential-already-in-use') {
-                await signInWithPopup(auth, googleProvider);
-            } else {
-                throw e;
-            }
-        }
+        // Use redirect (not popup) — popups are blocked by Android Chrome in PWA mode.
+        // linkWithRedirect preserves the current UID so existing data stays accessible.
+        // If this Google account is already linked elsewhere, getRedirectResult handles it.
+        await linkWithRedirect(auth.currentUser, googleProvider);
     }, []);
 
     const signOut = useCallback(async () => {

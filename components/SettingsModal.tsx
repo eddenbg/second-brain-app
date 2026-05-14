@@ -243,15 +243,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
 
                     {/* Account & Sync */}
-                    <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${!user?.isAnonymous ? 'bg-blue-900/20 border-blue-600' : 'bg-gray-900 border-gray-700'}`}>
+                    <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${user?.isAnonymous === false ? 'bg-blue-900/20 border-blue-600' : 'bg-gray-900 border-gray-700'}`}>
                         <div className="flex items-center gap-3 sm:gap-4 mb-3">
                             <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shrink-0">
                                 {GOOGLE_LOGO}
                             </div>
                             <p className="text-base sm:text-lg font-black text-white uppercase">Account &amp; Sync</p>
-                            {!user?.isAnonymous && <div className="ml-auto bg-blue-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Syncing ✓</div>}
+                            {user?.isAnonymous === false && <div className="ml-auto bg-blue-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Syncing ✓</div>}
                         </div>
-                        {user?.isAnonymous !== false ? (
+                        {user?.isAnonymous === false ? (
+                            <>
+                                <p className="text-white font-black text-sm mb-1">{user.email}</p>
+                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                    Your data syncs automatically across all signed-in devices.
+                                </p>
+                                <button
+                                    onClick={() => onSignOut?.()}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Sign Out
+                                </button>
+                            </>
+                        ) : (
                             <>
                                 <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
                                     Sign in with Google to sync your notes, recordings, and tasks in real time across all your devices.
@@ -265,19 +278,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     {isSigningIn ? 'Signing in…' : 'Sign in with Google'}
                                 </button>
                                 {signInError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{signInError}</p>}
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-white font-black text-sm mb-1">{user.email}</p>
-                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                    Your data syncs automatically across all signed-in devices.
-                                </p>
-                                <button
-                                    onClick={() => onSignOut?.()}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
-                                >
-                                    Sign Out
-                                </button>
                             </>
                         )}
                     </div>
