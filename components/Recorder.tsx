@@ -98,13 +98,14 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             if (audioOnly) {
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } else if (captureMode === 'remote') {
-                mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                    video: true,
-                    audio: true
-                });
-                if (mediaStream.getAudioTracks().length === 0) {
-                    setError("No audio captured. Make sure to check 'Share system audio' when selecting the screen.");
+                const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                displayStream.getVideoTracks().forEach(t => t.stop());
+                const audioTracks = displayStream.getAudioTracks();
+                if (audioTracks.length === 0) {
+                    setError("No audio detected — in the screen picker, make sure to check 'Share system audio' before clicking Share.");
+                    return;
                 }
+                mediaStream = new MediaStream(audioTracks);
             } else {
                 mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: true,
@@ -116,9 +117,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             setIsRecording(true);
 
             const chunks: Blob[] = [];
-            mediaRecorderRef.current = new MediaRecorder(mediaStream, { mimeType: 'video/webm' });
+            mediaRecorderRef.current = new MediaRecorder(mediaStream, { mimeType: captureMode === 'remote' ? 'audio/webm' : 'video/webm' });
             mediaRecorderRef.current.ondataavailable = (event) => chunks.push(event.data);
             mediaRecorderRef.current.onstop = () => {
+                if (captureMode === 'remote') return;
                 const blob = new Blob(chunks, { type: 'video/webm' });
                 const reader = new FileReader();
                 reader.onloadend = () => setVideoDataUrl(reader.result as string);
@@ -143,10 +145,12 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         source.connect(scriptProcessor);
                         scriptProcessor.connect(audioContext.destination);
 
+                        if (captureMode === 'remote') return;
+
                         const canvasEl = canvasRef.current;
                         const videoEl = videoRef.current;
                         if (!canvasEl || !videoEl) return;
-                        
+
                         const ctx = canvasEl.getContext('2d');
                         if (!ctx) return;
 
@@ -279,7 +283,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 </p>
             )}
 
-            {!audioOnly && (
+            {!audioOnly && captureMode !== 'remote' && (
                 <div className="w-full aspect-video bg-black/40 rounded-[2rem] flex items-center justify-center relative overflow-hidden border-2 border-white/10 shadow-inner">
                     {videoDataUrl ? (
                         <video src={videoDataUrl} controls className="w-full h-full object-contain" />
@@ -294,7 +298,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 </div>
             )}
 
-            {audioOnly && (
+            {(audioOnly || captureMode === 'remote') && (
                 <div className="w-full h-40 bg-black/40 rounded-[2rem] flex flex-col items-center justify-center border-2 border-white/10">
                     <MicIcon className={`w-20 h-20 ${isRecording ? 'text-red-400 animate-pulse' : 'text-white/40'}`} />
                     <p className="mt-3 font-black uppercase text-sm text-white/50 tracking-widest">
