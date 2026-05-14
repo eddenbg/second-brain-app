@@ -83,11 +83,20 @@ function App() {
     return () => document.removeEventListener('click', requestFS);
   }, []);
 
+  // Push a sentinel so Android back button always has an entry to pop within the app
+  useEffect(() => {
+    window.history.pushState({ page: 'app' }, '');
+  }, []);
+
   useEffect(() => {
     const handlePopState = () => {
       if (showSettings) setShowSettings(false);
       else if (showSchedule) setShowSchedule(false);
       else if (sharedContent) setSharedContent(null);
+      else {
+        // Nothing to close — re-push sentinel to keep app in history
+        window.history.pushState({ page: 'app' }, '');
+      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
