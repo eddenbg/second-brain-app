@@ -489,7 +489,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         value={moodlePassword}
                                         onChange={e => setMoodlePassword(e.target.value)}
                                         onKeyDown={e => e.key === 'Enter' && handleMoodleLogin()}
-                                        placeholder="סיסמא"
+                                        placeholder="סיסמה"
                                         autoComplete="current-password"
                                         className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white text-sm"
                                         aria-label="Moodle password"
