@@ -34,12 +34,20 @@ function App() {
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
+  const [webCategories, setWebCategories] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('web_categories') || '[]'); } catch { return []; }
+  });
+  const updateWebCategories = useCallback((cats: string[]) => {
+    setWebCategories(cats);
+    localStorage.setItem('web_categories', JSON.stringify(cats));
+  }, []);
 
   const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
     tasks, addTask, updateTask, deleteTask,
     courses, addCourse, user, loading,
     moodleToken, saveMoodleToken,
+    signInWithGoogle, signOut: signOutUser,
   } = useRecordings();
 
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
@@ -62,6 +70,18 @@ function App() {
 
   // Load Google events on mount if already connected
   useEffect(() => { loadGoogleEvents(); }, [loadGoogleEvents]);
+
+  // Request fullscreen on first interaction (hides Android status bar in fullscreen PWA mode)
+  useEffect(() => {
+    const requestFS = () => {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    };
+    document.addEventListener('click', requestFS, { once: true });
+    requestFS();
+    return () => document.removeEventListener('click', requestFS);
+  }, []);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -127,7 +147,7 @@ function App() {
   const handleProcessShare = useCallback(async (url: string, title: string, text: string) => {
     setIsProcessingShare(true);
     try {
-      const analysis = await processSharedUrl(url, title, text);
+      const analysis = await processSharedUrl(url, title, text, webCategories);
       await addMemory({
         type: 'web',
         url: url,
@@ -135,7 +155,7 @@ function App() {
         content: analysis.summary,
         contentType: analysis.type,
         category: 'personal',
-        tags: analysis.takeaways
+        tags: analysis.suggestedTags.length > 0 ? analysis.suggestedTags : analysis.takeaways
       } as Omit<WebMemory, 'id' | 'date'>);
       setView('personal');
     } catch (error) {
@@ -206,6 +226,8 @@ function App() {
             onAddTask={addTask}
             onUpdateTask={updateTask}
             onDeleteTask={deleteTask}
+            webCategories={webCategories}
+            onUpdateWebCategories={updateWebCategories}
           />
         );
       case 'college':
@@ -245,25 +267,28 @@ function App() {
     <div className="fixed inset-0 bg-[#001F3F] text-white flex flex-col overflow-hidden overscroll-none">
       <TopInstallBanner />
 
-      <header className="flex-shrink-0 bg-[#001F3F] border-b-4 border-white z-20" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-        <div className="flex justify-between items-center px-6 py-4">
+      <header
+        className="flex-shrink-0 bg-[#001F3F] border-b-2 sm:border-b-4 border-white z-20"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 6px)' }}
+      >
+        <div className="flex justify-between items-center px-3 sm:px-6 py-2 sm:py-3 landscape:py-1">
           <button
             onClick={() => toggleSchedule(true)}
             aria-label="Schedule"
-            className="p-4 bg-white/10 rounded-2xl border-3 border-white text-white"
+            className="btn-icon flex items-center justify-center p-2 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl border-2 sm:border-3 border-white text-white active:scale-90 transition-transform"
           >
-            <Calendar className="w-10 h-10" strokeWidth={3} />
+            <Calendar className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10" strokeWidth={3} />
           </button>
-          <div className="flex items-center gap-3">
-            <Brain className="w-10 h-10 text-white" strokeWidth={3} />
-            <h1 className="text-2xl font-black uppercase tracking-tighter text-white">{viewTitles[view]}</h1>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <Brain className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 text-white flex-shrink-0" strokeWidth={3} />
+            <h1 className="text-base sm:text-xl md:text-2xl font-black uppercase tracking-tighter text-white truncate">{viewTitles[view]}</h1>
           </div>
           <button
             onClick={() => toggleSettings(true)}
             aria-label="Settings"
-            className="p-4 bg-white/10 rounded-2xl border-3 border-white text-white"
+            className="btn-icon flex items-center justify-center p-2 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl border-2 sm:border-3 border-white text-white active:scale-90 transition-transform"
           >
-            <Settings className="w-10 h-10" strokeWidth={3} />
+            <Settings className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10" strokeWidth={3} />
           </button>
         </div>
       </header>
@@ -295,6 +320,9 @@ function App() {
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
           onGoogleConnected={loadGoogleEvents}
+          user={user}
+          onSignIn={signInWithGoogle}
+          onSignOut={signOutUser}
         />
       )}
       {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
