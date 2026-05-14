@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import BottomNavBar from './components/BottomNavBar';
 import type { View } from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
@@ -52,6 +52,9 @@ function App() {
 
   const { updateAvailable, updateServiceWorker } = useServiceWorker();
 
+  // CollegeView registers a handler here so hardware back navigates within the college hierarchy
+  const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
+
   const allCalendarEvents = useMemo(
     () => [...calendarEvents, ...moodleEvents, ...googleEvents],
     [calendarEvents, moodleEvents, googleEvents]
@@ -93,14 +96,19 @@ function App() {
       if (showSettings) setShowSettings(false);
       else if (showSchedule) setShowSchedule(false);
       else if (sharedContent) setSharedContent(null);
-      else {
-        // Nothing to close — re-push sentinel to keep app in history
+      else if (collegeBackHandlerRef.current?.()) { /* CollegeView navigated back internally */ }
+      else if (view !== 'personal') {
+        // Back from any non-personal tab → return to Personal
+        setView('personal');
+        window.history.pushState({ page: 'app' }, '');
+      } else {
+        // Already on Personal — keep app alive
         window.history.pushState({ page: 'app' }, '');
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSettings, showSchedule, sharedContent]);
+  }, [showSettings, showSchedule, sharedContent, view]);
 
   useEffect(() => {
     if (!moodleToken || isSyncingMoodle) return;
@@ -254,6 +262,7 @@ function App() {
             updateTask={updateTask}
             deleteTask={deleteTask}
             moodleToken={moodleToken}
+            backHandlerRef={collegeBackHandlerRef}
           />
         );
       case 'askai':

@@ -26,6 +26,7 @@ interface CollegeViewProps {
     updateTask: (id: string, updates: Partial<Task>) => void;
     deleteTask: (id: string) => void;
     moodleToken: string | null;
+    backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 // Read-aloud button reused here
@@ -81,7 +82,8 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
 
 const CollegeView: React.FC<CollegeViewProps> = ({
     lectures, onSave, onDelete, onUpdate, bulkDelete,
-    courses, addCourse, tasks, addTask, updateTask, deleteTask, moodleToken
+    courses, addCourse, tasks, addTask, updateTask, deleteTask, moodleToken,
+    backHandlerRef
 }) => {
     const [mainTab, setMainTab] = useState<'courses' | 'files' | 'tasks'>('courses');
     const [view, setView] = useState<'list' | 'dashboard' | 'detail' | 'recording' | 'scanning' | 'generalScan'>('list');
@@ -112,16 +114,28 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         return grouped;
     }, [lectures]);
 
+    // Register hardware back handler with App.tsx so it runs before the tab-level back logic
+    useEffect(() => {
+        if (!backHandlerRef) return;
+        backHandlerRef.current = () => {
+            if (view === 'detail') { setView('dashboard'); return true; }
+            if (view === 'recording' || view === 'scanning') { setView('dashboard'); return true; }
+            if (view === 'generalScan') { setView('list'); return true; }
+            if (view === 'dashboard') { setView('list'); setSelectedCourse(null); return true; }
+            return false;
+        };
+        return () => { if (backHandlerRef) backHandlerRef.current = null; };
+    }, [view, backHandlerRef]);
+
     const handleSelectCourse = (course: string) => {
+        window.history.pushState({ collegeView: 'dashboard' }, '');
         setSelectedCourse(course);
         setView('dashboard');
     };
 
+    // Route in-app back button through history so state stays in sync with history stack
     const handleBack = () => {
-        if (view === 'detail') setView('dashboard');
-        else if (view === 'recording' || view === 'scanning') setView('dashboard');
-        else if (view === 'generalScan') setView('list');
-        else if (view === 'dashboard') setView('list');
+        window.history.back();
     };
 
     const filteredFiles = useMemo(() => {
@@ -131,6 +145,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     }, [lectures, fileFilter]);
 
     const handleOpenMemory = (mem: AnyMemory) => {
+        window.history.pushState({ collegeView: 'detail' }, '');
         setSelectedItem(mem);
         setView('detail');
         setMainTab('courses');
@@ -150,26 +165,26 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     };
 
     const renderCourses = () => {
-        // ── General Scan (not course-specific) ────────────────────
+        // ── General Scan (not course-specific) ──────────────────────────────
         if (view === 'generalScan') {
             return (
                 <AddDocumentModal
-                    onClose={() => setView('list')}
+                    onClose={handleBack}
                     onSave={(mem) => {
                         onSave({ ...mem, category: 'college', course: 'General' });
-                        setView('list');
+                        window.history.back();
                     }}
                 />
             );
         }
 
-        // ── Course List ──────────────────────────────────────────────
+        // ── Course List ───────────────────────────────────────────────────
         if (view === 'list') {
             return (
                 <div className="flex flex-col gap-6">
                     {/* General scan button */}
                     <button
-                        onClick={() => setView('generalScan')}
+                        onClick={() => { window.history.pushState({ collegeView: 'generalScan' }, ''); setView('generalScan'); }}
                         aria-label="Scan a general college document"
                         className="w-full h-24 bg-white text-[#001F3F] rounded-3xl flex items-center justify-center gap-4"
                     >
@@ -238,7 +253,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Course Dashboard ───────────────────────────────────────────────
+        // ── Course Dashboard ─────────────────────────────────────────────────────────
         if (view === 'dashboard' && selectedCourse) {
             return (
                 <div className="flex flex-col gap-6">
@@ -251,7 +266,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
 
                     <div className="grid grid-cols-2 gap-4">
                         <button
-                            onClick={() => setView('recording')}
+                            onClick={() => { window.history.pushState({ collegeView: 'recording' }, ''); setView('recording'); }}
                             className="h-32 bg-white text-[#001F3F] rounded-3xl flex flex-col items-center justify-center gap-2"
                             aria-label="Record lecture"
                         >
@@ -259,7 +274,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             <span className="font-black uppercase text-base">Record Lecture</span>
                         </button>
                         <button
-                            onClick={() => setView('scanning')}
+                            onClick={() => { window.history.pushState({ collegeView: 'scanning' }, ''); setView('scanning'); }}
                             className="h-32 bg-white/10 text-white rounded-3xl flex flex-col items-center justify-center gap-2 border-2 border-white/30"
                             aria-label="Scan document"
                         >
@@ -291,7 +306,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         {(memoriesByCourse[selectedCourse] || []).filter(m => m.type === 'voice').map(mem => (
                             <button
                                 key={mem.id}
-                                onClick={() => { setSelectedItem(mem); setView('detail'); }}
+                                onClick={() => { window.history.pushState({ collegeView: 'detail' }, ''); setSelectedItem(mem); setView('detail'); }}
                                 className="card-brutal flex items-center gap-5 text-left hover:bg-white/5 w-full"
                             >
                                 <Mic size={32} strokeWidth={3} className="flex-shrink-0" />
@@ -316,7 +331,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         {(memoriesByCourse[selectedCourse] || []).filter(m => m.type === 'document' || m.type === 'file').map(mem => (
                             <div key={mem.id} className="card-brutal flex flex-col gap-4">
                                 <button
-                                    onClick={() => { setSelectedItem(mem); setView('detail'); }}
+                                    onClick={() => { window.history.pushState({ collegeView: 'detail' }, ''); setSelectedItem(mem); setView('detail'); }}
                                     className="flex items-center gap-5 text-left w-full"
                                     aria-label={`Open ${mem.title}`}
                                 >
@@ -341,7 +356,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Record Lecture ────────────────────────────────────────────────
+        // ── Record Lecture ──────────────────────────────────────────────────────
         if (view === 'recording') {
             return (
                 <div className="flex flex-col gap-6">
@@ -354,7 +369,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     <Recorder
                         onSave={(mem) => {
                             onSave({ ...mem, course: selectedCourse!, category: 'college' });
-                            setView('dashboard');
+                            window.history.back();
                         }}
                         onCancel={handleBack}
                         titlePlaceholder={`Lecture – ${selectedCourse} – ${new Date().toLocaleDateString()}`}
@@ -364,20 +379,20 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
-        // ── Scan for course ────────────────────────────────────────────────
+        // ── Scan for course ───────────────────────────────────────────────────────
         if (view === 'scanning') {
             return (
                 <AddDocumentModal
                     onClose={handleBack}
                     onSave={(mem) => {
                         onSave({ ...mem, course: selectedCourse!, category: 'college' });
-                        setView('dashboard');
+                        window.history.back();
                     }}
                 />
             );
         }
 
-        // ── Detail ───────────────────────────────────────────────────────────────────
+        // ── Detail ────────────────────────────────────────────────────────────────────────
         if (view === 'detail' && selectedItem) {
             return (
                 <div className="flex flex-col gap-6">
@@ -510,7 +525,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         {filteredFiles.map(mem => (
                             <div key={mem.id} className="card-brutal flex flex-col gap-4">
                                 <button
-                                    onClick={() => { setSelectedItem(mem); setView('detail'); setMainTab('courses'); }}
+                                    onClick={() => { window.history.pushState({ collegeView: 'detail' }, ''); setSelectedItem(mem); setView('detail'); setMainTab('courses'); }}
                                     className="flex items-center gap-5 text-left w-full"
                                     aria-label={`Open ${mem.title}`}
                                 >
