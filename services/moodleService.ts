@@ -5,6 +5,15 @@ import type { CalendarEvent, MoodleCourse, MoodleContent } from '../types';
  * to bypass CORS restrictions on the college server.
  */
 
+export const loginWithCredentials = async (username: string, password: string): Promise<string> => {
+    const url = `/api/moodleProxy?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || 'Login failed');
+    if (!data.token) throw new Error('No token returned. Check your username/password.');
+    return data.token;
+};
+
 export const testMoodleConnection = async (token: string): Promise<boolean> => {
     if (!token) return false;
     try {

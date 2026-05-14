@@ -2,11 +2,11 @@
   "name": "My Second Brain",
   "short_name": "Second Brain",
   "description": "Voice-first memory assistant for students.",
-  "id": "my-second-brain-pwa-v5",
+  "id": "my-second-brain-pwa-v6",
   "start_url": "/?standalone=true",
   "scope": "/",
-  "display": "fullscreen",
-  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#001F3F",
   "theme_color": "#001F3F",
   "orientation": "any",
@@ -39,11 +39,5 @@
       "text": "text",
       "url": "url"
     }
-  },
-  "protocol_handlers": [
-    {
-      "protocol": "secondbrainapp",
-      "url": "/?moodle_token=%s"
-    }
-  ]
+  }
 }

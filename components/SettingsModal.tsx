@@ -4,7 +4,7 @@ import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon, PlusCircleIcon
 } from './Icons';
 import { Calendar } from 'lucide-react';
-import { testMoodleConnection } from '../services/moodleService';
+import { testMoodleConnection, loginWithCredentials } from '../services/moodleService';
 import {
     connectGoogleCalendar,
     disconnectGoogleCalendar,
@@ -78,9 +78,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
     const [isSigningIn, setIsSigningIn] = useState(false);
     const [signInError, setSignInError] = useState<string | null>(null);
-    const [manualToken, setManualToken] = useState('');
-    const [isTesting, setIsTesting] = useState(false);
-    const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+    const [moodleUsername, setMoodleUsername] = useState('');
+    const [moodlePassword, setMoodlePassword] = useState('');
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
+    const [moodleLoginError, setMoodleLoginError] = useState<string | null>(null);
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
     const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
@@ -109,40 +110,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         return () => unsubscribe?.();
     }, []);
 
-    const checkClipboard = useCallback(() => {
-        navigator.clipboard.readText().then(text => {
-            if (text && text.length === 32 && /^[a-f0-9]{32}$/.test(text)) {
-                setManualToken(text);
-            }
-        }).catch(() => {});
-    }, []);
-
-    useEffect(() => {
-        if (!moodleToken) {
-            checkClipboard();
-            window.addEventListener('focus', checkClipboard);
-            return () => window.removeEventListener('focus', checkClipboard);
-        }
-    }, [moodleToken, checkClipboard]);
-
-    const handleSaveManualToken = async () => {
-        const token = manualToken.trim();
-        if (token.length === 32) {
-            setIsTesting(true);
-            setTestResult(null);
-            const isValid = await testMoodleConnection(token);
-            setIsTesting(false);
-            if (isValid) {
-                onSaveMoodleToken(token);
-                setManualToken('');
-                setTestResult('success');
-                setTimeout(() => setTestResult(null), 3000);
-            } else {
-                setTestResult('error');
-                alert("Moodle rejected this key. Please make sure you copied the 'Moodle Mobile additional features service' key from the Security Keys page.");
-            }
-        } else {
-            alert("Please enter a valid 32-character Moodle security key.");
+    const handleMoodleLogin = async () => {
+        const u = moodleUsername.trim();
+        const p = moodlePassword.trim();
+        if (!u || !p) { setMoodleLoginError('Enter your Moodle username and password.'); return; }
+        setIsLoggingIn(true);
+        setMoodleLoginError(null);
+        try {
+            const token = await loginWithCredentials(u, p);
+            onSaveMoodleToken(token);
+            setMoodleUsername('');
+            setMoodlePassword('');
+        } catch (e: any) {
+            setMoodleLoginError(e.message || 'Login failed. Check your username and password.');
+        } finally {
+            setIsLoggingIn(false);
         }
     };
 
@@ -209,10 +191,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         } finally {
             setIsSigningIn(false);
         }
-    };
-
-    const openMoodleInNewTab = () => {
-        window.open('https://online.dyellin.ac.il/user/preferences.php', '_blank', 'noopener,noreferrer');
     };
 
     const mcpConfigSnippet = `{
@@ -496,36 +474,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     Disconnect
                                 </button>
                             ) : (
-                                <div className="space-y-3 mt-3 bg-gray-900/50 p-4 rounded-xl border border-gray-700 animate-fade-in">
-                                    <div className="space-y-3 text-sm text-gray-300 font-medium">
-                                        <p className="font-black text-gray-400 text-xs uppercase tracking-widest">איך מתחברים:</p>
-                                        <ol dir="rtl" className="list-decimal list-inside space-y-2 bg-gray-800 p-3 rounded-lg border border-gray-600 text-xs leading-relaxed text-right">
-                                            <li>לחץ/י על השם שלך (בצד שמאל למעלה במודל), ואז לחץ/י על <strong className="text-white">"העדפות"</strong>.</li>
-                                            <li>בדף ההעדפות, לחץ/י על <strong className="text-white">"מפתחות אבטחה"</strong>.</li>
-                                            <li>גלול/י לתחתיתה. העתק/י את המפתח תחת <strong className="text-white">"Moodle Mobile additional features service"</strong>.</li>
-                                            <li>חזור/י לכאן והדבק/י למטה.</li>
-                                        </ol>
-                                    </div>
-                                    <button onClick={openMoodleInNewTab} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold flex items-center justify-center gap-2 text-xs uppercase">
-                                        <LinkIcon className="w-4 h-4" /> Open Moodle
-                                    </button>
+                                <div className="space-y-3 mt-3">
                                     <input
                                         type="text"
-                                        value={manualToken}
-                                        onChange={(e) => setManualToken(e.target.value)}
-                                        placeholder="הדבק/י את המפתח באורך 32 תווים כאן"
-                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white font-mono text-center text-sm"
-                                        aria-label="Moodle Security Key"
+                                        value={moodleUsername}
+                                        onChange={e => setMoodleUsername(e.target.value)}
+                                        placeholder="שם משתמש במודל"
+                                        autoComplete="username"
+                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white text-sm"
+                                        aria-label="Moodle username"
                                     />
+                                    <input
+                                        type="password"
+                                        value={moodlePassword}
+                                        onChange={e => setMoodlePassword(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleMoodleLogin()}
+                                        placeholder="סיסמה"
+                                        autoComplete="current-password"
+                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white text-sm"
+                                        aria-label="Moodle password"
+                                    />
+                                    {moodleLoginError && <p className="text-red-400 text-xs text-center font-bold">{moodleLoginError}</p>}
                                     <button
-                                        onClick={handleSaveManualToken}
-                                        disabled={isTesting}
-                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase flex items-center justify-center gap-2 ${isTesting ? 'bg-gray-600' : 'bg-green-600'} text-white`}
+                                        onClick={handleMoodleLogin}
+                                        disabled={isLoggingIn}
+                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase flex items-center justify-center gap-2 ${isLoggingIn ? 'bg-gray-600' : 'bg-green-600'} text-white`}
                                     >
-                                        {isTesting ? <Loader2Icon className="w-4 h-4 animate-spin" /> : null}
-                                        {isTesting ? 'Testing...' : 'Save Security Key'}
+                                        {isLoggingIn && <Loader2Icon className="w-4 h-4 animate-spin" />}
+                                        {isLoggingIn ? 'Connecting...' : 'Connect with Moodle Login'}
                                     </button>
-                                    {testResult === 'success' && <p className="text-green-400 text-center font-bold text-sm">Connected!</p>}
                                 </div>
                             )}
                         </div>

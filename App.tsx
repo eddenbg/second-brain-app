@@ -74,18 +74,6 @@ function App() {
   // Load Google events on mount if already connected
   useEffect(() => { loadGoogleEvents(); }, [loadGoogleEvents]);
 
-  // Request fullscreen on first interaction (hides Android status bar in fullscreen PWA mode)
-  useEffect(() => {
-    const requestFS = () => {
-      if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    };
-    document.addEventListener('click', requestFS, { once: true });
-    requestFS();
-    return () => document.removeEventListener('click', requestFS);
-  }, []);
-
   // Push a sentinel so Android back button always has an entry to pop within the app
   useEffect(() => {
     window.history.pushState({ page: 'app' }, '');

@@ -9,7 +9,7 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { googleProvider } from '../utils/firebase';
 
 export interface StoredData {
@@ -255,11 +255,16 @@ export const useRecordings = () => {
     }, []);
 
     const signInWithGoogle = useCallback(async () => {
-        if (!auth || !auth.currentUser) return;
+        if (!auth) throw new Error('Firebase not configured');
         // Use redirect (not popup) — popups are blocked by Android Chrome in PWA mode.
-        // linkWithRedirect preserves the current UID so existing data stays accessible.
-        // If this Google account is already linked elsewhere, getRedirectResult handles it.
-        await linkWithRedirect(auth.currentUser, googleProvider);
+        if (auth.currentUser?.isAnonymous) {
+            // Link anonymous account → preserves existing data under same UID
+            await linkWithRedirect(auth.currentUser, googleProvider);
+        } else if (!auth.currentUser) {
+            // No session yet — sign in directly
+            await signInWithRedirect(auth, googleProvider);
+        }
+        // If already signed in with Google, button shouldn't be visible — no-op
     }, []);
 
     const signOut = useCallback(async () => {

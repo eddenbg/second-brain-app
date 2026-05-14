@@ -15,13 +15,34 @@ export default async (req: Request, context: Context) => {
   }
 
   const url = new URL(req.url, 'http://localhost');
+
+  // ── Login with credentials to obtain a token ─────────────────────────
+  if (url.searchParams.get("action") === 'login') {
+    const username = url.searchParams.get("username") ?? '';
+    const password = url.searchParams.get("password") ?? '';
+    if (!username || !password) {
+      return new Response(JSON.stringify({ error: "username and password required" }), { status: 400, headers });
+    }
+    try {
+      const loginUrl = `https://online.dyellin.ac.il/login/token.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&service=moodle_mobile_app`;
+      const res = await fetch(loginUrl);
+      const data = await res.json();
+      if (data.error) {
+        return new Response(JSON.stringify({ error: data.error }), { status: 401, headers });
+      }
+      return new Response(JSON.stringify({ token: data.token }), { status: 200, headers });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: "Could not reach Moodle server" }), { status: 502, headers });
+    }
+  }
+
   const token = url.searchParams.get("token");
   const wsfunction = url.searchParams.get("wsfunction");
   const courseid = url.searchParams.get("courseid");
   const classification = url.searchParams.get("classification");
 
   if (!token || !wsfunction) {
-    return new Response(JSON.stringify({ error: "Missing parameters: token and wsfunction are required" }), { 
+    return new Response(JSON.stringify({ error: "Missing parameters: token and wsfunction are required" }), {
         status: 400,
         headers
     });
