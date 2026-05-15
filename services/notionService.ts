@@ -44,6 +44,17 @@ const blockToText = (block: any): string => {
     return content.rich_text.map((rt: any) => rt.plain_text).join('');
 };
 
+export const createScanPage = async (token: string, title: string, text: string, parentPageId: string): Promise<string> => {
+    const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: 'createPage', title, text, parentPageId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data.url;
+};
+
 export const fetchNotionPageContent = async (token: string, pageId: string): Promise<string> => {
     const params = new URLSearchParams({ token, action: 'blocks', pageId });
     const res = await fetch(`${PROXY}?${params}`);

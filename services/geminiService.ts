@@ -1,132 +1,107 @@
-import { GoogleGenAI, Modality, Type, FunctionDeclaration } from "@google/genai";
-import { getGeminiInstance } from '../utils/gemini';
-import type { AnyMemory, Task, CalendarEvent } from '../types';
+import { GoogleGenAI, Modality, Type } from '@google/genai';
 
-const model = "gemini-3-pro-preview";
-const videoModel = "veo-3.1-fast-generate-preview";
-const UNAVAILABLE_ERROR_MESSAGE = "AI features are unavailable. Please check your API key configuration.";
+const UNAVAILABLE_ERROR_MESSAGE = "AI features are currently unavailable. The API key may not be configured.";
 
-// Fix: Support 'research' type in generateStudyOverview to match UI capabilities in FilesView.tsx
-export async function generateStudyOverview(
-    memories: AnyMemory[], 
-    focus: string, 
-    type: 'written' | 'audio' | 'video' | 'research'
-): Promise<{ content: string, title: string, videoUri?: string }> {
+let geminiInstance: GoogleGenAI | null = null;
+
+export const getGeminiInstance = (): GoogleGenAI | null => {
+    if (geminiInstance) return geminiInstance;
+    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || (import.meta as any).env?.VITE_API_KEY;
+    if (!apiKey) return null;
+    geminiInstance = new GoogleGenAI({ apiKey });
+    return geminiInstance;
+};
+
+const model = 'gemini-2.5-flash';
+
+export async function askQuestion(question: string, context: string): Promise<string> {
     const ai = getGeminiInstance();
-    if (!ai) throw new Error("AI Unavailable");
-
-    const context = memories.map(m => `[SOURCE: ${m.title}] ${
-        m.type === 'voice' ? (m as any).transcript : (m as any).extractedText || (m as any).summary
-    }`).join('\n\n---\n\n');
-
-    const titleRes = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Create a 3-word title for this collection of notes: ${context.substring(0, 1000)}`
-    });
-    const title = titleRes.text?.trim() || "Study Session";
-
-    if (type === 'video') {
-        // Step 1: Generate a visual prompt
-        const promptRes = await ai.models.generateContent({
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+    try {
+        const response = await ai.models.generateContent({
             model,
-            contents: `CONTEXT:\n${context}\n\nTASK: Create a cinematic, educational prompt for a 5-second video explainer. 
-            The video should visually represent the core concept of these notes. 
-            FOCUS: ${focus || 'Key concepts'}. 
-            Style: Academic, high-quality 3D motion graphics.`,
+            contents: `Context:\n${context.substring(0, 50000)}\n\nQuestion: ${question}`,
         });
-        const videoPrompt = promptRes.text || "An educational abstract concept video.";
-
-        // Step 2: Call Veo
-        let operation = await ai.models.generateVideos({
-            model: videoModel,
-            prompt: videoPrompt,
-            config: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' }
-        });
-
-        // Polling handled by UI to keep thread open
-        return { content: videoPrompt, title, videoUri: (operation as any).name }; 
-    }
-
-    let prompt = "";
-    if (type === 'written') {
-        prompt = `Create a structured academic deep-dive. FOCUS: ${focus || 'General synthesis'}.`;
-    } else if (type === 'research') {
-        // Fix: Added prompt for research type
-        prompt = `Synthesize these sources for a deep research session. Identify non-obvious links and areas for further inquiry. FOCUS: ${focus || 'Synthesis and connections'}.`;
-    } else {
-        prompt = `Write a script for a "Study Podcast". The host should be engaging. FOCUS: ${focus || 'Key takeaways'}.`;
-    }
-
-    const response = await ai.models.generateContent({
-        model,
-        contents: `CONTEXT:\n${context}\n\nGOAL: ${prompt}`,
-        config: { systemInstruction: "You are an advanced education research assistant specializing in cross-document connections." }
-    });
-
-    return { content: response.text || "Summary failed.", title };
-}
-
-export async function checkVideoStatus(operationName: string): Promise<{ done: boolean, uri?: string }> {
-    const ai = getGeminiInstance();
-    if (!ai) return { done: false };
-    const operation = await ai.operations.getVideosOperation({ operation: { name: operationName } as any });
-    if (operation.done) {
-        return { done: true, uri: operation.response?.generatedVideos?.[0]?.video?.uri };
-    }
-    return { done: false };
-}
-
-export async function answerQuestionFromContext(
-    memories: AnyMemory[], 
-    tasks: Task[], 
-    question: string,
-    calendarEvents: CalendarEvent[] = [],
-    onToolCall?: (toolCall: any) => Promise<any>
-): Promise<string> {
-  const ai = getGeminiInstance();
-  if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
-
-  const memoryContext = memories.map(mem => `[MEM_ID: ${mem.id}] [COURSE: ${mem.course || 'Personal'}] [TITLE: ${mem.title}] CONTENT: ${
-      mem.type === 'voice' ? (mem as any).transcript : 
-      mem.type === 'document' ? (mem as any).extractedText : 
-      (mem as any).summary || (mem as any).content || ''
-  }`).join('\n\n---\n\n');
-
-  const systemInstruction = `You are a personal research assistant for a student.
-  Current Date/Time: ${new Date().toLocaleString()}
-  
-  CONTEXT: The provided text is the user's ENTIRE Second Brain. 
-  
-  TASK: 
-  1. Answer the question using the primary documents provided.
-  2. DEEP RECALL: Proactively look for connections in OTHER memories not mentioned in the question. 
-  3. If you find a connection (e.g., "This relates to a Biology note you took last month"), explicitly point it out.
-  4. Always cite the Note Title when referencing information.
-  5. Reply in the user's language (Hebrew or English).`;
-
-  try {
-    const response = await ai.models.generateContent({
-        model,
-        contents: `KNOWLEDGE BASE:\n${memoryContext}\n\nUSER QUESTION:\n${question}`,
-        config: { systemInstruction },
-    });
-    return response.text ?? "I couldn't find a connection.";
-  } catch (error) {
-    return "Error querying your brain.";
-  }
+        return response.text ?? "I couldn't find an answer.";
+    } catch (error) { return "I encountered an error while processing your question."; }
 }
 
 export async function generateTitleForContent(content: string): Promise<string> {
     const ai = getGeminiInstance();
-    if (!ai || !content.trim()) return "Untitled";
+    if (!ai) return 'Untitled';
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: `Short, uppercase 2-3 word title for: ${content.substring(0, 1000)}`,
-            config: { stopSequences: ['\n'] },
+            model,
+            contents: `Generate a short, descriptive title (max 8 words) for this content. Return ONLY the title text, nothing else:\n\n${content.substring(0, 2000)}`,
         });
-        return (response.text ?? "Untitled").trim().replace(/"/g, ''); 
-    } catch (error) { return "Untitled"; }
+        return response.text?.trim().replace(/^"|"$/g, '') ?? 'Untitled';
+    } catch { return 'Untitled'; }
+}
+
+export async function generateMemorySummary(memories: any[]): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+    const context = memories
+        .slice(0, 20)
+        .map(m => `[${m.type?.toUpperCase() || 'MEMORY'}] ${m.title || ''}\n${
+            m.type === 'voice' ? (m as any).transcript : (m as any).extractedText || (m as any).summary
+        }`)
+        .join('\n\n');
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Summarize these memories briefly:\n\n${context.substring(0, 30000)}`,
+        });
+        return response.text ?? 'No summary available.';
+    } catch { return 'Could not generate summary.'; }
+}
+
+export async function chatWithMemories(
+    userMessage: string,
+    memories: any[],
+    history: Array<{ role: 'user' | 'model'; text: string }>
+): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+
+    const memContext = memories
+        .slice(0, 50)
+        .map(mem => {
+            const content = mem.type === 'voice' ? (mem as any).transcript : 
+                           mem.type === 'document' ? (mem as any).extractedText :
+                           mem.type === 'web' ? (mem as any).content :
+                           mem.type === 'file' ? `[File: ${mem.title}]` :
+                           (mem as any).description || (mem as any).summary || '';
+            return `[${mem.type?.toUpperCase()}] ${mem.title || '(untitled)'} (${new Date(mem.date).toLocaleDateString()}):\n${content}`;
+        })
+        .join('\n\n---\n\n');
+
+    const systemPrompt = `You are a helpful AI assistant for a student's second brain app. 
+  You have access to their personal notes, recordings, documents, and web clips.
+  
+  MEMORIES/NOTES:\n${memContext.substring(0, 60000)}
+  
+  Instructions:
+  1. Answer based on the memories above when relevant.
+  2. Be concise and helpful.
+  3. If something isn't in the memories, say so honestly.
+  4. Format lists and key points clearly.
+  5. Reply in the user's language (Hebrew or English).`;
+
+    const contents = [
+        ...history.map(h => ({ role: h.role, parts: [{ text: h.text }] })),
+        { role: 'user' as const, parts: [{ text: userMessage }] }
+    ];
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents,
+            config: { systemInstruction: systemPrompt },
+        });
+        return response.text ?? 'No response generated.';
+    } catch (error) { return 'I encountered an error. Please try again.'; }
 }
 
 export async function generateSpeechFromText(text: string): Promise<string | null> {
@@ -151,7 +126,7 @@ export async function extractTextFromImage(base64Data: string, mimeType: string)
             contents: { 
                 parts: [
                     { inlineData: { mimeType, data: base64Data } }, 
-                    { text: `Extract text precisely. Hebrew/English.` }
+                    { text: `Extract all text from this image exactly as written. Support both printed and handwritten text in Hebrew or English. Preserve line breaks and original layout.` }
                 ] 
             },
         });
@@ -187,14 +162,16 @@ export async function processSharedUrl(
     availableTags?: string[]
 ): Promise<{ title: string; summary: string; type: 'Article' | 'Video'; takeaways: string[]; suggestedTags: string[] }> {
     const ai = getGeminiInstance();
-    if (!ai) throw new Error("AI Unavailable");
+    if (!ai) throw new Error(UNAVAILABLE_ERROR_MESSAGE);
+
+    const tagsContext = availableTags && availableTags.length > 0
+        ? `\nExisting tags to reuse if applicable: ${availableTags.join(', ')}`
+        : '';
+
     try {
-        const tagInstruction = availableTags && availableTags.length > 0
-            ? ` Also pick which of these tags apply (can be multiple, or empty array if none fit): ${JSON.stringify(availableTags)}.`
-            : '';
         const response = await ai.models.generateContent({
             model,
-            contents: `URL: ${url}. Title: "${title}". Analyze and return JSON with summary and takeaways.${tagInstruction}`,
+            contents: `Analyze this shared content and return JSON:\nURL: ${url}\nTitle: ${title}\nText: ${text.substring(0, 3000)}${tagsContext}`,
             config: {
                 responseMimeType: "application/json",
                 responseSchema: {
@@ -210,11 +187,6 @@ export async function processSharedUrl(
                 }
             }
         });
-        const result = JSON.parse(response.text || "{}");
-        // Only keep tags that are actually in the available list
-        if (availableTags && availableTags.length > 0) {
-            result.suggestedTags = (result.suggestedTags || []).filter((t: string) => availableTags.includes(t));
-        }
-        return { ...result, suggestedTags: result.suggestedTags || [] };
-    } catch (error) { return { title: title || "Shared Link", summary: text, type: 'Article', takeaways: [], suggestedTags: [] }; }
+        return JSON.parse(response.text || '{}');
+    } catch (error) { throw new Error('Failed to analyze the shared content.'); }
 }
