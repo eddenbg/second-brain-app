@@ -89,7 +89,18 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
 
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: `You are a personal AI assistant for a student. You have full access to their Second Brain — notes, recordings, documents, and files from all tabs.\n\nIMPORTANT RULES:\n- Detect the language of the user's question and ALWAYS reply in that same language. Hebrew question → Hebrew answer. English question → English answer.\n- Answer based on the context below. Cite sources by mentioning their title in parentheses.\n- If the context doesn't contain the answer, say so clearly and suggest they might want to add a note about it.\n- Be concise and helpful.\n\nSECOND BRAIN CONTENTS:\n${context || 'No memories saved yet.'}\n\nUSER QUESTION: ${query}`,
+                contents: `You are a personal AI assistant for a student. You have full access to their Second Brain — notes, recordings, documents, and files from all tabs.
+
+IMPORTANT RULES:
+- Detect the language of the user's question and ALWAYS reply in that same language. Hebrew question → Hebrew answer. English question → English answer.
+- Answer based on the context below. Cite sources by mentioning their title in parentheses.
+- If the context doesn't contain the answer, say so clearly and suggest they might want to add a note about it.
+- Be concise and helpful.
+
+SECOND BRAIN CONTENTS:
+${context || 'No memories saved yet.'}
+
+USER QUESTION: ${query}`,
             });
 
             const aiMsg: Message = {
