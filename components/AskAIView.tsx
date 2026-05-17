@@ -1,8 +1,7 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, MicOff, Send, Loader2, Sparkles, ArrowRight } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import type { AnyMemory } from '../types';
+import { getGeminiInstance } from '../services/geminiService';
 import { searchMemories } from '../utils/SearchLogic';
 
 interface AskAIViewProps {
@@ -15,7 +14,6 @@ interface Message {
     links?: { title: string; id: string; type: string }[];
 }
 
-// Web Speech API type augmentation
 declare global {
     interface Window {
         SpeechRecognition: any;
@@ -27,7 +25,7 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
     const [messages, setMessages] = useState<Message[]>([
         {
             role: 'ai',
-            content: 'שלום! / Hello! Ask me anything about your notes, courses, or personal thoughts. I will answer in the language you speak to me.'
+            content: 'שלום! / Hello! Ask me anything about your notes, courses, recordings, or files. I can see everything across all your tabs.'
         }
     ]);
     const [input, setInput] = useState('');
@@ -43,20 +41,34 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
         }
     }, [messages, isTyping]);
 
-    // Build context string from top memory search results
-    const buildContext = useCallback((query: string) => {
-        const results = searchMemories(query, memories, []);
-        return results.slice(0, 6).map(r => {
-            const m = r.item as AnyMemory;
-            const text = 'transcript' in m
-                ? (m as any).transcript
-                : 'extractedText' in m
-                ? (m as any).extractedText
-                : 'content' in m
-                ? (m as any).content
-                : '';
-            return `[${m.type.toUpperCase()} – ${m.title}]: ${text || m.title}`;
-        }).join('\n---\n');
+    // Build full RAG context from all memories, organized by tab
+    const buildContext = useCallback(() => {
+        if (memories.length === 0) return 'No memories saved yet.';
+
+        const formatMemory = (m: AnyMemory): string => {
+            const content: string =
+                'transcript' in m ? (m as any).transcript :
+                'extractedText' in m ? (m as any).extractedText :
+                'content' in m ? (m as any).content :
+                'description' in m ? (m as any).description :
+                'summary' in m ? (m as any).summary : '';
+            const snippet = content ? content.slice(0, 600) : '';
+            const date = new Date(m.date).toLocaleDateString();
+            return `[${m.type.toUpperCase()}] "${m.title}" (${date})${snippet ? ': ' + snippet : ''}`;
+        };
+
+        const personal = memories.filter(m => m.category === 'personal').slice(0, 60);
+        const college = memories.filter(m => m.category === 'college').slice(0, 60);
+
+        const sections: string[] = [];
+        if (personal.length > 0) {
+            sections.push(`=== PERSONAL HUB (${personal.length} items) ===\n${personal.map(formatMemory).join('\n')}`);
+        }
+        if (college.length > 0) {
+            sections.push(`=== COLLEGE HUB (${college.length} items) ===\n${college.map(formatMemory).join('\n')}`);
+        }
+
+        return sections.join('\n\n');
     }, [memories]);
 
     const handleSend = async (text?: string) => {
@@ -68,32 +80,24 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
         setIsTyping(true);
 
         try {
-            const context = buildContext(query);
-            const results = searchMemories(query, memories, []);
+            const context = buildContext();
+            // Keyword search for source links shown below the answer
+            const sources = searchMemories(query, memories, []).slice(0, 3);
 
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+            const ai = getGeminiInstance();
+            if (!ai) throw new Error('AI not configured');
+
             const response = await ai.models.generateContent({
-                model: 'gemini-3-flash-preview',
-                contents: `You are a personal AI assistant for a visually impaired student.
-Your job is to answer questions using ONLY the context below from their "Second Brain".
-
-IMPORTANT LANGUAGE RULE: Detect the language of the user question and ALWAYS respond in that same language. If the question is in Hebrew, answer fully in Hebrew. If in English, answer in English. Support mixed Hebrew-English naturally.
-
-When you give an answer, cite which source(s) it came from by mentioning the title in parentheses.
-If the context does not contain the answer, say so clearly and suggest the user might want to add a note about it.
-
-CONTEXT FROM SECOND BRAIN:
-${context || 'No relevant notes found.'}
-
-USER QUESTION: ${query}`,
+                model: 'gemini-2.5-flash',
+                contents: `You are a personal AI assistant for a student. You have full access to their Second Brain — notes, recordings, documents, and files from all tabs.\n\nIMPORTANT RULES:\n- Detect the language of the user's question and ALWAYS reply in that same language. Hebrew question → Hebrew answer. English question → English answer.\n- Answer based on the context below. Cite sources by mentioning their title in parentheses.\n- If the context doesn't contain the answer, say so clearly and suggest they might want to add a note about it.\n- Be concise and helpful.\n\nSECOND BRAIN CONTENTS:\n${context || 'No memories saved yet.'}\n\nUSER QUESTION: ${query}`,
             });
 
             const aiMsg: Message = {
                 role: 'ai',
-                content: response.text || 'לא מצאתי מידע רלוונטי. / No relevant information found.',
-                links: results.slice(0, 3).map(r => ({
-                    title: r.item.title,
-                    id: r.item.id,
+                content: response.text || 'No relevant information found. / לא נמצא מידע רלוונטי.',
+                links: sources.map(r => ({
+                    title: (r.item as AnyMemory).title,
+                    id: (r.item as AnyMemory).id,
                     type: (r.item as AnyMemory).type
                 }))
             };
@@ -119,8 +123,6 @@ USER QUESTION: ${query}`,
 
         const recognition = new SpeechRecognition();
         recognitionRef.current = recognition;
-
-        // Support Hebrew and English together
         recognition.lang = 'iw-IL';
         recognition.interimResults = true;
         recognition.continuous = false;
@@ -137,21 +139,15 @@ USER QUESTION: ${query}`,
 
         recognition.onend = () => {
             setIsListening(false);
-            // Auto-send if there's something in the input
             setInput(prev => {
-                if (prev.trim()) {
-                    // Delay slightly so state settles
-                    setTimeout(() => handleSend(prev), 100);
-                }
+                if (prev.trim()) setTimeout(() => handleSend(prev), 100);
                 return prev;
             });
         };
 
         recognition.onerror = (event: any) => {
             setIsListening(false);
-            if (event.error !== 'no-speech') {
-                setVoiceError(`Voice error: ${event.error}`);
-            }
+            if (event.error !== 'no-speech') setVoiceError(`Voice error: ${event.error}`);
         };
 
         recognition.start();
@@ -164,16 +160,20 @@ USER QUESTION: ${query}`,
 
     return (
         <div className="flex flex-col h-full gap-4" style={{ height: 'calc(100vh - 220px)' }}>
+            {/* Memory count indicator */}
+            {memories.length > 0 && (
+                <div className="flex-shrink-0 flex items-center gap-2 px-1">
+                    <Sparkles size={12} className="text-white/40" strokeWidth={3} />
+                    <span className="text-[10px] text-white/40 font-black uppercase tracking-widest">
+                        {memories.length} memories indexed across all tabs
+                    </span>
+                </div>
+            )}
+
             {/* Chat Area */}
-            <div
-                ref={scrollRef}
-                className="flex-grow overflow-y-auto flex flex-col gap-5 px-2 scrollbar-hide"
-            >
+            <div ref={scrollRef} className="flex-grow overflow-y-auto flex flex-col gap-5 px-2 scrollbar-hide">
                 {messages.map((msg, i) => (
-                    <div
-                        key={i}
-                        className={`flex flex-col gap-3 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                    >
+                    <div key={i} className={`flex flex-col gap-3 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                         {msg.role === 'ai' && (
                             <div className="flex items-center gap-2 text-white/50 text-sm">
                                 <Sparkles size={16} strokeWidth={3} />
@@ -243,7 +243,6 @@ USER QUESTION: ${query}`,
                     </button>
                 </div>
 
-                {/* Voice Button */}
                 <button
                     onClick={isListening ? stopListening : startListening}
                     disabled={isTyping}
