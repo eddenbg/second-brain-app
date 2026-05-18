@@ -9,7 +9,7 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, linkWithPopup, signInWithPopup, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { googleProvider } from '../utils/firebase';
 
 export interface StoredData {
@@ -20,13 +20,12 @@ export interface StoredData {
 }
 
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
-const SYNC_DELAY_MS = 2000; // 2 seconds of inactivity before auto-sync
 
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [moodleToken, setMoodleToken] = useState<string | null>(null);
+    const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
     
     const [user, setUser] = useState<User | null>(null);
@@ -61,10 +60,11 @@ export const useRecordings = () => {
         }
 
         // Handle post-redirect after Google sign-in (fires once when app loads back after redirect)
-        getRedirectResult(auth).catch((e: any) => {
+        getRedirectResult(auth).then((_result) => {
+            // onAuthStateChanged handles user state update automatically
+        }).catch((e: any) => {
             if (e.code === 'auth/credential-already-in-use') {
-                // Google account already linked to another Firebase UID (the first device's linked account).
-                // Sign into that account so this device gets the same UID and sees all synced data.
+                // Google account already linked to another Firebase UID — sign into that account directly
                 const credential = GoogleAuthProvider.credentialFromError(e);
                 if (credential) {
                     signInWithCredential(auth, credential).catch(console.error);
@@ -176,95 +176,122 @@ export const useRecordings = () => {
             batch.set(settingsRef, { courses: savedCourses, moodleToken }, { merge: true });
 
             await batch.commit();
-            setHasUnsavedChanges(false);
-        } catch (error: any) {
-            console.error("Sync failed", error);
-            setSyncError("Cloud connection lost.");
+        } catch (e) {
+            console.error('Sync failed', e);
+            setSyncError('Sync failed. Please try again.');
         } finally {
             setIsSyncing(false);
         }
     }, [user, memories, tasks, savedCourses, moodleToken]);
 
-    // Auto-Sync Trigger
-    useEffect(() => {
-        if (hasUnsavedChanges && user && !isSyncing) {
-            if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
-            autoSyncTimerRef.current = setTimeout(() => {
-                performSync();
-            }, SYNC_DELAY_MS);
+    const addMemory = useCallback(async (memoryData: Omit<AnyMemory, 'id' | 'date'>) => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        const newMemory = {
+            ...memoryData,
+            id: Date.now().toString(),
+            date: new Date().toISOString(),
+        } as AnyMemory;
+        const docRef = doc(db, 'users', user.uid, 'memories', newMemory.id);
+        const { writeBatch: _wb, ...firestoreDoc } = { writeBatch: null, ...newMemory };
+        void _wb;
+        try {
+            const { default: firestoreModule } = await import('firebase/firestore');
+            await (firestoreModule as any).setDoc(docRef, newMemory);
+        } catch {
+            const { setDoc } = await import('firebase/firestore');
+            await setDoc(docRef, newMemory);
         }
-        return () => {
-            if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
-        };
-    }, [hasUnsavedChanges, user, performSync, isSyncing]);
-
-    // --- Actions ---
-    const addMemory = useCallback(async (memory: Omit<AnyMemory, 'id' | 'date'>) => {
-        const id = Date.now().toString();
-        const newMemory = { ...memory, id, date: new Date().toISOString() } as AnyMemory;
-        setMemories(prev => [newMemory, ...prev]);
-        setHasUnsavedChanges(true);
-        return id;
-    }, []);
+        void firestoreDoc;
+    }, [user]);
 
     const deleteMemory = useCallback(async (id: string) => {
-        setMemories(prev => prev.filter(m => m.id !== id));
-        setHasUnsavedChanges(true);
-    }, []);
-
-    const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
-        setMemories(prev => prev.map(m => m.id === id ? { ...m, ...updates } as AnyMemory : m));
-        setHasUnsavedChanges(true);
-    }, []);
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'users', user.uid, 'memories', id));
+    }, [user]);
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
-        setMemories(prev => prev.filter(m => !ids.includes(m.id)));
-        setHasUnsavedChanges(true);
-    }, []);
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { deleteDoc } = await import('firebase/firestore');
+        await Promise.all(ids.map(id => deleteDoc(doc(db, 'users', user.uid, 'memories', id))));
+    }, [user]);
 
-    const addTask = useCallback(async (task: Omit<Task, 'id' | 'createdAt'>) => {
-        const id = (Date.now() + 1).toString();
-        const newTask = { ...task, id, createdAt: new Date().toISOString() } as Task;
-        setTasks(prev => [newTask, ...prev]);
-        setHasUnsavedChanges(true);
-    }, []);
+    const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { updateDoc } = await import('firebase/firestore');
+        await updateDoc(doc(db, 'users', user.uid, 'memories', id), updates as any);
+    }, [user]);
+
+    const addTask = useCallback(async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        const newTask: Task = { ...taskData, id: Date.now().toString(), createdAt: new Date().toISOString() };
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', user.uid, 'tasks', newTask.id), newTask);
+    }, [user]);
 
     const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
-        setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
-        setHasUnsavedChanges(true);
-    }, []);
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { updateDoc } = await import('firebase/firestore');
+        await updateDoc(doc(db, 'users', user.uid, 'tasks', id), updates as any);
+    }, [user]);
 
     const deleteTask = useCallback(async (id: string) => {
-        setTasks(prev => prev.filter(t => t.id !== id));
-        setHasUnsavedChanges(true);
-    }, []);
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
+    }, [user]);
 
     const addCourse = useCallback(async (courseName: string) => {
-        const name = courseName.trim();
-        if (!name) return;
-        setSavedCourses(prev => {
-            if (prev.includes(name)) return prev;
-            return [...prev, name];
-        });
-        setHasUnsavedChanges(true);
-    }, []);
+        if (!user || !db || (db as any).type === 'mock') return;
+        const updated = [...new Set([...savedCourses, courseName])];
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken }, { merge: true });
+    }, [user, savedCourses, moodleToken]);
 
-    const saveMoodleToken = useCallback(async (token: string) => {
+    const saveMoodleToken = useCallback(async (token: string | null) => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: savedCourses, moodleToken: token }, { merge: true });
         setMoodleToken(token);
-        setHasUnsavedChanges(true);
-    }, []);
+    }, [user, savedCourses]);
 
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
-        // Use redirect (not popup) — popups are blocked by Android Chrome in PWA mode.
-        if (auth.currentUser?.isAnonymous) {
-            // Link anonymous account → preserves existing data under same UID
-            await linkWithRedirect(auth.currentUser, googleProvider);
-        } else if (!auth.currentUser) {
-            // No session yet — sign in directly
-            await signInWithRedirect(auth, googleProvider);
+
+        const tryPopup = async () => {
+            if (auth.currentUser?.isAnonymous) {
+                await linkWithPopup(auth.currentUser, googleProvider);
+            } else {
+                await signInWithPopup(auth, googleProvider);
+            }
+        };
+
+        const tryRedirect = async () => {
+            if (auth.currentUser?.isAnonymous) {
+                await linkWithRedirect(auth.currentUser, googleProvider);
+            } else {
+                await signInWithRedirect(auth, googleProvider);
+            }
+        };
+
+        try {
+            await tryPopup();
+        } catch (e: any) {
+            if (
+                e.code === 'auth/popup-blocked' ||
+                e.code === 'auth/popup-cancelled' ||
+                e.code === 'auth/cancelled-popup-request'
+            ) {
+                // Popup blocked (strict PWA mode) — fall back to redirect
+                await tryRedirect();
+            } else if (e.code === 'auth/credential-already-in-use') {
+                // Google account already belongs to another UID — sign in directly
+                const credential = GoogleAuthProvider.credentialFromError(e);
+                if (credential) await signInWithCredential(auth, credential);
+            } else {
+                throw e;
+            }
         }
-        // If already signed in with Google, button shouldn't be visible — no-op
     }, []);
 
     const signOut = useCallback(async () => {
