@@ -248,6 +248,17 @@ export const useRecordings = () => {
         await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken }, { merge: true });
     }, [user, savedCourses, moodleToken]);
 
+    const deleteCourse = useCallback(async (courseName: string) => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { setDoc, deleteDoc } = await import('firebase/firestore');
+        // Remove from savedCourses
+        const updatedCourses = savedCourses.filter(c => c !== courseName);
+        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updatedCourses, moodleToken }, { merge: true });
+        // Delete all memories belonging to this course
+        const courseMemories = memories.filter(m => m.category === 'college' && (m as any).course === courseName);
+        await Promise.all(courseMemories.map(m => deleteDoc(doc(db, 'users', user.uid, 'memories', m.id))));
+    }, [user, savedCourses, moodleToken, memories]);
+
     const saveMoodleToken = useCallback(async (token: string | null) => {
         if (!user || !db || (db as any).type === 'mock') return;
         const { setDoc } = await import('firebase/firestore');
@@ -302,7 +313,7 @@ export const useRecordings = () => {
     return {
         memories, tasks, courses, moodleToken,
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
-        addTask, updateTask, deleteTask, addCourse, saveMoodleToken,
+        addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
         user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,
