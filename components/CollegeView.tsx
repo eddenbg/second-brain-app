@@ -21,6 +21,7 @@ interface CollegeViewProps {
     bulkDelete: (ids: string[]) => void;
     courses: string[];
     addCourse: (courseName: string) => void;
+    deleteCourse: (courseName: string) => void;
     tasks: Task[];
     addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
@@ -82,7 +83,7 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
 
 const CollegeView: React.FC<CollegeViewProps> = ({
     lectures, onSave, onDelete, onUpdate, bulkDelete,
-    courses, addCourse, tasks, addTask, updateTask, deleteTask, moodleToken,
+    courses, addCourse, deleteCourse, tasks, addTask, updateTask, deleteTask, moodleToken,
     backHandlerRef
 }) => {
     const [mainTab, setMainTab] = useState<'courses' | 'files' | 'tasks'>('courses');
@@ -228,19 +229,30 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     {/* Course cards */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                         {courses.map(course => (
-                            <button
-                                key={course}
-                                onClick={() => handleSelectCourse(course)}
-                                className="card-brutal flex items-center gap-5 text-left hover:bg-white/5"
-                            >
-                                <Folder size={48} className="text-[#60A5FA] flex-shrink-0" strokeWidth={3} />
-                                <div className="flex-grow overflow-hidden">
-                                    <h2 className="text-xl truncate">{course}</h2>
-                                    <p className="text-[#60A5FA] text-sm uppercase tracking-widest">
-                                        {memoriesByCourse[course]?.length || 0} items
-                                    </p>
-                                </div>
-                            </button>
+                            <div key={course} className="card-brutal flex items-center gap-5 text-left hover:bg-white/5">
+                                <button onClick={() => handleSelectCourse(course)} className="flex items-center gap-5 flex-grow min-w-0">
+                                    <Folder size={48} className="text-[#60A5FA] flex-shrink-0" strokeWidth={3} />
+                                    <div className="flex-grow overflow-hidden">
+                                        <h2 className="text-xl truncate">{course}</h2>
+                                        <p className="text-[#60A5FA] text-sm uppercase tracking-widest">
+                                            {memoriesByCourse[course]?.length || 0} items
+                                        </p>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const count = memoriesByCourse[course]?.length || 0;
+                                        const msg = count > 0
+                                            ? `Delete "${course}" and all ${count} item${count !== 1 ? 's' : ''} inside it?`
+                                            : `Delete course "${course}"?`;
+                                        if (window.confirm(msg)) deleteCourse(course);
+                                    }}
+                                    className="flex-shrink-0 p-2 text-white/30 hover:text-red-400 transition-colors"
+                                    aria-label={`Delete ${course}`}
+                                >
+                                    <Trash2 size={22} strokeWidth={3} />
+                                </button>
+                            </div>
                         ))}
                         {courses.length === 0 && (
                             <div className="col-span-2 py-16 text-center opacity-40">

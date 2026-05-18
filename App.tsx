@@ -45,7 +45,7 @@ function App() {
   const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
     tasks, addTask, updateTask, deleteTask,
-    courses, addCourse, user, loading,
+    courses, addCourse, deleteCourse, user, loading,
     moodleToken, saveMoodleToken,
     signInWithGoogle, signOut: signOutUser,
   } = useRecordings();
@@ -245,6 +245,7 @@ function App() {
             bulkDelete={bulkDeleteMemories}
             courses={courses}
             addCourse={addCourse}
+            deleteCourse={deleteCourse}
             tasks={tasks}
             addTask={addTask}
             updateTask={updateTask}
