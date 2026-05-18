@@ -223,7 +223,19 @@ export async function answerQuestionFromContext(
         `[EVENT] ${e.title}: ${new Date(e.startTime).toLocaleString()}`
     ).join('\n');
 
-    const systemPrompt = `You are a helpful AI assistant for a student's second brain. You have access to their memories, tasks, and calendar.\n\nMEMORIES:\n${memContext || 'None.'}\n\nTASKS:\n${taskContext || 'None.'}\n\nCALENDAR:\n${calContext || 'None.'}\n\nInstructions:\n1. Answer based on the context when relevant. Be concise.\n2. If something isn't in the context, say so honestly.\n3. Reply in the user's language (Hebrew or English).\n4. To schedule an event, use the createCalendarEvent tool.`;
+    const systemPrompt = `You are a helpful AI assistant for a student's second brain. You have access to their memories, tasks, and calendar.
+
+MEMORIES:\n${memContext || 'None.'}
+
+TASKS:\n${taskContext || 'None.'}
+
+CALENDAR:\n${calContext || 'None.'}
+
+Instructions:
+1. Answer based on the context when relevant. Be concise.
+2. If something isn't in the context, say so honestly.
+3. Reply in the user's language (Hebrew or English).
+4. To schedule an event, use the createCalendarEvent tool.`;
 
     try {
         const response = await ai.models.generateContent({
