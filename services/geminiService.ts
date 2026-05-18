@@ -157,6 +157,113 @@ export async function analyzeVoiceNote(content: string): Promise<{ title: string
     } catch (error) { return { title: "Voice Note", actionItems: [] }; }
 }
 
+export async function generateStudyOverview(
+    memories: any[],
+    focus: string,
+    type: 'written' | 'audio' | 'video' | 'research'
+): Promise<{ content: string; title: string; videoUri?: string }> {
+    const ai = getGeminiInstance();
+    if (!ai) return { content: UNAVAILABLE_ERROR_MESSAGE, title: focus };
+
+    const context = memories.slice(0, 40).map(m => {
+        const content = m.type === 'voice' ? m.transcript :
+                        m.type === 'document' ? m.extractedText :
+                        m.content || m.description || m.summary || '';
+        return `[${(m.type || 'NOTE').toUpperCase()}] ${m.title || ''}: ${(content || '').slice(0, 500)}`;
+    }).join('\n\n');
+
+    const styleGuide: Record<string, string> = {
+        written: 'Write structured study notes with headings, key concepts, and summaries.',
+        audio:   'Write an engaging podcast-style script (spoken word, no headers) covering the key topics as if explaining to a student.',
+        video:   'Write a clear, structured script for a study video covering the main concepts.',
+        research:'Write a deep research overview: background, main findings, open questions, and connections between topics.',
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: `You are a study assistant. Based on these course materials about "${focus}", create study content.\n\nStyle: ${styleGuide[type]}\n\nMATERIALS:\n${context.slice(0, 60000)}`,
+        });
+        return {
+            content: response.text ?? 'Could not generate study content.',
+            title: focus,
+        };
+    } catch { return { content: 'Error generating study content.', title: focus }; }
+}
+
+export async function checkVideoStatus(videoUri: string): Promise<{ done: boolean; uri: string }> {
+    // Placeholder — real video generation would poll a generation API here
+    void videoUri;
+    return { done: true, uri: videoUri };
+}
+
+export async function answerQuestionFromContext(
+    memories: any[],
+    tasks: any[],
+    question: string,
+    calendarEvents: any[],
+    onToolCall?: (call: { name: string; args: any }) => Promise<any>
+): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+
+    const memContext = memories.slice(0, 50).map(m => {
+        const content = m.type === 'voice' ? m.transcript :
+                        m.type === 'document' ? m.extractedText :
+                        m.type === 'web' ? m.content :
+                        m.description || m.summary || '';
+        return `[${(m.type || 'MEMORY').toUpperCase()}] ${m.title || '(untitled)'}: ${(content || '').slice(0, 400)}`;
+    }).join('\n');
+
+    const taskContext = tasks.slice(0, 20).map((t: any) =>
+        `[TASK] ${t.title} — ${t.completed ? 'done' : 'pending'}${t.dueDate ? ` (due ${t.dueDate})` : ''}`
+    ).join('\n');
+
+    const calContext = calendarEvents.slice(0, 20).map((e: any) =>
+        `[EVENT] ${e.title}: ${new Date(e.startTime).toLocaleString()}`
+    ).join('\n');
+
+    const systemPrompt = `You are a helpful AI assistant for a student's second brain. You have access to their memories, tasks, and calendar.\n\nMEMORIES:\n${memContext || 'None.'}\n\nTASKS:\n${taskContext || 'None.'}\n\nCALENDAR:\n${calContext || 'None.'}\n\nInstructions:\n1. Answer based on the context when relevant. Be concise.\n2. If something isn't in the context, say so honestly.\n3. Reply in the user's language (Hebrew or English).\n4. To schedule an event, use the createCalendarEvent tool.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: question,
+            config: {
+                systemInstruction: systemPrompt,
+                tools: [{
+                    functionDeclarations: [{
+                        name: 'createCalendarEvent',
+                        description: 'Schedule a new calendar event for the user',
+                        parameters: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: { type: Type.STRING, description: 'Event title' },
+                                startTime: { type: Type.STRING, description: 'ISO 8601 start datetime' },
+                                endTime: { type: Type.STRING, description: 'ISO 8601 end datetime' },
+                                category: { type: Type.STRING, description: 'personal or college' },
+                                description: { type: Type.STRING, description: 'Optional notes' },
+                            },
+                            required: ['title', 'startTime', 'endTime'],
+                        },
+                    }],
+                }],
+            },
+        });
+
+        const parts = response.candidates?.[0]?.content?.parts ?? [];
+        for (const part of parts) {
+            if ((part as any).functionCall && onToolCall) {
+                const call = (part as any).functionCall;
+                const result = await onToolCall({ name: call.name, args: call.args });
+                return result?.message ?? 'Done!';
+            }
+        }
+
+        return response.text ?? 'No response generated.';
+    } catch { return 'I encountered an error. Please try again.'; }
+}
+
 export async function processSharedUrl(
     url: string, title: string, text: string,
     availableTags?: string[]
