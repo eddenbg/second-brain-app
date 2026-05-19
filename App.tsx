@@ -34,6 +34,8 @@ function App() {
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
+  // Capture share params immediately on mount before auth loads (prevents race condition)
+  const pendingShareRef = useRef<{ url: string; title: string; text: string } | null>(null);
   const [webCategories, setWebCategories] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('web_categories') || '[]'); } catch { return []; }
   });
@@ -41,6 +43,8 @@ function App() {
     setWebCategories(cats);
     localStorage.setItem('web_categories', JSON.stringify(cats));
   }, []);
+
+  const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
 
   const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
@@ -50,81 +54,40 @@ function App() {
     signInWithGoogle, signOut: signOutUser,
   } = useRecordings();
 
-  const { updateAvailable, updateServiceWorker } = useServiceWorker();
+  const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
+  const personalMemories = useMemo(() => memories.filter(m => m.category === 'personal'), [memories]);
 
-  // CollegeView registers a handler here so hardware back navigates within the college hierarchy
-  const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
-
-  const allCalendarEvents = useMemo(
-    () => [...calendarEvents, ...moodleEvents, ...googleEvents],
-    [calendarEvents, moodleEvents, googleEvents]
-  );
-
-  const loadGoogleEvents = useCallback(async () => {
-    const token = getStoredToken();
-    if (!token) return;
-    try {
-        const events = await fetchGoogleCalendarEvents(token);
-        setGoogleEvents(events);
-    } catch (e) {
-        console.error('Google Calendar fetch failed', e);
-    }
-  }, []);
-
-  // Load Google events on mount if already connected
-  useEffect(() => { loadGoogleEvents(); }, [loadGoogleEvents]);
-
-  // Push a sentinel so Android back button always has an entry to pop within the app
+  // Moodle sync
   useEffect(() => {
-    window.history.pushState({ page: 'app' }, '');
-  }, []);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      if (showSettings) setShowSettings(false);
-      else if (showSchedule) setShowSchedule(false);
-      else if (sharedContent) setSharedContent(null);
-      else if (collegeBackHandlerRef.current?.()) { /* CollegeView navigated back internally */ }
-      else if (view !== 'personal') {
-        // Back from any non-personal tab → return to Personal
-        setView('personal');
-        window.history.pushState({ page: 'app' }, '');
-      } else {
-        // Already on Personal — keep app alive
-        window.history.pushState({ page: 'app' }, '');
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [showSettings, showSchedule, sharedContent, view]);
-
-  useEffect(() => {
-    if (!moodleToken || isSyncingMoodle) return;
     const syncMoodle = async () => {
+      if (!moodleToken || memories.length === 0) return;
+      try {
         setIsSyncingMoodle(true);
-        try {
-            const mCourses = await fetchMoodleCourses(moodleToken);
-            for (const mc of mCourses) {
-                if (!courses.includes(mc.fullname)) addCourse(mc.fullname);
-                const contents = await fetchCourseContents(moodleToken, mc.id);
-                for (const item of contents) {
-                    const exists = memories.some(m => m.type === 'file' && (m as FileMemory).moodleId === item.id.toString());
-                    if (!exists && item.type === 'file') {
-                        await addMemory({
-                            type: 'file',
-                            title: item.name,
-                            fileUrl: item.fileurl || '',
-                            mimeType: item.mimetype || 'application/pdf',
-                            sourceType: 'moodle',
-                            moodleId: item.id.toString(),
-                            category: 'college',
-                            course: mc.fullname
-                        } as Omit<FileMemory, 'id' | 'date'>);
-                    }
-                }
+        const moodleCourses = await fetchMoodleCourses(moodleToken);
+        for (const mc of moodleCourses) {
+          if (!courses.includes(mc.fullname)) addCourse(mc.fullname);
+        }
+        for (const mc of moodleCourses) {
+          const contents = await fetchCourseContents(moodleToken, mc.id);
+          for (const item of contents) {
+            const alreadySaved = memories.some(m => m.title === item.name && (m as any).course === mc.fullname);
+            if (!alreadySaved) {
+              await addMemory({
+                type: 'file',
+                title: item.name,
+                category: 'college',
+                course: mc.fullname,
+                url: item.fileurl,
+                mimeType: item.mimetype,
+              } as Omit<FileMemory, 'id' | 'date'>);
             }
-        } catch (e) { console.error("Moodle auto-sync failed", e); }
-        finally { setIsSyncingMoodle(false); }
+          }
+        }
+      } catch (e) {
+        console.error('Moodle sync failed', e);
+      } finally {
+        setIsSyncingMoodle(false);
+      }
     };
     syncMoodle();
   }, [moodleToken, addCourse, memories.length]);
@@ -171,19 +134,29 @@ function App() {
     }
   }, [addMemory]);
 
+  // Step 1: capture share params immediately on mount and clear the URL
+  // (must run before auth resolves so params aren't lost when handleProcessShare re-renders)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hasSharedParam = params.has('shared') || params.has('url') || params.has('text') || params.has('title');
     if (hasSharedParam) {
       const title = params.get('title') || '';
-      const text = params.get('text') || '';
-      const url = params.get('url') || '';
-      if (url || text.includes('http')) {
-        handleProcessShare(url || text.match(/(https?:\/\/[^\s]+)/)?.[0] || '', title, text);
-      }
+      const text  = params.get('text')  || '';
+      const url   = params.get('url')   || '';
       window.history.replaceState({}, document.title, window.location.pathname);
+      const resolvedUrl = url || text.match(/(https?:\/\/[^\s]+)/)?.[0] || '';
+      if (resolvedUrl) pendingShareRef.current = { url: resolvedUrl, title, text };
     }
-  }, [handleProcessShare]);
+  }, []); // run once on mount only
+
+  // Step 2: process the share once Firebase auth has resolved
+  useEffect(() => {
+    if (!loading && user && pendingShareRef.current) {
+      const share = pendingShareRef.current;
+      pendingShareRef.current = null;
+      handleProcessShare(share.url, share.title, share.text);
+    }
+  }, [loading, user, handleProcessShare]);
 
   useEffect(() => {
     const getMoodleEvents = async () => {
@@ -208,14 +181,36 @@ function App() {
       }
   };
 
-  if (loading) return (
-    <div className="flex h-screen items-center justify-center bg-[#001F3F]">
-      <Loader2 className="w-24 h-24 animate-spin text-white" />
-    </div>
-  );
+  // Load Google Calendar events
+  useEffect(() => {
+    const token = getStoredToken();
+    if (!token) return;
+    fetchGoogleCalendarEvents(token)
+      .then(events => setGoogleEvents(events))
+      .catch(() => setGoogleEvents([]));
+  }, []);
 
-  const personalMemories = memories.filter(m => m.category === 'personal');
-  const collegeMemories = memories.filter(m => m.category === 'college');
+  const allCalendarEvents = useMemo(() => {
+    const seen = new Set<string>();
+    return [...calendarEvents, ...moodleEvents, ...googleEvents].filter(e => {
+      if (seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    }).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  }, [calendarEvents, moodleEvents, googleEvents]);
+
+  // hardware back button / browser back handling
+  useEffect(() => {
+    const handlePopState = () => {
+      if (showSettings) { setShowSettings(false); return; }
+      if (showSchedule) { setShowSchedule(false); return; }
+      if (sharedContent) { setSharedContent(null); return; }
+      if (collegeBackHandlerRef.current?.()) return;
+      setView('personal');
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showSettings, showSchedule, sharedContent, view]);
 
   const renderView = () => {
     switch (view) {
@@ -223,14 +218,14 @@ function App() {
         return (
           <PersonalView
             memories={personalMemories}
-            tasks={tasks}
-            onSaveMemory={addMemory}
+            tasks={tasks.filter(t => t.category === 'personal')}
             onDeleteMemory={deleteMemory}
             onUpdateMemory={updateMemory}
-            bulkDeleteMemories={bulkDeleteMemories}
-            onAddTask={addTask}
-            onUpdateTask={updateTask}
-            onDeleteTask={deleteTask}
+            onBulkDelete={bulkDeleteMemories}
+            onSaveMemory={addMemory}
+            addTask={addTask}
+            updateTask={updateTask}
+            deleteTask={deleteTask}
             webCategories={webCategories}
             onUpdateWebCategories={updateWebCategories}
           />
@@ -266,23 +261,57 @@ function App() {
           />
         );
       default:
-        return <AskAIView memories={memories} />;
+        return null;
     }
   };
 
+  if (loading) return (
+    <div className="min-h-screen bg-[#001F3F] flex items-center justify-center">
+      <Loader2 className="animate-spin text-white" size={48} strokeWidth={2} />
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 bg-[#001F3F] text-white flex flex-col overflow-hidden overscroll-none">
+    <div className="min-h-screen bg-[#001F3F] flex flex-col text-white overflow-hidden" style={{ height: '100dvh' }}>
+      <UpdateNotification />
       <TopInstallBanner />
 
+      {/* Processing share overlay */}
+      {isProcessingShare && (
+        <div className="fixed inset-0 bg-[#001F3F]/90 z-50 flex flex-col items-center justify-center gap-6">
+          <Loader2 className="animate-spin text-white" size={64} strokeWidth={2} />
+          <p className="text-white font-black text-2xl uppercase tracking-widest">Saving Link…</p>
+        </div>
+      )}
+
+      {/* Shared content fallback modal */}
+      {sharedContent && (
+        <div className="fixed inset-0 bg-[#001F3F]/95 z-50 flex flex-col items-center justify-center gap-6 p-6">
+          <p className="text-white font-black text-xl uppercase">Save this link?</p>
+          <p className="text-white/70 text-center break-all">{sharedContent.url}</p>
+          <div className="flex gap-4">
+            <button
+              onClick={async () => {
+                await addMemory({ type: 'web', url: sharedContent.url, title: sharedContent.title, content: '', category: 'personal' } as Omit<WebMemory, 'id' | 'date'>);
+                setSharedContent(null);
+                setView('personal');
+              }}
+              className="px-8 py-4 bg-white text-[#001F3F] rounded-2xl font-black text-lg uppercase"
+            >Save</button>
+            <button onClick={() => setSharedContent(null)} className="px-8 py-4 bg-white/10 text-white rounded-2xl font-black text-lg uppercase">Dismiss</button>
+          </div>
+        </div>
+      )}
+
+      {/* Header */}
       <header
         className="flex-shrink-0 bg-[#001F3F] border-b-2 sm:border-b-4 border-white z-20"
-        style={{ paddingTop: 'max(env(safe-area-inset-top), 6px)' }}
       >
         <div className="flex justify-between items-center px-3 sm:px-6 py-2 sm:py-3 landscape:py-1">
           <button
             onClick={() => toggleSchedule(true)}
-            aria-label="Schedule"
             className="btn-icon flex items-center justify-center p-2 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl border-2 sm:border-3 border-white text-white active:scale-90 transition-transform"
+            aria-label="Open schedule"
           >
             <Calendar className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10" strokeWidth={3} />
           </button>
@@ -292,27 +321,36 @@ function App() {
           </div>
           <button
             onClick={() => toggleSettings(true)}
-            aria-label="Settings"
             className="btn-icon flex items-center justify-center p-2 sm:p-3 bg-white/10 rounded-xl sm:rounded-2xl border-2 sm:border-3 border-white text-white active:scale-90 transition-transform"
+            aria-label="Open settings"
           >
             <Settings className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10" strokeWidth={3} />
           </button>
         </div>
       </header>
 
-      <main className="flex-grow min-h-0 relative z-10 flex flex-col">
-        <div className="flex-grow overflow-y-auto p-4 scroll-smooth pb-36">
-          <div className="max-w-4xl mx-auto h-full">{renderView()}</div>
-        </div>
+      {/* Main content */}
+      <main className="flex-grow overflow-hidden relative">
+        <div className="max-w-4xl mx-auto h-full">{renderView()}</div>
       </main>
 
-      <footer
-        className="flex-shrink-0 bg-[#001F3F] border-t-4 border-white z-20"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <BottomNavBar view={view} setView={setView} />
-      </footer>
+      {/* Bottom nav */}
+      <BottomNavBar currentView={view} onViewChange={setView} />
 
+      {/* Modals */}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => toggleSettings(false)}
+          user={user}
+          onSignInWithGoogle={signInWithGoogle}
+          onSignOut={signOutUser}
+          webCategories={webCategories}
+          onUpdateWebCategories={updateWebCategories}
+          moodleToken={moodleToken}
+          onSaveMoodleToken={saveMoodleToken}
+          isSyncingMoodle={isSyncingMoodle}
+        />
+      )}
       {showSchedule && (
         <ScheduleView
           events={allCalendarEvents}
@@ -321,18 +359,6 @@ function App() {
           onDeleteEvent={deleteCalendarEvent}
         />
       )}
-      {showSettings && (
-        <SettingsModal
-          onClose={() => toggleSettings(false)}
-          moodleToken={moodleToken}
-          onSaveMoodleToken={saveMoodleToken}
-          onGoogleConnected={loadGoogleEvents}
-          user={user}
-          onSignIn={signInWithGoogle}
-          onSignOut={signOutUser}
-        />
-      )}
-      {updateAvailable && <UpdateNotification onUpdate={updateServiceWorker} />}
     </div>
   );
 }
