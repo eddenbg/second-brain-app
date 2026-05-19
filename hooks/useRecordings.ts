@@ -191,17 +191,8 @@ export const useRecordings = () => {
             id: Date.now().toString(),
             date: new Date().toISOString(),
         } as AnyMemory;
-        const docRef = doc(db, 'users', user.uid, 'memories', newMemory.id);
-        const { writeBatch: _wb, ...firestoreDoc } = { writeBatch: null, ...newMemory };
-        void _wb;
-        try {
-            const { default: firestoreModule } = await import('firebase/firestore');
-            await (firestoreModule as any).setDoc(docRef, newMemory);
-        } catch {
-            const { setDoc } = await import('firebase/firestore');
-            await setDoc(docRef, newMemory);
-        }
-        void firestoreDoc;
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
     }, [user]);
 
     const deleteMemory = useCallback(async (id: string) => {
