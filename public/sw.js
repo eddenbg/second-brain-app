@@ -23,6 +23,11 @@ self.addEventListener('activate', (event) => {
           .filter((name) => name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       )
+    ).then(() =>
+      // Auto-reload all open tabs so they pick up the fresh bundle immediately
+      self.clients.matchAll({ type: 'window' }).then((clients) =>
+        clients.forEach((client) => client.navigate(client.url))
+      )
     )
   );
   self.clients.claim();
