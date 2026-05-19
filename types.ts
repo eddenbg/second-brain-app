@@ -4,6 +4,7 @@ export interface BaseMemory {
   title: string;
   category: 'college' | 'personal';
   tags?: string[];
+  topics?: string[];
   course?: string;
   isHidden?: boolean;
   voiceNote?: {

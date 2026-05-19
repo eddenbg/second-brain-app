@@ -276,6 +276,29 @@ Instructions:
     } catch { return 'I encountered an error. Please try again.'; }
 }
 
+export async function generateTopicsForMemory(title: string, content: string): Promise<string[]> {
+    const ai = getGeminiInstance();
+    if (!ai) return [];
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Assign 1-3 broad topic labels to this memory. Choose only from: Study, Health, Finance, Technology, Travel, Food, Entertainment, Family, Fitness, Shopping, Social, Productivity, Creativity, Nature, Relationships, Work, News.\n\nTitle: "${title}"\nContent: ${content.substring(0, 800)}`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        topics: { type: Type.ARRAY, items: { type: Type.STRING } }
+                    },
+                    required: ["topics"]
+                }
+            }
+        });
+        const parsed = JSON.parse(response.text || '{}');
+        return Array.isArray(parsed.topics) ? parsed.topics.slice(0, 3) : [];
+    } catch { return []; }
+}
+
 export async function processSharedUrl(
     url: string, title: string, text: string,
     availableTags?: string[]

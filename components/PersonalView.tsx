@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
     Volume2, Loader2, X, Package, Camera, FileText,
-    ListTodo, StopCircle, Play
+    ListTodo, StopCircle, Play, Tag
 } from 'lucide-react';
 import type { AnyMemory, VoiceMemory, DocumentMemory, Task, PhysicalItemMemory, WebMemory } from '../types';
 import Recorder from './Recorder';
@@ -20,6 +20,7 @@ import { decode, decodeAudioData } from '../utils/audio';
 import { getLocationName } from '../utils/location';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { PlusCircleIcon } from './Icons';
+import TopicsBrowserModal from './TopicsBrowserModal';
 
 interface PersonalViewProps {
     memories: AnyMemory[];
@@ -107,6 +108,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     webCategories, onUpdateWebCategories
 }) => {
     const [subView, setSubView] = useState<SubView>('hub');
+    const [showTopics, setShowTopics] = useState(false);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
     const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
     const { isInstallable, installApp } = useInstallPrompt();
@@ -174,8 +176,17 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     };
 
     // ── Hub ────────────────────────────────────────────
+    // ── Hub ────────────────────────────────────────────────
     if (subView === 'hub') {
         return (
+            <>
+            {showTopics && (
+                <TopicsBrowserModal
+                    memories={memories}
+                    onSaveMemory={onSaveMemory}
+                    onClose={() => setShowTopics(false)}
+                />
+            )}
             <div className="flex flex-col gap-6">
                 {/* Install App Banner */}
                 {!isStandalone && !installDismissed && (
@@ -281,11 +292,26 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <div className="text-sm opacity-75">{documents.length} scanned • OCR + Read Aloud</div>
                     </div>
                 </button>
+
+                {/* Topics – full width */}
+                <button
+                    onClick={() => setShowTopics(true)}
+                    aria-label="Browse memories by topic"
+                    className="w-full h-28 bg-[#0891B2] text-white rounded-3xl flex items-center justify-center gap-4"
+                >
+                    <Tag className="w-14 h-14" strokeWidth={3} />
+                    <div className="text-left">
+                        <div className="text-xl font-black uppercase">Browse by Topic</div>
+                        <div className="text-sm opacity-75">AI-tagged • Research with Claude</div>
+                    </div>
+                </button>
             </div>
+            </>
         );
     }
 
     // ── Record new thought ───────────────────────────────────────
+    // ── Record new thought ───────────────────────────────────────────────
     if (subView === 'recording') {
         return (
             <div className="flex flex-col gap-6">
@@ -307,6 +333,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Voice Notes list ────────────────────────────────────
+    // ── Voice Notes list ──────────────────────────────────────────────────
     if (subView === 'voiceNotes') {
         return (
             <div className="flex flex-col gap-6">
@@ -351,6 +378,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Personal Kanban ──────────────────────────────────────────
+    // ── Personal Kanban ──────────────────────────────────────────────────────────
     if (subView === 'kanban') {
         return (
             <div className="flex flex-col gap-6">
@@ -376,6 +404,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Physical Items list ─────────────────────────────────────
+    // ── Physical Items list ───────────────────────────────────────────────────
     if (subView === 'physicalItems') {
         return (
             <div className="flex flex-col gap-6">
@@ -442,6 +471,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Add Physical Item ──────────────────────────────────────────
+    // ── Add Physical Item ──────────────────────────────────────────────────────────
     if (subView === 'addItem') {
         return (
             <AddPhysicalItemModal
@@ -456,6 +486,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Web Clips list ───────────────────────────────────────────
+    // ── Web Clips list ────────────────────────────────────────────────────────────
     if (subView === 'webClips') {
         const sortedClips = [...webClips].sort((a, b) => {
             const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
@@ -645,6 +676,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Add Web Clip ───────────────────────────────────────────────
+    // ── Add Web Clip ───────────────────────────────────────────────────────────────
     if (subView === 'addWebClip') {
         return (
             <AddWebMemoryModal
@@ -658,6 +690,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Documents list ───────────────────────────────────────────
+    // ── Documents list ───────────────────────────────────────────────────────────
     if (subView === 'documents') {
         return (
             <div className="flex flex-col gap-6">
@@ -719,6 +752,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Scanning ─────────────────────────────────────────────────
+    // ── Scanning ─────────────────────────────────────────────────────────────
     if (subView === 'scanning') {
         return (
             <AddDocumentModal
@@ -732,6 +766,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     }
 
     // ── Detail view ───────────────────────────────────────────────
+    // ── Detail view ─────────────────────────────────────────────────────────────
     if (subView === 'detail' && selectedItem) {
         const prevView: SubView =
             selectedItem.type === 'voice' ? 'voiceNotes' :

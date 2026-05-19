@@ -193,6 +193,20 @@ export const useRecordings = () => {
         } as AnyMemory;
         const { setDoc } = await import('firebase/firestore');
         await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
+        // Fire-and-forget: generate AI topic tags and patch the document
+        (async () => {
+            try {
+                const { generateTopicsForMemory } = await import('../services/geminiService');
+                const { updateDoc } = await import('firebase/firestore');
+                const content = (newMemory as any).transcript || (newMemory as any).extractedText ||
+                               (newMemory as any).content || (newMemory as any).description ||
+                               (newMemory as any).summary || '';
+                const topics = await generateTopicsForMemory(newMemory.title, content);
+                if (topics.length > 0) {
+                    await updateDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), { topics } as any);
+                }
+            } catch { /* topic generation is best-effort */ }
+        })();
     }, [user]);
 
     const deleteMemory = useCallback(async (id: string) => {
