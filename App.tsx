@@ -6,11 +6,9 @@ import AskAIView from './components/AskAIView';
 import PersonalView from './components/PersonalView';
 import ScheduleView from './components/ScheduleView';
 import FilesView from './components/FilesView';
-import UpdateNotification from './components/UpdateNotification';
 import SettingsModal from './components/SettingsModal';
 import TopInstallBanner from './components/TopInstallBanner';
 import { useRecordings } from './hooks/useRecordings';
-import { useServiceWorker } from './hooks/useServiceWorker';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
@@ -273,7 +271,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#001F3F] flex flex-col text-white overflow-hidden" style={{ height: '100dvh' }}>
-      <UpdateNotification />
       <TopInstallBanner />
 
       {/* Processing share overlay */}
