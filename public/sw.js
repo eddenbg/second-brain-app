@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v27';
+const CACHE_NAME = 'second-brain-v28';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -15,6 +15,13 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
+// Handle the UPDATE button: app sends SKIP_WAITING to activate the new SW
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) =>
@@ -23,14 +30,14 @@ self.addEventListener('activate', (event) => {
           .filter((name) => name !== CACHE_NAME)
           .map((name) => caches.delete(name))
       )
-    ).then(() =>
-      // Auto-reload all open tabs so they pick up the fresh bundle immediately
+    )
+    .then(() => self.clients.claim())
+    .then(() =>
       self.clients.matchAll({ type: 'window' }).then((clients) =>
         clients.forEach((client) => client.navigate(client.url))
       )
     )
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
