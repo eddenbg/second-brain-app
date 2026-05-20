@@ -186,8 +186,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         try {
             await onSignIn();
         } catch (e: any) {
-            setSignInError('Sign-in failed. Please try again.');
-            console.error('Google sign-in error', e);
+            if (e.code === 'auth/unauthorized-domain') {
+                setSignInError('Domain not authorized. Go to Firebase Console → Authentication → Settings → Authorized domains and add eddenbg-second-brain.netlify.app');
+            } else {
+                setSignInError(e.message || 'Sign-in failed. Please try again.');
+            }
+            console.error('Google sign-in error', e.code, e.message);
         } finally {
             setIsSigningIn(false);
         }

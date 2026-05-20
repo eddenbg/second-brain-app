@@ -274,6 +274,10 @@ export const useRecordings = () => {
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
 
+        const isStandalone = typeof window !== 'undefined' &&
+            (window.matchMedia('(display-mode: standalone)').matches ||
+             (window.navigator as any).standalone === true);
+
         const tryPopup = async () => {
             if (auth.currentUser?.isAnonymous) {
                 await linkWithPopup(auth.currentUser, googleProvider);
@@ -290,6 +294,13 @@ export const useRecordings = () => {
             }
         };
 
+        // In PWA standalone mode skip the popup entirely — it's unreliable and
+        // just causes a blocked-popup error before the redirect fallback anyway.
+        if (isStandalone) {
+            await tryRedirect();
+            return;
+        }
+
         try {
             await tryPopup();
         } catch (e: any) {
@@ -298,10 +309,8 @@ export const useRecordings = () => {
                 e.code === 'auth/popup-cancelled' ||
                 e.code === 'auth/cancelled-popup-request'
             ) {
-                // Popup blocked (strict PWA mode) — fall back to redirect
                 await tryRedirect();
             } else if (e.code === 'auth/credential-already-in-use') {
-                // Google account already belongs to another UID — sign in directly
                 const credential = GoogleAuthProvider.credentialFromError(e);
                 if (credential) await signInWithCredential(auth, credential);
             } else {

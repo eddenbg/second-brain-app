@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v28';
+const CACHE_NAME = 'second-brain-v29';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -46,6 +46,16 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (url.pathname.startsWith('/.netlify/')) return;
 
+  // Navigation requests (page loads, share target activations) — serve index.html
+  // so query params (title, url, text) are preserved for the React app to read.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      caches.match('./index.html').then((cached) => cached || fetch(event.request))
+    );
+    return;
+  }
+
+  // Assets — cache-first
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
