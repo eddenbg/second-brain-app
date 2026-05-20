@@ -219,11 +219,11 @@ function App() {
             tasks={tasks.filter(t => t.category === 'personal')}
             onDeleteMemory={deleteMemory}
             onUpdateMemory={updateMemory}
-            onBulkDelete={bulkDeleteMemories}
+            bulkDeleteMemories={bulkDeleteMemories}
             onSaveMemory={addMemory}
-            addTask={addTask}
-            updateTask={updateTask}
-            deleteTask={deleteTask}
+            onAddTask={addTask}
+            onUpdateTask={updateTask}
+            onDeleteTask={deleteTask}
             webCategories={webCategories}
             onUpdateWebCategories={updateWebCategories}
           />
@@ -328,7 +328,7 @@ function App() {
 
       {/* Main content */}
       <main className="flex-grow overflow-hidden relative">
-        <div className="max-w-4xl mx-auto h-full">{renderView()}</div>
+        <div className="max-w-4xl mx-auto h-full overflow-y-auto no-scrollbar p-4">{renderView()}</div>
       </main>
 
       {/* Bottom nav */}
@@ -339,13 +339,10 @@ function App() {
         <SettingsModal
           onClose={() => toggleSettings(false)}
           user={user}
-          onSignInWithGoogle={signInWithGoogle}
+          onSignIn={signInWithGoogle}
           onSignOut={signOutUser}
-          webCategories={webCategories}
-          onUpdateWebCategories={updateWebCategories}
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
-          isSyncingMoodle={isSyncingMoodle}
         />
       )}
       {showSchedule && (

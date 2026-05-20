@@ -139,7 +139,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
         sessionPromiseRef.current = ai.live.connect({
-            model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+            model: 'gemini-live-2.5-flash-preview',
             callbacks: {
               onopen: () => {
                 const source = audioContext.createMediaStreamSource(stream);
