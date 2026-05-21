@@ -11,6 +11,7 @@ import TopInstallBanner from './components/TopInstallBanner';
 import { useRecordings } from './hooks/useRecordings';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
+import { saveNotionToken } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
@@ -131,6 +132,25 @@ function App() {
       setIsProcessingShare(false);
     }
   }, [addMemory]);
+
+  // Notion OAuth callback: ?code=XXX&state=notion_oauth
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const state = params.get('state');
+    if (code && state === 'notion_oauth') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      const redirectUri = `${window.location.origin}/`;
+      fetch('/.netlify/functions/notionOAuth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, redirect_uri: redirectUri }),
+      })
+        .then(r => r.json())
+        .then(data => { if (data.access_token) saveNotionToken(data.access_token); })
+        .catch(console.error);
+    }
+  }, []);
 
   // Step 1: capture share params immediately on mount and clear the URL
   // (must run before auth resolves so params aren't lost when handleProcessShare re-renders)

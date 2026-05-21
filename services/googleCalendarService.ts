@@ -66,6 +66,12 @@ export const connectGoogleCalendar = (): Promise<string> => {
     }));
 };
 
+export const saveGoogleToken = (token: string, expiresInSeconds = 3600): void => {
+    const expiry = Date.now() + (expiresInSeconds - 60) * 1000;
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+};
+
 export const disconnectGoogleCalendar = () => {
     const token = getStoredToken();
     if (token && window.google?.accounts?.oauth2) {

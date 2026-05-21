@@ -26,6 +26,14 @@ export const getStoredDriveToken = (): string | null => {
     return null;
 };
 
+export const saveDriveToken = (token: string, expiresInSeconds = 3600): void => {
+    const expiry = Date.now() + (expiresInSeconds - 60) * 1000;
+    localStorage.setItem(DRIVE_TOKEN_KEY, token);
+    localStorage.setItem(DRIVE_TOKEN_EXPIRY_KEY, expiry.toString());
+    localStorage.setItem(DRIVE_UPLOAD_TOKEN_KEY, token);
+    localStorage.setItem(DRIVE_UPLOAD_EXPIRY_KEY, expiry.toString());
+};
+
 export const connectGoogleDrive = (): Promise<string> => {
     const clientId = getStoredGoogleClientId();
     if (!clientId) return Promise.reject(new Error('No Google Client ID configured'));

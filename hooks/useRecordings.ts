@@ -9,7 +9,9 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, linkWithPopup, signInWithPopup, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, linkWithPopup, signInWithPopup, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut, UserCredential } from 'firebase/auth';
+import { saveGoogleToken } from '../services/googleCalendarService';
+import { saveDriveToken } from '../services/googleDriveService';
 import { googleProvider } from '../utils/firebase';
 
 export interface StoredData {
@@ -60,8 +62,15 @@ export const useRecordings = () => {
         }
 
         // Handle post-redirect after Google sign-in (fires once when app loads back after redirect)
-        getRedirectResult(auth).then((_result) => {
-            // onAuthStateChanged handles user state update automatically
+        getRedirectResult(auth).then((result) => {
+            if (result) {
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                const token = credential?.accessToken;
+                if (token) {
+                    saveGoogleToken(token);
+                    saveDriveToken(token);
+                }
+            }
         }).catch((e: any) => {
             if (e.code === 'auth/credential-already-in-use') {
                 // Google account already linked to another Firebase UID — sign into that account directly
@@ -278,12 +287,23 @@ export const useRecordings = () => {
             (window.matchMedia('(display-mode: standalone)').matches ||
              (window.navigator as any).standalone === true);
 
-        const tryPopup = async () => {
-            if (auth.currentUser?.isAnonymous) {
-                await linkWithPopup(auth.currentUser, googleProvider);
-            } else {
-                await signInWithPopup(auth, googleProvider);
+        const storeGoogleTokenFromResult = (result: UserCredential) => {
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            const token = credential?.accessToken;
+            if (token) {
+                saveGoogleToken(token);
+                saveDriveToken(token);
             }
+        };
+
+        const tryPopup = async () => {
+            let result: UserCredential;
+            if (auth.currentUser?.isAnonymous) {
+                result = await linkWithPopup(auth.currentUser, googleProvider);
+            } else {
+                result = await signInWithPopup(auth, googleProvider);
+            }
+            storeGoogleTokenFromResult(result);
         };
 
         const tryRedirect = async () => {

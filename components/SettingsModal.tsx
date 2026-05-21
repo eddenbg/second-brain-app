@@ -6,14 +6,10 @@ import {
 import { Calendar } from 'lucide-react';
 import { testMoodleConnection, loginWithCredentials } from '../services/moodleService';
 import {
-    connectGoogleCalendar,
     disconnectGoogleCalendar,
     getStoredToken,
-    saveGoogleClientId,
-    getStoredGoogleClientId
 } from '../services/googleCalendarService';
 import {
-    connectGoogleDrive,
     disconnectGoogleDrive,
     getStoredDriveToken
 } from '../services/googleDriveService';
@@ -83,13 +79,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [moodleLoginError, setMoodleLoginError] = useState<string | null>(null);
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
-    const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
-    const [isConnectingDrive, setIsConnectingDrive] = useState(false);
     const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
     const [notionInput, setNotionInput] = useState('');
-    const [googleClientId, setGoogleClientId] = useState(getStoredGoogleClientId());
-    const [clientIdInput, setClientIdInput] = useState('');
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
@@ -128,36 +120,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
-    const handleConnectGoogle = async () => {
-        setIsConnectingGoogle(true);
-        try {
-            await connectGoogleCalendar();
-            setIsGoogleConnected(true);
-            onGoogleConnected?.();
-        } catch (e) {
-            console.error('Google auth failed', e);
-            alert('Could not connect to Google Calendar. Please try again.');
-        } finally {
-            setIsConnectingGoogle(false);
-        }
-    };
-
     const handleDisconnectGoogle = () => {
         disconnectGoogleCalendar();
         setIsGoogleConnected(false);
-    };
-
-    const handleConnectDrive = async () => {
-        setIsConnectingDrive(true);
-        try {
-            await connectGoogleDrive();
-            setIsDriveConnected(true);
-        } catch (e) {
-            console.error('Drive auth failed', e);
-            alert('Could not connect to Google Drive. Make sure your Google Client ID is set up in the Calendar section above.');
-        } finally {
-            setIsConnectingDrive(false);
-        }
     };
 
     const handleDisconnectDrive = () => {
@@ -185,6 +150,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setSignInError(null);
         try {
             await onSignIn();
+            setIsGoogleConnected(!!getStoredToken());
+            setIsDriveConnected(!!getStoredDriveToken());
         } catch (e: any) {
             if (e.code === 'auth/unauthorized-domain') {
                 setSignInError('Domain not authorized. Go to Firebase Console → Authentication → Settings → Authorized domains and add eddenbg-second-brain.netlify.app');
@@ -195,6 +162,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         } finally {
             setIsSigningIn(false);
         }
+    };
+
+    const NOTION_CLIENT_ID = process.env.NOTION_CLIENT_ID || '';
+    const handleSignInWithNotion = () => {
+        if (!NOTION_CLIENT_ID) return;
+        const redirectUri = encodeURIComponent(`${window.location.origin}/`);
+        window.location.href = `https://api.notion.com/v1/oauth/authorize?client_id=${NOTION_CLIENT_ID}&response_type=code&owner=user&redirect_uri=${redirectUri}&state=notion_oauth`;
     };
 
     const mcpConfigSnippet = `{
@@ -335,43 +309,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 <p className="text-base sm:text-lg font-black text-white uppercase">Google Calendar</p>
                                 {isGoogleConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
                             </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connect to see your Google Calendar events in the monthly view.</p>
-
-                            {!isGoogleConnected && !googleClientId && (
-                                <div className="space-y-3 mb-4 bg-gray-800 p-4 rounded-2xl border border-gray-600">
-                                    <p className="text-yellow-400 font-black text-xs uppercase tracking-widest">One-time setup</p>
-                                    <ol className="text-gray-400 text-xs space-y-1.5 list-decimal list-inside leading-relaxed">
-                                        <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">console.cloud.google.com</a></li>
-                                        <li>Create a project &rarr; Enable <strong className="text-white">Google Calendar API</strong> and <strong className="text-white">Google Drive API</strong></li>
-                                        <li>APIs &amp; Services &rarr; Credentials &rarr; Create &rarr; OAuth 2.0 Client ID (Web app)</li>
-                                        <li>Copy the Client ID and paste it below</li>
-                                    </ol>
-                                    <input
-                                        type="text"
-                                        value={clientIdInput}
-                                        onChange={e => setClientIdInput(e.target.value)}
-                                        placeholder="123456789.apps.googleusercontent.com"
-                                        className="w-full bg-gray-900 p-3 rounded-xl border border-gray-600 text-white font-mono text-xs"
-                                        aria-label="Google OAuth Client ID"
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            saveGoogleClientId(clientIdInput);
-                                            setGoogleClientId(clientIdInput.trim());
-                                            setClientIdInput('');
-                                        }}
-                                        disabled={!clientIdInput.includes('googleusercontent.com')}
-                                        className="w-full py-3 rounded-xl font-black text-xs uppercase bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500 active:scale-95 transition-all"
-                                    >
-                                        Save Client ID
-                                    </button>
-                                </div>
-                            )}
-
-                            {!isGoogleConnected && googleClientId && (
-                                <p className="text-green-400 text-xs font-bold mb-3">Client ID configured. Ready to connect.</p>
-                            )}
-
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connects automatically when you sign in with Google. Your calendar events appear in the monthly view.</p>
                             {isGoogleConnected ? (
                                 <button
                                     onClick={handleDisconnectGoogle}
@@ -379,15 +317,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 >
                                     Disconnect
                                 </button>
+                            ) : user?.isAnonymous === false ? (
+                                <>
+                                    <p className="text-yellow-400 font-bold text-xs mb-3">Token expired. Sign in again to refresh the connection.</p>
+                                    <button
+                                        onClick={handleSignIn}
+                                        disabled={isSigningIn}
+                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
+                                    >
+                                        {isSigningIn ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
+                                        {isSigningIn ? 'Reconnecting…' : 'Reconnect Calendar'}
+                                    </button>
+                                </>
                             ) : (
-                                <button
-                                    onClick={googleClientId ? handleConnectGoogle : undefined}
-                                    disabled={isConnectingGoogle || !googleClientId}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500"
-                                >
-                                    {isConnectingGoogle ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
-                                    {isConnectingGoogle ? 'Connecting…' : 'Connect Google Calendar'}
-                                </button>
+                                <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Calendar automatically.</p>
                             )}
                         </div>
 
@@ -398,7 +341,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 <p className="text-base sm:text-lg font-black text-white uppercase">Google Drive</p>
                                 {isDriveConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
                             </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Browse and import files from your Google Drive into the Files Vault. Uses the same Client ID as Calendar.</p>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connects automatically when you sign in with Google. Browse and import files from Drive into the Files Vault.</p>
                             {isDriveConnected ? (
                                 <button
                                     onClick={handleDisconnectDrive}
@@ -406,15 +349,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 >
                                     Disconnect Drive
                                 </button>
+                            ) : user?.isAnonymous === false ? (
+                                <>
+                                    <p className="text-yellow-400 font-bold text-xs mb-3">Token expired. Sign in again to refresh the connection.</p>
+                                    <button
+                                        onClick={handleSignIn}
+                                        disabled={isSigningIn}
+                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
+                                    >
+                                        {isSigningIn ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
+                                        {isSigningIn ? 'Reconnecting…' : 'Reconnect Drive'}
+                                    </button>
+                                </>
                             ) : (
-                                <button
-                                    onClick={googleClientId ? handleConnectDrive : undefined}
-                                    disabled={isConnectingDrive || !googleClientId}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:bg-gray-700 disabled:text-gray-500"
-                                >
-                                    {isConnectingDrive ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
-                                    {isConnectingDrive ? 'Connecting…' : 'Connect Google Drive'}
-                                </button>
+                                <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Drive automatically.</p>
                             )}
                         </div>
 
@@ -428,8 +376,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 {notionToken && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
                             </div>
                             <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                Connect your Notion workspace to import pages directly into Web Clips. You need an Internal Integration token from{' '}
-                                <span className="text-purple-400">notion.so/my-integrations</span>.
+                                Connect your Notion workspace to import pages directly into Web Clips.
                             </p>
                             {notionToken ? (
                                 <button
@@ -438,26 +385,61 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 >
                                     Disconnect Notion
                                 </button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    <input
-                                        type="password"
-                                        value={notionInput}
-                                        onChange={e => setNotionInput(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
-                                        placeholder="secret_... or ntn_..."
-                                        className="flex-grow bg-gray-900 border-gray-600 rounded-xl text-sm px-3 py-2 text-white font-mono placeholder:text-gray-600"
-                                        style={{ minHeight: 'unset', border: '1px solid #4B5563', padding: '10px 12px', fontSize: '12px' }}
-                                    />
+                            ) : NOTION_CLIENT_ID ? (
+                                <>
                                     <button
-                                        onClick={handleSaveNotionToken}
-                                        disabled={!notionInput.trim()}
-                                        className="px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
-                                        style={{ minHeight: 'unset' }}
+                                        onClick={handleSignInWithNotion}
+                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20 mb-4"
                                     >
-                                        Save
+                                        <div className="w-5 h-5 bg-white rounded flex items-center justify-center shrink-0">
+                                            <span className="text-black font-black text-sm leading-none">N</span>
+                                        </div>
+                                        Sign in with Notion
                                     </button>
-                                </div>
+                                    <p className="text-gray-600 font-bold text-[10px] text-center mb-2">or paste an integration token manually:</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="password"
+                                            value={notionInput}
+                                            onChange={e => setNotionInput(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
+                                            placeholder="secret_... or ntn_..."
+                                            className="flex-grow bg-gray-900 border-gray-600 rounded-xl text-sm px-3 py-2 text-white font-mono placeholder:text-gray-600"
+                                            style={{ minHeight: 'unset', border: '1px solid #4B5563', padding: '10px 12px', fontSize: '12px' }}
+                                        />
+                                        <button
+                                            onClick={handleSaveNotionToken}
+                                            disabled={!notionInput.trim()}
+                                            className="px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
+                                            style={{ minHeight: 'unset' }}
+                                        >
+                                            Save
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-gray-500 font-bold text-xs mb-3">Paste an integration token from <span className="text-purple-400">notion.so/my-integrations</span>:</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="password"
+                                            value={notionInput}
+                                            onChange={e => setNotionInput(e.target.value)}
+                                            onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
+                                            placeholder="secret_... or ntn_..."
+                                            className="flex-grow bg-gray-900 border-gray-600 rounded-xl text-sm px-3 py-2 text-white font-mono placeholder:text-gray-600"
+                                            style={{ minHeight: 'unset', border: '1px solid #4B5563', padding: '10px 12px', fontSize: '12px' }}
+                                        />
+                                        <button
+                                            onClick={handleSaveNotionToken}
+                                            disabled={!notionInput.trim()}
+                                            className="px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
+                                            style={{ minHeight: 'unset' }}
+                                        >
+                                            Save
+                                        </button>
+                                    </div>
+                                </>
                             )}
                         </div>
 
