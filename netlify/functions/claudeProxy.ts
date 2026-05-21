@@ -38,7 +38,7 @@ export default async (req: Request, _context: Context) => {
 
   try {
     const message = await client.messages.create({
-      model: "claude-opus-4-7",
+      model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: `You are a research assistant helping a student study the topic: "${topic}". Search the web for relevant, high-quality resources and return your response as a JSON object with this exact structure:\n{\n  "overview": "A 2-3 sentence overview of what you found",\n  "resources": [\n    {\n      "title": "Resource title",\n      "url": "https://...",\n      "summary": "2-3 sentence description of what this resource covers and why it is useful",\n      "type": "article | video | course | tool | paper"\n    }\n  ]\n}\nReturn 3-6 high-quality resources. Return ONLY valid JSON, no markdown, no extra text.`,
       messages: [{ role: "user", content: query }],
