@@ -332,7 +332,7 @@ function App() {
       </main>
 
       {/* Bottom nav */}
-      <BottomNavBar currentView={view} onViewChange={setView} />
+      <BottomNavBar view={view} setView={setView} />
 
       {/* Modals */}
       {showSettings && (
