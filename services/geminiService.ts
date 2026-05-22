@@ -6,7 +6,7 @@ let geminiInstance: GoogleGenAI | null = null;
 
 export const getGeminiInstance = (): GoogleGenAI | null => {
     if (geminiInstance) return geminiInstance;
-    const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || (import.meta as any).env?.VITE_API_KEY;
+    const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY;
     if (!apiKey) return null;
     geminiInstance = new GoogleGenAI({ apiKey });
     return geminiInstance;
