@@ -1,9 +1,20 @@
 const NOTION_TOKEN_KEY = 'notion_integration_token';
+const NOTION_CLIENT_ID_KEY = 'notion_client_id';
+const NOTION_CLIENT_SECRET_KEY = 'notion_client_secret';
 const PROXY = '/.netlify/functions/notionProxy';
 
 export const getStoredNotionToken = (): string | null => localStorage.getItem(NOTION_TOKEN_KEY);
 export const saveNotionToken = (token: string) => localStorage.setItem(NOTION_TOKEN_KEY, token.trim());
 export const clearNotionToken = () => localStorage.removeItem(NOTION_TOKEN_KEY);
+
+export const getStoredNotionClientId = (): string => localStorage.getItem(NOTION_CLIENT_ID_KEY) || '';
+export const saveNotionClientId = (id: string) => localStorage.setItem(NOTION_CLIENT_ID_KEY, id.trim());
+export const getStoredNotionClientSecret = (): string => localStorage.getItem(NOTION_CLIENT_SECRET_KEY) || '';
+export const saveNotionClientSecret = (secret: string) => localStorage.setItem(NOTION_CLIENT_SECRET_KEY, secret.trim());
+export const clearNotionCredentials = () => {
+    localStorage.removeItem(NOTION_CLIENT_ID_KEY);
+    localStorage.removeItem(NOTION_CLIENT_SECRET_KEY);
+};
 
 export interface NotionPage {
     id: string;

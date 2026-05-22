@@ -13,7 +13,11 @@ import {
     disconnectGoogleDrive,
     getStoredDriveToken
 } from '../services/googleDriveService';
-import { getStoredNotionToken, saveNotionToken, clearNotionToken } from '../services/notionService';
+import {
+    getStoredNotionToken, saveNotionToken, clearNotionToken,
+    getStoredNotionClientId, saveNotionClientId,
+    getStoredNotionClientSecret, saveNotionClientSecret, clearNotionCredentials,
+} from '../services/notionService';
 import { auth } from '../utils/firebase';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
@@ -82,6 +86,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
     const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
     const [notionInput, setNotionInput] = useState('');
+    const [notionClientId, setNotionClientId] = useState(getStoredNotionClientId);
+    const [notionCredsClientId, setNotionCredsClientId] = useState('');
+    const [notionCredsSecret, setNotionCredsSecret] = useState('');
+    const [notionSecretSaved, setNotionSecretSaved] = useState(() => !!getStoredNotionClientSecret());
+    const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+    const [geminiInput, setGeminiInput] = useState('');
+    const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '');
+    const [anthropicInput, setAnthropicInput] = useState('');
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
@@ -92,10 +104,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
             const rt = (auth.currentUser as any).stsTokenManager?.refreshToken ?? '';
             setRefreshToken(rt);
         }
-        const unsubscribe = auth?.onAuthStateChanged?.((user) => {
-            if (user) {
-                setFirebaseUID(user.uid);
-                const rt = (user as any).stsTokenManager?.refreshToken ?? '';
+        const unsubscribe = auth?.onAuthStateChanged?.((u: User | null) => {
+            if (u) {
+                setFirebaseUID(u.uid);
+                const rt = (u as any).stsTokenManager?.refreshToken ?? '';
                 setRefreshToken(rt);
             }
         });
@@ -144,6 +156,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setNotionInput('');
     };
 
+    const handleSaveNotionCreds = () => {
+        const id = notionCredsClientId.trim();
+        const secret = notionCredsSecret.trim();
+        if (!id || !secret) return;
+        saveNotionClientId(id);
+        saveNotionClientSecret(secret);
+        setNotionClientId(id);
+        setNotionSecretSaved(true);
+        setNotionCredsClientId('');
+        setNotionCredsSecret('');
+    };
+
+    const handleClearNotionCreds = () => {
+        clearNotionCredentials();
+        clearNotionToken();
+        setNotionClientId('');
+        setNotionSecretSaved(false);
+        setNotionToken('');
+    };
+
+    const handleSaveGeminiKey = () => {
+        const k = geminiInput.trim();
+        if (!k) return;
+        localStorage.setItem('gemini_api_key', k);
+        setGeminiKey(k);
+        setGeminiInput('');
+    };
+
+    const handleClearGeminiKey = () => {
+        localStorage.removeItem('gemini_api_key');
+        setGeminiKey('');
+    };
+
+    const handleSaveAnthropicKey = () => {
+        const k = anthropicInput.trim();
+        if (!k) return;
+        localStorage.setItem('anthropic_api_key', k);
+        setAnthropicKey(k);
+        setAnthropicInput('');
+    };
+
+    const handleClearAnthropicKey = () => {
+        localStorage.removeItem('anthropic_api_key');
+        setAnthropicKey('');
+    };
+
     const handleSignIn = async () => {
         if (!onSignIn) return;
         setIsSigningIn(true);
@@ -164,11 +222,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
-    const NOTION_CLIENT_ID = process.env.NOTION_CLIENT_ID || '';
     const handleSignInWithNotion = () => {
-        if (!NOTION_CLIENT_ID) return;
+        const clientId = notionClientId;
+        if (!clientId) return;
         const redirectUri = encodeURIComponent(`${window.location.origin}/`);
-        window.location.href = `https://api.notion.com/v1/oauth/authorize?client_id=${NOTION_CLIENT_ID}&response_type=code&owner=user&redirect_uri=${redirectUri}&state=notion_oauth`;
+        window.location.href = `https://api.notion.com/v1/oauth/authorize?client_id=${clientId}&response_type=code&owner=user&redirect_uri=${redirectUri}&state=notion_oauth`;
     };
 
     const mcpConfigSnippet = `{
@@ -385,61 +443,57 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 >
                                     Disconnect Notion
                                 </button>
-                            ) : NOTION_CLIENT_ID ? (
+                            ) : notionClientId && notionSecretSaved ? (
                                 <>
                                     <button
                                         onClick={handleSignInWithNotion}
-                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20 mb-4"
+                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20 mb-3"
                                     >
                                         <div className="w-5 h-5 bg-white rounded flex items-center justify-center shrink-0">
                                             <span className="text-black font-black text-sm leading-none">N</span>
                                         </div>
                                         Sign in with Notion
                                     </button>
-                                    <p className="text-gray-600 font-bold text-[10px] text-center mb-2">or paste an integration token manually:</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="password"
-                                            value={notionInput}
-                                            onChange={e => setNotionInput(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
-                                            placeholder="secret_... or ntn_..."
-                                            className="flex-grow bg-gray-900 border-gray-600 rounded-xl text-sm px-3 py-2 text-white font-mono placeholder:text-gray-600"
-                                            style={{ minHeight: 'unset', border: '1px solid #4B5563', padding: '10px 12px', fontSize: '12px' }}
-                                        />
-                                        <button
-                                            onClick={handleSaveNotionToken}
-                                            disabled={!notionInput.trim()}
-                                            className="px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
-                                            style={{ minHeight: 'unset' }}
-                                        >
-                                            Save
-                                        </button>
-                                    </div>
+                                    <button
+                                        onClick={handleClearNotionCreds}
+                                        className="w-full py-2 rounded-xl font-black text-xs uppercase text-gray-500 hover:text-gray-300 transition-colors"
+                                    >
+                                        Reset credentials
+                                    </button>
                                 </>
                             ) : (
-                                <>
-                                    <p className="text-gray-500 font-bold text-xs mb-3">Paste an integration token from <span className="text-purple-400">notion.so/my-integrations</span>:</p>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="password"
-                                            value={notionInput}
-                                            onChange={e => setNotionInput(e.target.value)}
-                                            onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
-                                            placeholder="secret_... or ntn_..."
-                                            className="flex-grow bg-gray-900 border-gray-600 rounded-xl text-sm px-3 py-2 text-white font-mono placeholder:text-gray-600"
-                                            style={{ minHeight: 'unset', border: '1px solid #4B5563', padding: '10px 12px', fontSize: '12px' }}
-                                        />
-                                        <button
-                                            onClick={handleSaveNotionToken}
-                                            disabled={!notionInput.trim()}
-                                            className="px-4 py-2 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
-                                            style={{ minHeight: 'unset' }}
-                                        >
-                                            Save
-                                        </button>
-                                    </div>
-                                </>
+                                <div className="space-y-3">
+                                    <p className="text-gray-400 font-bold text-xs leading-relaxed">
+                                        One-time setup: paste your Notion app credentials below. Create a public integration at{' '}
+                                        <span className="text-purple-400">notion.so/profile/integrations</span>.
+                                    </p>
+                                    <input
+                                        type="text"
+                                        value={notionCredsClientId}
+                                        onChange={e => setNotionCredsClientId(e.target.value)}
+                                        placeholder="Client ID (e.g. abc123de-f456-...)"
+                                        className="w-full bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                        style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                        aria-label="Notion Client ID"
+                                    />
+                                    <input
+                                        type="password"
+                                        value={notionCredsSecret}
+                                        onChange={e => setNotionCredsSecret(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleSaveNotionCreds()}
+                                        placeholder="Client Secret (secret_...)"
+                                        className="w-full bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                        style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                        aria-label="Notion Client Secret"
+                                    />
+                                    <button
+                                        onClick={handleSaveNotionCreds}
+                                        disabled={!notionCredsClientId.trim() || !notionCredsSecret.trim()}
+                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-purple-700 text-white disabled:opacity-40"
+                                    >
+                                        Save &amp; Continue to Sign In
+                                    </button>
+                                </div>
                             )}
                         </div>
 
@@ -488,6 +542,99 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     >
                                         {isLoggingIn && <Loader2Icon className="w-4 h-4 animate-spin" />}
                                         {isLoggingIn ? 'Connecting...' : 'Connect with Moodle Login'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* AI Keys */}
+                    <div className="space-y-4 sm:space-y-6">
+                        <h3 className="text-yellow-400 font-black text-xs uppercase tracking-widest px-2">AI Features</h3>
+
+                        {/* Gemini API Key */}
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${geminiKey ? 'bg-blue-900/20 border-blue-700' : 'bg-gray-900 border-gray-700'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shrink-0">
+                                    <span className="text-white font-black text-sm">G</span>
+                                </div>
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Gemini AI</p>
+                                {geminiKey && <div className="ml-auto bg-blue-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                            </div>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                Powers voice transcription, Ask AI, and automatic link summaries. Get a free key at{' '}
+                                <span className="text-blue-400">aistudio.google.com</span>.
+                            </p>
+                            {geminiKey ? (
+                                <button
+                                    onClick={handleClearGeminiKey}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Remove Key
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <input
+                                        type="password"
+                                        value={geminiInput}
+                                        onChange={e => setGeminiInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleSaveGeminiKey()}
+                                        placeholder="AIza..."
+                                        className="flex-grow bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                        style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                        aria-label="Gemini API key"
+                                    />
+                                    <button
+                                        onClick={handleSaveGeminiKey}
+                                        disabled={!geminiInput.trim()}
+                                        className="px-5 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase disabled:opacity-40 active:scale-95 whitespace-nowrap"
+                                        style={{ minHeight: 'unset' }}
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Anthropic / Claude API Key */}
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${anthropicKey ? 'bg-orange-900/20 border-orange-700' : 'bg-gray-900 border-gray-700'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center shrink-0">
+                                    <span className="text-white font-black text-sm">A</span>
+                                </div>
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Claude AI Research</p>
+                                {anthropicKey && <div className="ml-auto bg-orange-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                            </div>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                Powers the Research panel in College Hub — searches the web for study resources. Get a key at{' '}
+                                <span className="text-orange-400">console.anthropic.com</span>.
+                            </p>
+                            {anthropicKey ? (
+                                <button
+                                    onClick={handleClearAnthropicKey}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Remove Key
+                                </button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <input
+                                        type="password"
+                                        value={anthropicInput}
+                                        onChange={e => setAnthropicInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleSaveAnthropicKey()}
+                                        placeholder="sk-ant-..."
+                                        className="flex-grow bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                        style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                        aria-label="Anthropic API key"
+                                    />
+                                    <button
+                                        onClick={handleSaveAnthropicKey}
+                                        disabled={!anthropicInput.trim()}
+                                        className="px-5 py-3 bg-orange-600 text-white rounded-2xl font-black text-xs uppercase disabled:opacity-40 active:scale-95 whitespace-nowrap"
+                                        style={{ minHeight: 'unset' }}
+                                    >
+                                        Save
                                     </button>
                                 </div>
                             )}

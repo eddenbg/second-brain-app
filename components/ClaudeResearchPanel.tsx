@@ -33,9 +33,13 @@ const ClaudeResearchPanel: React.FC<ClaudeResearchPanelProps> = ({ topic, onSave
     setError(null);
     setResult(null);
     try {
+      const storedKey = typeof localStorage !== 'undefined' ? (localStorage.getItem('anthropic_api_key') || '') : '';
       const res = await fetch('/.netlify/functions/claudeProxy', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(storedKey ? { 'X-Anthropic-Key': storedKey } : {}),
+        },
         body: JSON.stringify({ topic, query: query.trim() }),
       });
       const data = await res.json();

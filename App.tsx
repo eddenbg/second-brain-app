@@ -11,8 +11,9 @@ import TopInstallBanner from './components/TopInstallBanner';
 import { useRecordings } from './hooks/useRecordings';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
-import { saveNotionToken } from './services/notionService';
+import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
+import { getStoredDriveToken } from './services/googleDriveService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
@@ -145,7 +146,12 @@ function App() {
       fetch('/.netlify/functions/notionOAuth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, redirect_uri: redirectUri }),
+        body: JSON.stringify({
+          code,
+          redirect_uri: redirectUri,
+          client_id: getStoredNotionClientId(),
+          client_secret: getStoredNotionClientSecret(),
+        }),
       })
         .then(r => r.json())
         .then(data => {
@@ -220,6 +226,20 @@ function App() {
       .then(events => setGoogleEvents(events))
       .catch(() => setGoogleEvents([]));
   }, []);
+
+  // Notify user when Google token expires so they know to reconnect
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!user || user.isAnonymous) return;
+      if (!getStoredToken() && !getStoredDriveToken()) {
+        setToast('Google connection expired. Open Settings to reconnect.');
+        setTimeout(() => setToast(null), 6000);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [user]);
 
   const allCalendarEvents = useMemo(() => {
     const seen = new Set<string>();

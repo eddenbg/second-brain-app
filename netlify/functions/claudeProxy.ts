@@ -5,7 +5,7 @@ export default async (req: Request, _context: Context) => {
   const headers = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-Anthropic-Key",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
 
@@ -17,9 +17,9 @@ export default async (req: Request, _context: Context) => {
     return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = req.headers.get('X-Anthropic-Key') || process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return new Response(JSON.stringify({ error: "Anthropic API key not configured" }), { status: 503, headers });
+    return new Response(JSON.stringify({ error: "Claude API key not configured. Add your Anthropic API key in Settings → Claude AI Research." }), { status: 503, headers });
   }
 
   let body: { topic: string; query: string };

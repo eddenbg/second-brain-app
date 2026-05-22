@@ -16,20 +16,20 @@ export default async (req: Request, _context: Context) => {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers });
     }
 
-    const clientId = process.env.NOTION_CLIENT_ID;
-    const clientSecret = process.env.NOTION_CLIENT_SECRET;
-
-    if (!clientId || !clientSecret) {
-        return new Response(
-            JSON.stringify({ error: 'Notion OAuth not configured. Set NOTION_CLIENT_ID and NOTION_CLIENT_SECRET in Netlify env vars.' }),
-            { status: 500, headers }
-        );
-    }
-
     try {
-        const { code, redirect_uri } = await req.json();
+        const { code, redirect_uri, client_id: bodyClientId, client_secret: bodyClientSecret } = await req.json();
         if (!code || !redirect_uri) {
             return new Response(JSON.stringify({ error: 'Missing code or redirect_uri' }), { status: 400, headers });
+        }
+
+        const clientId = bodyClientId || process.env.NOTION_CLIENT_ID;
+        const clientSecret = bodyClientSecret || process.env.NOTION_CLIENT_SECRET;
+
+        if (!clientId || !clientSecret) {
+            return new Response(
+                JSON.stringify({ error: 'Notion credentials not configured. Add your Notion Client ID and Secret in Settings → Notion.' }),
+                { status: 500, headers }
+            );
         }
 
         const encoded = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
