@@ -61,41 +61,50 @@ export const useRecordings = () => {
             return;
         }
 
-        // Handle post-redirect after Google sign-in (fires once when app loads back after redirect)
-        getRedirectResult(auth).then((result) => {
-            if (result) {
-                const credential = GoogleAuthProvider.credentialFromResult(result);
-                const token = credential?.accessToken;
-                if (token) {
-                    saveGoogleToken(token);
-                    saveDriveToken(token);
-                }
-            }
-        }).catch((e: any) => {
-            if (e.code === 'auth/credential-already-in-use') {
-                // Google account already linked to another Firebase UID — sign into that account directly
-                const credential = GoogleAuthProvider.credentialFromError(e);
-                if (credential) {
-                    signInWithCredential(auth, credential).catch(console.error);
-                }
-            }
-        });
+        let authUnsubscribe: (() => void) | undefined;
 
-        const authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-            if (currentUser) {
-                setUser(currentUser);
-                setLoading(false);
-            } else {
-                try {
-                    await signInAnonymously(auth);
-                } catch (e) {
-                    console.error("Anonymous sign-in failed", e);
+        const init = async () => {
+            // Await redirect result FIRST so the Google token is stored before
+            // onAuthStateChanged fires and the UI reads from localStorage.
+            try {
+                const result = await getRedirectResult(auth);
+                if (result) {
+                    const credential = GoogleAuthProvider.credentialFromResult(result);
+                    const token = credential?.accessToken;
+                    if (token) {
+                        saveGoogleToken(token);
+                        saveDriveToken(token);
+                    }
+                }
+            } catch (e: any) {
+                if (e.code === 'auth/credential-already-in-use') {
+                    // Google account already linked to another Firebase UID — sign into that account directly
+                    const credential = GoogleAuthProvider.credentialFromError(e);
+                    if (credential) {
+                        signInWithCredential(auth, credential).catch(console.error);
+                    }
+                }
+            }
+
+            // Now set up the auth state listener — token is guaranteed to be stored
+            authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+                if (currentUser) {
+                    setUser(currentUser);
                     setLoading(false);
+                } else {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (e) {
+                        console.error("Anonymous sign-in failed", e);
+                        setLoading(false);
+                    }
                 }
-            }
-        });
+            });
+        };
 
-        return () => authUnsubscribe();
+        init();
+
+        return () => authUnsubscribe?.();
     }, []);
 
     // 3. Real-time Listeners for Memories and Tasks

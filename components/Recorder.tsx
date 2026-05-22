@@ -70,7 +70,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
         const ai = getGeminiInstance();
         if (!ai) {
-            setError("AI client is not available.");
+            setError("Gemini API key not configured. Add API_KEY to Netlify environment variables and redeploy.");
             return;
         }
 
@@ -178,7 +178,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                         }
                     },
-                    onerror: (e) => { console.error(e); setError('Transcription error.'); },
+                    onerror: (e) => { console.error(e); setError('Live transcription failed. Make sure your API_KEY has Gemini Live API access enabled at aistudio.google.com.'); },
                     onclose: () => { audioContext.close(); },
                 },
                 config: {

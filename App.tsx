@@ -33,6 +33,7 @@ function App() {
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   // Capture share params immediately on mount before auth loads (prevents race condition)
   const pendingShareRef = useRef<{ url: string; title: string; text: string } | null>(null);
   const [webCategories, setWebCategories] = useState<string[]>(() => {
@@ -147,8 +148,20 @@ function App() {
         body: JSON.stringify({ code, redirect_uri: redirectUri }),
       })
         .then(r => r.json())
-        .then(data => { if (data.access_token) saveNotionToken(data.access_token); })
-        .catch(console.error);
+        .then(data => {
+          if (data.access_token) {
+            saveNotionToken(data.access_token);
+            setToast('Notion connected!');
+            setTimeout(() => setToast(null), 4000);
+          } else {
+            setToast('Notion connection failed. Try again.');
+            setTimeout(() => setToast(null), 5000);
+          }
+        })
+        .catch(() => {
+          setToast('Notion connection failed. Try again.');
+          setTimeout(() => setToast(null), 5000);
+        });
     }
   }, []);
 
@@ -372,6 +385,15 @@ function App() {
           onAddEvent={addCalendarEvent}
           onDeleteEvent={deleteCalendarEvent}
         />
+      )}
+
+      {/* Toast notifications */}
+      {toast && (
+        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[300] pointer-events-none">
+          <div className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-2xl border-2 border-white/20 animate-fade-in">
+            {toast}
+          </div>
+        </div>
       )}
     </div>
   );
