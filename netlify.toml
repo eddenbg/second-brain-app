@@ -33,6 +33,12 @@
   for = "/icon-512.png"
   [headers.values]
     Cache-Control = "public, max-age=86400"
+# API routes → Netlify Functions
+[[redirects]]
+from = "/api/*"
+to = "/.netlify/functions/:splat"
+status = 200
+force = true
 
 # SPA fallback — only applies when no real file matches
 [[redirects]]
