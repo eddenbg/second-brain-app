@@ -32,7 +32,7 @@ const MiniRecorder: React.FC<{
         
         const ai = getGeminiInstance();
         if (!ai) {
-          setError("Gemini API key not configured. Add API_KEY to Netlify env vars and redeploy.");
+          setError("Gemini API key not configured. Open Settings (gear icon) → AI Features → Gemini AI and paste your key.");
           return;
         }
 
@@ -87,7 +87,7 @@ const MiniRecorder: React.FC<{
                       onStructuredTranscriptChange?.([...structuredTranscriptRef.current]);
                     }
                   },
-                  onerror: (e) => { setError('Live transcription failed — check that API_KEY has Gemini Live access at aistudio.google.com.'); stop(); },
+                  onerror: (e) => { setError('Live transcription failed — make sure your Gemini key (Settings → AI Features) has Gemini Live access at aistudio.google.com.'); stop(); },
                   onclose: () => {},
                 },
                 config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {} },

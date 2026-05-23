@@ -137,7 +137,8 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         };
         mediaRecorderRef.current.start();
         
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const actualSampleRate = audioContext.sampleRate;
         sessionPromiseRef.current = ai.live.connect({
             model: 'gemini-live-2.5-flash-preview',
             callbacks: {
@@ -154,7 +155,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                   let binary = '';
                   const bytes = new Uint8Array(int16.buffer);
                   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                  sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: 'audio/pcm;rate=16000' } }));
+                  sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: `audio/pcm;rate=${actualSampleRate}` } }));
                 };
                 source.connect(scriptProcessor);
                 scriptProcessor.connect(audioContext.destination);

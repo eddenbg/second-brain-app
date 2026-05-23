@@ -70,7 +70,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
         const ai = getGeminiInstance();
         if (!ai) {
-            setError("Gemini API key not configured. Add API_KEY to Netlify environment variables and redeploy.");
+            setError("Gemini API key not configured. Open the Settings menu (gear icon) → AI Features → Gemini AI, and paste your key from aistudio.google.com.");
             return;
         }
 
@@ -128,7 +128,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             };
             mediaRecorderRef.current.start();
 
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const actualSampleRate = audioContext.sampleRate;
             sessionPromiseRef.current = ai.live.connect({
                 model: 'gemini-live-2.5-flash-preview',
                 callbacks: {
@@ -139,7 +140,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             const inputData = e.inputBuffer.getChannelData(0);
                             const int16 = new Int16Array(inputData.length);
                             for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
-                            const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
+                            const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: `audio/pcm;rate=${actualSampleRate}` };
                             sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: pcmBlob }));
                         };
                         source.connect(scriptProcessor);
@@ -178,7 +179,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                         }
                     },
-                    onerror: (e) => { console.error(e); setError('Live transcription failed. Make sure your API_KEY has Gemini Live API access enabled at aistudio.google.com.'); },
+                    onerror: (e) => { console.error(e); setError('Live transcription failed. Make sure your Gemini API key (Settings → AI Features) has Gemini Live access enabled at aistudio.google.com.'); },
                     onclose: () => { audioContext.close(); },
                 },
                 config: {
