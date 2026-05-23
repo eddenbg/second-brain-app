@@ -91,7 +91,7 @@ const MiniRecorder: React.FC<{
                   onerror: (e) => { setError('Live transcription failed — make sure your Gemini key (Settings → AI Features) has Gemini Live access at aistudio.google.com.'); stop(); },
                   onclose: () => {},
                 },
-                config: { responseModalities: [Modality.TEXT], inputAudioTranscription: {} },
+                config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {} },
               });
         } catch (err) {
             setError('Mic access denied.');

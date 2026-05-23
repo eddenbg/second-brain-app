@@ -170,7 +170,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
               onerror: (e) => { console.error(e); setError('Transcription error.'); },
               onclose: () => {},
             },
-            config: { responseModalities: [Modality.TEXT], inputAudioTranscription: {} },
+            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {} },
         });
     };
 

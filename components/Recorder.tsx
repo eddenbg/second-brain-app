@@ -183,7 +183,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     onclose: () => { audioContext.close(); },
                 },
                 config: {
-                    responseModalities: [Modality.TEXT],
+                    responseModalities: [Modality.AUDIO],
                     inputAudioTranscription: {},
                     systemInstruction: `You are a real-time lecture assistant for a visually impaired student. Your primary job is to transcribe the lecture accurately. 
                     IN ADDITION, you will receive video frames from the lecture. Analyze these frames for key visual information. 
