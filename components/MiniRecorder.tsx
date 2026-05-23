@@ -62,7 +62,7 @@ const MiniRecorder: React.FC<{
             const actualSampleRate = context.sampleRate;
             
             sessionPromiseRef.current = ai.live.connect({
-                model: 'gemini-2.5-flash-live-preview',
+                model: 'gemini-2.5-flash-native-audio-latest',
                 callbacks: {
                   onopen: () => {
                     const source = context.createMediaStreamSource(stream);

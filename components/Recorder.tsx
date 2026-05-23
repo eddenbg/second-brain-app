@@ -132,7 +132,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             await audioContext.resume();
             const actualSampleRate = audioContext.sampleRate;
             sessionPromiseRef.current = ai.live.connect({
-                model: 'gemini-2.5-flash-live-preview',
+                model: 'gemini-2.5-flash-native-audio-latest',
                 callbacks: {
                     onopen: () => {
                         const source = audioContext.createMediaStreamSource(mediaStream);
