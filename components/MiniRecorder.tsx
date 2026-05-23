@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { Session, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon } from './Icons';
 import { getGeminiInstance } from '../utils/gemini';
+import { downsampleTo16k } from '../utils/audio';
 
 import type { TranscriptSegment } from '../types';
 
@@ -56,6 +57,7 @@ const MiniRecorder: React.FC<{
             
             // Allow browser to choose native sample rate
             const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+            await context.resume();
             audioContextRef.current = context;
             const actualSampleRate = context.sampleRate;
             
@@ -67,12 +69,11 @@ const MiniRecorder: React.FC<{
                     const scriptProcessor = context.createScriptProcessor(4096, 1, 1);
                     scriptProcessor.onaudioprocess = (e) => {
                       const inputData = e.inputBuffer.getChannelData(0);
-                      const int16 = new Int16Array(inputData.length);
-                      for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
-                      let binary = '';
+                      const int16 = downsampleTo16k(inputData, actualSampleRate);
                       const bytes = new Uint8Array(int16.buffer);
+                      let binary = '';
                       for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                      sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: `audio/pcm;rate=${actualSampleRate}` } }));
+                      sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: 'audio/pcm;rate=16000' } }));
                     };
                     source.connect(scriptProcessor);
                     scriptProcessor.connect(context.destination);

@@ -7,6 +7,7 @@ import MiniRecorder from './MiniRecorder';
 import { getCurrentLocation } from '../utils/location';
 import { Modality, Session } from '@google/genai';
 import { getGeminiInstance } from '../utils/gemini';
+import { downsampleTo16k } from '../utils/audio';
 
 
 interface AddPhysicalItemModalProps {
@@ -138,6 +139,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         mediaRecorderRef.current.start();
         
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        await audioContext.resume();
         const actualSampleRate = audioContext.sampleRate;
         sessionPromiseRef.current = ai.live.connect({
             model: 'gemini-live-2.5-flash-preview',
@@ -147,15 +149,11 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                 const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
                 scriptProcessor.onaudioprocess = (e) => {
                   const inputData = e.inputBuffer.getChannelData(0);
-                  const int16 = new Int16Array(inputData.length);
-                  for (let i = 0; i < inputData.length; i++) {
-                    let s = Math.max(-1, Math.min(1, inputData[i]));
-                    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                  }
-                  let binary = '';
+                  const int16 = downsampleTo16k(inputData, actualSampleRate);
                   const bytes = new Uint8Array(int16.buffer);
+                  let binary = '';
                   for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-                  sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: `audio/pcm;rate=${actualSampleRate}` } }));
+                  sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: { data: btoa(binary), mimeType: 'audio/pcm;rate=16000' } }));
                 };
                 source.connect(scriptProcessor);
                 scriptProcessor.connect(audioContext.destination);

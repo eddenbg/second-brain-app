@@ -39,3 +39,30 @@ export async function decodeAudioData(
   }
   return buffer;
 }
+
+/**
+ * Downsample a Float32 PCM buffer from any sample rate to 16 kHz
+ * (the rate required by Gemini Live's transcription feature) and
+ * convert to Int16.  Uses averaging over each output sample window
+ * to avoid aliasing on voices.
+ */
+export function downsampleTo16k(input: Float32Array, fromRate: number): Int16Array {
+  const TARGET = 16000;
+  if (fromRate === TARGET) {
+    const out = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) out[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
+    return out;
+  }
+  const ratio = fromRate / TARGET;
+  const outLen = Math.floor(input.length / ratio);
+  const out = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const start = Math.floor(i * ratio);
+    const end   = Math.min(Math.ceil((i + 1) * ratio), input.length);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += input[j];
+    const avg = sum / (end - start);
+    out[i] = Math.max(-32768, Math.min(32767, avg * 32768));
+  }
+  return out;
+}

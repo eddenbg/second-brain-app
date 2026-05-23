@@ -5,7 +5,7 @@ import type { VoiceMemory } from '../types';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
 import { analyzeVoiceNote } from '../services/geminiService';
-import { encode } from '../utils/audio';
+import { encode, downsampleTo16k } from '../utils/audio';
 
 interface RecorderProps {
   onSave: (recording: Omit<VoiceMemory, 'id' | 'date' | 'category'>) => void;
@@ -129,6 +129,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             mediaRecorderRef.current.start();
 
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            await audioContext.resume();
             const actualSampleRate = audioContext.sampleRate;
             sessionPromiseRef.current = ai.live.connect({
                 model: 'gemini-live-2.5-flash-preview',
@@ -138,9 +139,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
                         scriptProcessor.onaudioprocess = (e) => {
                             const inputData = e.inputBuffer.getChannelData(0);
-                            const int16 = new Int16Array(inputData.length);
-                            for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
-                            const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: `audio/pcm;rate=${actualSampleRate}` };
+                            const int16 = downsampleTo16k(inputData, actualSampleRate);
+                            const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
                             sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: pcmBlob }));
                         };
                         source.connect(scriptProcessor);
