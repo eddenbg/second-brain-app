@@ -142,7 +142,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         await audioContext.resume();
         const actualSampleRate = audioContext.sampleRate;
         sessionPromiseRef.current = ai.live.connect({
-            model: 'gemini-live-2.5-flash-preview',
+            model: 'gemini-2.5-flash-live-preview',
             callbacks: {
               onopen: () => {
                 const source = audioContext.createMediaStreamSource(stream);
@@ -170,7 +170,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
               onerror: (e) => { console.error(e); setError('Transcription error.'); },
               onclose: () => {},
             },
-            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {} },
+            config: { responseModalities: [Modality.TEXT], inputAudioTranscription: {} },
         });
     };
 

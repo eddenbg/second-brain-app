@@ -62,7 +62,7 @@ const MiniRecorder: React.FC<{
             const actualSampleRate = context.sampleRate;
             
             sessionPromiseRef.current = ai.live.connect({
-                model: 'gemini-live-2.5-flash-preview',
+                model: 'gemini-2.5-flash-live-preview',
                 callbacks: {
                   onopen: () => {
                     const source = context.createMediaStreamSource(stream);
@@ -91,7 +91,7 @@ const MiniRecorder: React.FC<{
                   onerror: (e) => { setError('Live transcription failed — make sure your Gemini key (Settings → AI Features) has Gemini Live access at aistudio.google.com.'); stop(); },
                   onclose: () => {},
                 },
-                config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: {} },
+                config: { responseModalities: [Modality.TEXT], inputAudioTranscription: {} },
               });
         } catch (err) {
             setError('Mic access denied.');

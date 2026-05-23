@@ -132,7 +132,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             await audioContext.resume();
             const actualSampleRate = audioContext.sampleRate;
             sessionPromiseRef.current = ai.live.connect({
-                model: 'gemini-live-2.5-flash-preview',
+                model: 'gemini-2.5-flash-live-preview',
                 callbacks: {
                     onopen: () => {
                         const source = audioContext.createMediaStreamSource(mediaStream);
@@ -183,7 +183,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     onclose: () => { audioContext.close(); },
                 },
                 config: {
-                    responseModalities: [Modality.AUDIO],
+                    responseModalities: [Modality.TEXT],
                     inputAudioTranscription: {},
                     systemInstruction: `You are a real-time lecture assistant for a visually impaired student. Your primary job is to transcribe the lecture accurately. 
                     IN ADDITION, you will receive video frames from the lecture. Analyze these frames for key visual information. 
