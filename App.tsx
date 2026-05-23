@@ -157,6 +157,18 @@ function App() {
         .then(data => {
           if (data.access_token) {
             saveNotionToken(data.access_token);
+            // If this is running in a popup opened by the main app, send the
+            // token back and close — the parent window saves it and we're done.
+            if (window.opener && window.opener !== window) {
+              try {
+                window.opener.postMessage(
+                  { type: 'NOTION_TOKEN', token: data.access_token },
+                  window.location.origin
+                );
+              } catch {}
+              setTimeout(() => window.close(), 300);
+              return;
+            }
             setToast('Notion connected!');
             setTimeout(() => setToast(null), 4000);
           } else {
