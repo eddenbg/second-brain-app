@@ -17,6 +17,7 @@ interface FilesViewProps {
     onSave: (memory: Omit<AnyMemory, 'id' | 'date'>) => void;
     onDelete: (id: string) => void;
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
+    backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
 // ── Media Preview Drawer ─────────────────────────────────────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ const DRIVE_BUTTON_ICON = (
 );
 
 // ── Files View ────────────────────────────────────────────────────────────────────────────────────────────
-const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate }) => {
+const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState<'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'drive' | 'hidden'>('all');
     const [previewMemory, setPreviewMemory] = useState<AnyMemory | null>(null);
@@ -156,6 +157,18 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
     const [isGeneratingMulti, setIsGeneratingMulti] = useState(false);
     const [activeStudyHub, setActiveStudyHub] = useState<{ type: any; content: string; title: string; videoUri?: string } | null>(null);
     const [showDrivePicker, setShowDrivePicker] = useState(false);
+
+    useEffect(() => {
+        if (!backHandlerRef) return;
+        backHandlerRef.current = () => {
+            if (activeStudyHub) { setActiveStudyHub(null); return true; }
+            if (showSummaryPrompt) { setShowSummaryPrompt(false); return true; }
+            if (showDrivePicker) { setShowDrivePicker(false); return true; }
+            if (previewMemory) { setPreviewMemory(null); return true; }
+            return false;
+        };
+        return () => { if (backHandlerRef) backHandlerRef.current = null; };
+    }, [backHandlerRef, activeStudyHub, showSummaryPrompt, showDrivePicker, previewMemory]);
 
     const importedDriveIds = useMemo(
         () => new Set(memories.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive').map(m => (m as FileMemory).driveId || '')),
@@ -205,8 +218,9 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
         const selectedMemories = memories.filter(m => selectedIds.has(m.id));
         try {
             const result = await generateStudyOverview(selectedMemories, focus, type);
-            setActiveStudyHub({ ...result, type });
             setShowSummaryPrompt(false);
+            window.history.pushState({ filesModal: 'studyHub' }, '');
+            setActiveStudyHub({ ...result, type });
             setIsSelectMode(false);
             setSelectedIds(new Set());
         } catch (e) { console.error(e); }
@@ -215,17 +229,20 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
 
     const handleItemClick = (mem: AnyMemory) => {
         if (isSelectMode) toggleSelection(mem.id);
-        else setPreviewMemory(mem);
+        else {
+            window.history.pushState({ filesModal: 'preview' }, '');
+            setPreviewMemory(mem);
+        }
     };
 
     return (
         <div className="flex flex-col h-full space-y-4 max-w-4xl mx-auto overflow-hidden bg-[#001f3f]">
-            {previewMemory && <MediaPreviewDrawer memory={previewMemory} onUpdate={onUpdate} onClose={() => setPreviewMemory(null)} />}
-            {showSummaryPrompt && <SummaryFocusModal onClose={() => setShowSummaryPrompt(false)} onGenerate={handleMultiStudy} isGenerating={isGeneratingMulti} initialType={summaryInitialType} />}
-            {activeStudyHub && <StudyHubOverlay overview={activeStudyHub} memories={memories} onClose={() => setActiveStudyHub(null)} />}
+            {previewMemory && <MediaPreviewDrawer memory={previewMemory} onUpdate={onUpdate} onClose={() => { if (window.history.state?.filesModal === 'preview') window.history.back(); setPreviewMemory(null); }} />}
+            {showSummaryPrompt && <SummaryFocusModal onClose={() => { if (window.history.state?.filesModal === 'studyPrompt') window.history.back(); setShowSummaryPrompt(false); }} onGenerate={handleMultiStudy} isGenerating={isGeneratingMulti} initialType={summaryInitialType} />}
+            {activeStudyHub && <StudyHubOverlay overview={activeStudyHub} memories={memories} onClose={() => { if (window.history.state?.filesModal === 'studyHub') window.history.back(); setActiveStudyHub(null); }} />}
             {showDrivePicker && (
                 <DrivePickerModal
-                    onClose={() => setShowDrivePicker(false)}
+                    onClose={() => { if (window.history.state?.filesModal === 'drive') window.history.back(); setShowDrivePicker(false); }}
                     onImport={handleImportFromDrive}
                     importedIds={importedDriveIds}
                 />
@@ -245,7 +262,7 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                         />
                     </div>
                     <button
-                        onClick={() => setShowDrivePicker(true)}
+                        onClick={() => { window.history.pushState({ filesModal: 'drive' }, ''); setShowDrivePicker(true); }}
                         aria-label="Import from Google Drive"
                         className="px-4 py-4 rounded-2xl font-black text-xs uppercase border-2 bg-white/10 text-gray-400 border-white/10 flex items-center gap-1.5 shrink-0"
                     >
@@ -314,14 +331,14 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             {isSelectMode && selectedIds.size > 0 && (
                 <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-sm flex gap-3 animate-slide-up">
                     <button
-                        onClick={() => { setSummaryInitialType('written'); setShowSummaryPrompt(true); }}
+                        onClick={() => { window.history.pushState({ filesModal: 'studyPrompt' }, ''); setSummaryInitialType('written'); setShowSummaryPrompt(true); }}
                         aria-label="Generate Study Pod"
                         className="flex-1 bg-yellow-500 text-[#001f3f] font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3 uppercase text-xs"
                     >
                         <PenToolIcon className="w-6 h-6" /> Study Pod
                     </button>
                     <button
-                        onClick={() => { setSummaryInitialType('research'); setShowSummaryPrompt(true); }}
+                        onClick={() => { window.history.pushState({ filesModal: 'studyPrompt' }, ''); setSummaryInitialType('research'); setShowSummaryPrompt(true); }}
                         aria-label="Deep Recall"
                         className="flex-1 bg-white/10 text-white font-black py-5 rounded-2xl shadow-2xl flex items-center justify-center gap-3 uppercase text-xs border-2 border-white/10"
                     >

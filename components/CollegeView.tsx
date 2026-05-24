@@ -135,6 +135,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     useEffect(() => {
         if (!backHandlerRef) return;
         backHandlerRef.current = () => {
+            if (activeStudyHub) { setActiveStudyHub(null); return true; }
+            if (showStudyPrompt) { setShowStudyPrompt(false); return true; }
             if (view === 'detail') { setView('dashboard'); return true; }
             if (view === 'recording' || view === 'scanning') { setView('dashboard'); return true; }
             if (view === 'generalScan') { setView('list'); return true; }
@@ -142,7 +144,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             return false;
         };
         return () => { if (backHandlerRef) backHandlerRef.current = null; };
-    }, [view, backHandlerRef]);
+    }, [view, backHandlerRef, showStudyPrompt, activeStudyHub]);
 
     const handleSelectCourse = (course: string) => {
         const updated = { ...recentAccess, [course]: Date.now() };
@@ -178,8 +180,9 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         setIsGeneratingStudy(true);
         try {
             const result = await generateStudyOverview(courseMaterials, focus || selectedCourse, type);
-            setActiveStudyHub({ ...result, type });
             setShowStudyPrompt(false);
+            window.history.pushState({ collegeModal: 'studyHub' }, '');
+            setActiveStudyHub({ ...result, type });
         } catch (e) { console.error(e); }
         finally { setIsGeneratingStudy(false); }
     };
@@ -376,7 +379,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     {/* Study Session — only shown when course has materials */}
                     {(memoriesByCourse[selectedCourse] || []).length > 0 && (
                         <button
-                            onClick={() => setShowStudyPrompt(true)}
+                            onClick={() => { window.history.pushState({ collegeModal: 'studyPrompt' }, ''); setShowStudyPrompt(true); }}
                             className="w-full h-24 bg-purple-700 text-white rounded-3xl flex items-center justify-center gap-4 shadow-xl"
                             aria-label="Generate study session from course materials"
                         >
@@ -543,7 +546,10 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         <div className="flex flex-col gap-6">
             {showStudyPrompt && (
                 <SummaryFocusModal
-                    onClose={() => setShowStudyPrompt(false)}
+                    onClose={() => {
+                        if (window.history.state?.collegeModal === 'studyPrompt') window.history.back();
+                        setShowStudyPrompt(false);
+                    }}
                     onGenerate={handleGenerateStudy}
                     isGenerating={isGeneratingStudy}
                     defaultFocus={selectedCourse || ''}
@@ -553,7 +559,10 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                 <StudyHubOverlay
                     overview={activeStudyHub}
                     memories={memoriesByCourse[selectedCourse || ''] || []}
-                    onClose={() => setActiveStudyHub(null)}
+                    onClose={() => {
+                        if (window.history.state?.collegeModal === 'studyHub') window.history.back();
+                        setActiveStudyHub(null);
+                    }}
                 />
             )}
 

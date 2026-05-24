@@ -46,6 +46,7 @@ function App() {
   }, []);
 
   const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
+  const filesBackHandlerRef = useRef<(() => boolean) | null>(null);
 
   const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
@@ -268,6 +269,7 @@ function App() {
       if (showSettings) { setShowSettings(false); return; }
       if (showSchedule) { setShowSchedule(false); return; }
       if (sharedContent) { setSharedContent(null); return; }
+      if (filesBackHandlerRef.current?.()) return;
       if (collegeBackHandlerRef.current?.()) return;
       setView('personal');
     };
@@ -321,6 +323,7 @@ function App() {
             onSave={addMemory}
             onDelete={deleteMemory}
             onUpdate={updateMemory}
+            backHandlerRef={filesBackHandlerRef}
           />
         );
       default:

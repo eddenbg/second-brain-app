@@ -110,6 +110,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const [subView, setSubView] = useState<SubView>('hub');
     const [showTopics, setShowTopics] = useState(false);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
+    const showTopicsRef = useRef(false);
+    const showNotionPickerRef = useRef(false);
     const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
     const { isInstallable, installApp } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
@@ -140,8 +142,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         setSubView(view);
     }, []);
 
+    useEffect(() => { showTopicsRef.current = showTopics; }, [showTopics]);
+    useEffect(() => { showNotionPickerRef.current = showNotionPicker; }, [showNotionPicker]);
+
     useEffect(() => {
         const handlePop = () => {
+            if (showTopicsRef.current) { setShowTopics(false); return; }
+            if (showNotionPickerRef.current) { setShowNotionPicker(false); return; }
             setSubView('hub');
             setSelectedItem(null);
         };
@@ -184,7 +191,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 <TopicsBrowserModal
                     memories={memories}
                     onSaveMemory={onSaveMemory}
-                    onClose={() => setShowTopics(false)}
+                    onClose={() => {
+                        if (window.history.state?.personalModal === 'topics') window.history.back();
+                        setShowTopics(false);
+                    }}
                 />
             )}
             <div className="flex flex-col gap-6">
@@ -295,7 +305,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
 
                 {/* Topics – full width */}
                 <button
-                    onClick={() => setShowTopics(true)}
+                    onClick={() => { window.history.pushState({ personalModal: 'topics' }, ''); setShowTopics(true); }}
                     aria-label="Browse memories by topic"
                     className="w-full h-28 bg-[#0891B2] text-white rounded-3xl flex items-center justify-center gap-4"
                 >
@@ -513,7 +523,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 {showNotionPicker && notionToken && (
                     <NotionPickerModal
                         token={notionToken}
-                        onClose={() => setShowNotionPicker(false)}
+                        onClose={() => {
+                            if (window.history.state?.personalModal === 'notionPicker') window.history.back();
+                            setShowNotionPicker(false);
+                        }}
                         onImport={page => { handleImportFromNotion(page); }}
                         importedUrls={importedNotionUrls}
                     />
@@ -585,7 +598,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 {/* Notion quick import */}
                 {notionToken && (
                     <button
-                        onClick={() => setShowNotionPicker(true)}
+                        onClick={() => { window.history.pushState({ personalModal: 'notionPicker' }, ''); setShowNotionPicker(true); }}
                         className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl border-2 border-white/10 w-full text-left active:scale-95 transition-transform"
                         aria-label="Import from Notion"
                     >

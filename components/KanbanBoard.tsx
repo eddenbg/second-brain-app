@@ -133,13 +133,18 @@ const AddTaskModal: React.FC<{
     );
 }
 
+const STATUS_SEQUENCE_PERSONAL: TaskStatus[] = ['idea', 'todo', 'in-progress', 'done'];
+const STATUS_SEQUENCE_COLLEGE: TaskStatus[] = ['todo', 'in-progress', 'done'];
+const STATUS_LABELS: Record<TaskStatus, string> = { idea: 'Idea', todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' };
+
 const TaskCard: React.FC<{
     task: Task;
+    category: 'personal' | 'college';
     onUpdate: (id: string, updates: Partial<Task>) => void;
     onDelete: (id: string) => void;
     memories: AnyMemory[];
     onOpenMemory: (mem: AnyMemory) => void;
-}> = ({ task, onUpdate, onDelete, memories, onOpenMemory }) => {
+}> = ({ task, category, onUpdate, onDelete, memories, onOpenMemory }) => {
     
     const linkedDocs = useMemo(() => {
         if (!task.linkedMemoryIds) return [];
@@ -166,8 +171,13 @@ const TaskCard: React.FC<{
         e.dataTransfer.effectAllowed = 'move';
     };
 
+    const sequence = category === 'personal' ? STATUS_SEQUENCE_PERSONAL : STATUS_SEQUENCE_COLLEGE;
+    const currentIdx = sequence.indexOf(task.status);
+    const prevStatus = currentIdx > 0 ? sequence[currentIdx - 1] : null;
+    const nextStatus = currentIdx < sequence.length - 1 ? sequence[currentIdx + 1] : null;
+
     return (
-        <div 
+        <div
             draggable
             onDragStart={handleDragStart}
             aria-label={`Task: ${task.title}`}
@@ -222,6 +232,26 @@ const TaskCard: React.FC<{
                     ))}
                 </div>
             )}
+
+            {/* Mobile-friendly move controls */}
+            <div className="flex gap-2 mt-3 border-t-2 border-white/5 pt-3">
+                <button
+                    onClick={() => prevStatus && onUpdate(task.id, { status: prevStatus })}
+                    disabled={!prevStatus}
+                    aria-label={prevStatus ? `Move to ${STATUS_LABELS[prevStatus]}` : 'Already at first column'}
+                    className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed bg-white/5 text-gray-300 hover:bg-white/10 active:scale-95"
+                >
+                    ← {prevStatus ? STATUS_LABELS[prevStatus] : '—'}
+                </button>
+                <button
+                    onClick={() => nextStatus && onUpdate(task.id, { status: nextStatus })}
+                    disabled={!nextStatus}
+                    aria-label={nextStatus ? `Move to ${STATUS_LABELS[nextStatus]}` : 'Already at last column'}
+                    className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-20 disabled:cursor-not-allowed bg-white/5 text-gray-300 hover:bg-white/10 active:scale-95"
+                >
+                    {nextStatus ? STATUS_LABELS[nextStatus] : '—'} →
+                </button>
+            </div>
         </div>
     );
 };
@@ -327,10 +357,11 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, category, courseFilter
                             </div>
                             <div className="p-4 flex-grow overflow-y-auto space-y-1">
                                 {filteredTasks.filter(t => t.status === col.id).map(task => (
-                                    <TaskCard 
-                                        key={task.id} 
-                                        task={task} 
-                                        onUpdate={onUpdateTask} 
+                                    <TaskCard
+                                        key={task.id}
+                                        task={task}
+                                        category={category}
+                                        onUpdate={onUpdateTask}
                                         onDelete={onDeleteTask}
                                         memories={memories}
                                         onOpenMemory={onOpenMemory}
