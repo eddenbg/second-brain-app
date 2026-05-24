@@ -311,9 +311,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, category, courseFilter
     );
 
     return (
-        <div className="h-full flex flex-col bg-[#001f3f]">
+        <div className="flex flex-col bg-[#001f3f]">
             {showAddModal && (
-                <AddTaskModal 
+                <AddTaskModal
                     category={category}
                     courseFilter={courseFilter}
                     existingProjects={availableProjects}
@@ -326,8 +326,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, category, courseFilter
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div className="flex items-center gap-3 overflow-x-auto w-full sm:w-auto pb-1 scrollbar-hide">
                     <span className="text-gray-400 text-xs font-black uppercase tracking-widest whitespace-nowrap">Project:</span>
-                    <select 
-                        value={projectFilter} 
+                    <select
+                        value={projectFilter}
                         onChange={(e) => setProjectFilter(e.target.value)}
                         aria-label="Filter by project"
                         className="bg-white/5 text-white text-xs font-black uppercase tracking-widest p-3 rounded-xl border-2 border-white/10 focus:border-yellow-500 outline-none appearance-none min-w-[140px]"
@@ -340,36 +340,43 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, category, courseFilter
                     <PlusIcon className="w-5 h-5"/> Add Task / Idea
                 </button>
             </div>
-            
-            <div className="flex-grow overflow-x-auto scrollbar-hide">
-                <div className="flex gap-6 min-w-[900px] h-full pb-6">
-                    {columns.map(col => (
-                        <div 
-                            key={col.id} 
-                            className={`flex-1 bg-black/20 rounded-[2.5rem] border-4 flex flex-col min-w-[250px] transition-all ${dragOverColumn === col.id ? 'border-yellow-500 bg-black/40 scale-[1.02]' : 'border-white/5'}`}
-                            onDragOver={(e) => handleDragOver(e, col.id)}
-                            onDrop={(e) => handleDrop(e, col.id)}
-                            onDragLeave={handleDragLeave}
-                            aria-label={`Column: ${col.label}`}
-                        >
-                            <div className={`p-5 border-b-4 ${col.color} bg-black/10 rounded-t-[2.5rem]`}>
-                                <h4 className="font-black text-white uppercase tracking-tighter text-lg">{col.label}</h4>
+
+            {/* Mobile: vertical stack of columns. Desktop: horizontal scroll. */}
+            <div className="sm:overflow-x-auto sm:scrollbar-hide">
+                <div className="flex flex-col gap-4 sm:flex-row sm:gap-6 sm:min-w-[900px] pb-6">
+                    {columns.map(col => {
+                        const colTasks = filteredTasks.filter(t => t.status === col.id);
+                        return (
+                            <div
+                                key={col.id}
+                                className={`bg-black/20 rounded-[2.5rem] border-4 flex flex-col sm:flex-1 sm:min-w-[250px] transition-all ${dragOverColumn === col.id ? 'border-yellow-500 bg-black/40' : 'border-white/5'}`}
+                                onDragOver={(e) => handleDragOver(e, col.id)}
+                                onDrop={(e) => handleDrop(e, col.id)}
+                                onDragLeave={handleDragLeave}
+                                aria-label={`Column: ${col.label}`}
+                            >
+                                <div className={`p-5 border-b-4 ${col.color} bg-black/10 rounded-t-[2.5rem] flex items-center justify-between`}>
+                                    <h4 className="font-black text-white uppercase tracking-tighter text-lg">{col.label}</h4>
+                                    <span className="text-white/40 text-sm font-black">{colTasks.length}</span>
+                                </div>
+                                {colTasks.length > 0 && (
+                                    <div className="p-4 space-y-1">
+                                        {colTasks.map(task => (
+                                            <TaskCard
+                                                key={task.id}
+                                                task={task}
+                                                category={category}
+                                                onUpdate={onUpdateTask}
+                                                onDelete={onDeleteTask}
+                                                memories={memories}
+                                                onOpenMemory={onOpenMemory}
+                                            />
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <div className="p-4 flex-grow overflow-y-auto space-y-1">
-                                {filteredTasks.filter(t => t.status === col.id).map(task => (
-                                    <TaskCard
-                                        key={task.id}
-                                        task={task}
-                                        category={category}
-                                        onUpdate={onUpdateTask}
-                                        onDelete={onDeleteTask}
-                                        memories={memories}
-                                        onOpenMemory={onOpenMemory}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>

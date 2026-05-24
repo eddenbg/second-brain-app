@@ -246,10 +246,16 @@ export const useRecordings = () => {
     }, [user]);
 
     const addTask = useCallback(async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
-        if (!user || !db || (db as any).type === 'mock') return;
         const newTask: Task = { ...taskData, id: Date.now().toString(), createdAt: new Date().toISOString() };
-        const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'tasks', newTask.id), newTask);
+        setTasks(prev => [...prev, newTask]); // optimistic — shows immediately
+        if (!user || !db || (db as any).type === 'mock') return;
+        try {
+            const { setDoc } = await import('firebase/firestore');
+            await setDoc(doc(db, 'users', user.uid, 'tasks', newTask.id), newTask);
+        } catch (err) {
+            console.error('addTask failed:', err);
+            setTasks(prev => prev.filter(t => t.id !== newTask.id)); // rollback on error
+        }
     }, [user]);
 
     const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
