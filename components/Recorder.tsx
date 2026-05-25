@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Session, Modality } from '@google/genai';
-import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayIcon, VideoIcon, GlobeIcon } from './Icons';
+import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayIcon, VideoIcon, GlobeIcon, EyeOffIcon, EyeIcon } from './Icons';
 import type { VoiceMemory } from '../types';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
@@ -42,6 +42,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [captureMode, setCaptureMode] = useState<'physical' | 'remote'>('physical');
+    const [privacyMode, setPrivacyMode] = useState(false);
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -229,6 +230,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
       };
     }, [isRecording]);
 
+    // Reset privacy screen when recording ends
+    useEffect(() => {
+        if (!isRecording) setPrivacyMode(false);
+    }, [isRecording]);
+
+    // Auto-show privacy screen when the user returns to the app while recording
+    // (so the screen isn't accidentally visible when they unlock their phone)
+    useEffect(() => {
+        if (!isRecording) return;
+        const handleVisibility = () => {
+            if (document.visibilityState === 'visible' && isRecording) {
+                setPrivacyMode(true);
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => document.removeEventListener('visibilitychange', handleVisibility);
+    }, [isRecording]);
+
 
     const handleSave = async () => {
         setIsProcessing(true);
@@ -256,6 +275,21 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     };
     
     return (
+        <>
+        {/* Privacy screen overlay — covers everything when active */}
+        {privacyMode && (
+            <div
+                className="fixed inset-0 bg-black z-[9999] flex items-end justify-end p-6"
+                onClick={() => setPrivacyMode(false)}
+                aria-label="Tap anywhere to show recording screen"
+                role="button"
+                tabIndex={0}
+                onKeyDown={e => e.key === 'Enter' && setPrivacyMode(false)}
+            >
+                {/* Tiny red dot — only indicator the app is alive */}
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse opacity-30" />
+            </div>
+        )}
         <div className="bg-[#001f3f] p-6 rounded-[3rem] border-4 border-white/10 shadow-2xl flex flex-col gap-6 w-full">
             <canvas ref={canvasRef} className="hidden" />
 
@@ -336,6 +370,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 </button>
             </div>
              
+            {/* Privacy / background recording controls — only during active recording */}
+            {isRecording && (
+                <div className="flex gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setPrivacyMode(true)}
+                        aria-label="Hide screen"
+                        className="flex-1 flex items-center justify-center gap-3 py-4 bg-black/40 border-2 border-white/10 rounded-2xl text-white font-black uppercase tracking-widest text-sm active:scale-95 transition-all"
+                    >
+                        <EyeOffIcon className="w-6 h-6" />
+                        Hide Screen
+                    </button>
+                    <div className="flex-1 flex items-center justify-center gap-3 py-4 bg-black/20 border-2 border-white/5 rounded-2xl text-white/40 text-xs font-bold text-center leading-tight px-3">
+                        Press <strong className="text-white/60">Home</strong> to minimise — recording continues in background
+                    </div>
+                </div>
+            )}
+
              {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl">{error}</p>}
             
              <div className="bg-black/40 p-6 rounded-[2rem] max-h-96 overflow-y-auto border-2 border-white/10 scroll-smooth">
@@ -363,6 +415,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                  {isRecording && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mt-4"></div>}
             </div>
         </div>
+        </>
     );
 };
 
