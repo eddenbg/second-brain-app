@@ -21,6 +21,7 @@ export interface NotionPage {
     title: string;
     url: string;
     lastEdited: string;
+    parentId?: string; // undefined = workspace root
 }
 
 const extractTitle = (page: any): string => {
@@ -46,6 +47,7 @@ export const searchNotionPages = async (token: string, query = ''): Promise<Noti
         title: extractTitle(page),
         url: page.url,
         lastEdited: page.last_edited_time,
+        parentId: page.parent?.type === 'page_id' ? page.parent.page_id : undefined,
     }));
 };
 
