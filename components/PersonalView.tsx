@@ -182,8 +182,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         navigateTo('detail');
     };
 
-    // ── Hub ──────────────────────────────────
     // ── Hub ────────────────────────────────────────────
+    // ── Hub ────────────────────────────────────────────────
     if (subView === 'hub') {
         return (
             <>
@@ -348,8 +348,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Record new thought ───────────────────────────────
     // ── Record new thought ───────────────────────────────────────
+    // ── Record new thought ───────────────────────────────────────────────
     if (subView === 'recording') {
         return (
             <div className="flex flex-col gap-6">
@@ -370,8 +370,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Voice Notes list ────────────────────────
-    // ── Voice Notes list ──────────────────────────────────────
+    // ── Voice Notes list ────────────────────────────────────
+    // ── Voice Notes list ──────────────────────────────────────────────────
     if (subView === 'voiceNotes') {
         return (
             <div className="flex flex-col gap-6">
@@ -415,8 +415,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Personal Kanban ───────────────────────────
-    // ── Personal Kanban ────────────────────────────────────────────
+    // ── Personal Kanban ──────────────────────────────────────────
+    // ── Personal Kanban ──────────────────────────────────────────────────────────
     if (subView === 'kanban') {
         return (
             <div className="flex flex-col gap-6">
@@ -441,8 +441,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Physical Items list ─────────────────────────
-    // ── Physical Items list ───────────────────────────────────────
+    // ── Physical Items list ─────────────────────────────────────
+    // ── Physical Items list ───────────────────────────────────────────────────
     if (subView === 'physicalItems') {
         return (
             <div className="flex flex-col gap-6">
@@ -508,8 +508,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Add Physical Item ────────────────────────────
-    // ── Add Physical Item ────────────────────────────────────────────
+    // ── Add Physical Item ──────────────────────────────────────────
+    // ── Add Physical Item ──────────────────────────────────────────────────────────
     if (subView === 'addItem') {
         return (
             <AddPhysicalItemModal
@@ -523,8 +523,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Web Clips list ───────────────────────────
-    // ── Web Clips list ────────────────────────────────────────────
+    // ── Web Clips list ───────────────────────────────────────────
+    // ── Web Clips list ────────────────────────────────────────────────────────────
     if (subView === 'webClips') {
         const sortedClips = [...webClips].sort((a, b) => {
             const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
@@ -716,8 +716,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Add Web Clip ─────────────────────────────
-    // ── Add Web Clip ────────────────────────────────────────────
+    // ── Add Web Clip ───────────────────────────────────────────────
+    // ── Add Web Clip ───────────────────────────────────────────────────────────────
     if (subView === 'addWebClip') {
         return (
             <AddWebMemoryModal
@@ -730,8 +730,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Documents list ───────────────────────────
-    // ── Documents list ───────────────────────────────────────
+    // ── Documents list ───────────────────────────────────────────
+    // ── Documents list ───────────────────────────────────────────────────────────
     if (subView === 'documents') {
         return (
             <div className="flex flex-col gap-6">
@@ -792,8 +792,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Scanning ───────────────────────────────────
-    // ── Scanning ──────────────────────────────────────────
+    // ── Scanning ─────────────────────────────────────────────────
+    // ── Scanning ─────────────────────────────────────────────────────────────
     if (subView === 'scanning') {
         return (
             <AddDocumentModal
@@ -806,8 +806,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Detail view ─────────────────────────────────
-    // ── Detail view ──────────────────────────────────────────
+    // ── Detail view ───────────────────────────────────────────────
+    // ── Detail view ─────────────────────────────────────────────────────────────
     if (subView === 'detail' && selectedItem) {
         const prevView: SubView =
             selectedItem.type === 'voice' ? 'voiceNotes' :
