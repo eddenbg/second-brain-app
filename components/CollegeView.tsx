@@ -460,6 +460,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </button>
                     </header>
                     <Recorder
+                        audioOnly
                         onSave={(mem) => {
                             onSave({ ...mem, course: selectedCourse!, category: 'college' });
                             window.history.back();

@@ -37,6 +37,7 @@ export const useRecordings = () => {
     const [syncError, setSyncError] = useState<string | null>(null);
 
     const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pendingTaskIdsRef = useRef<Set<string>>(new Set());
 
     // 1. Initial Load from LocalStorage (for speed)
     useEffect(() => {
@@ -123,7 +124,14 @@ export const useRecordings = () => {
         const tasksRef = collection(db, 'users', user.uid, 'tasks');
         const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
             const remoteTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
-            setTasks(remoteTasks);
+            setTasks(prev => {
+                const pendingIds = pendingTaskIdsRef.current;
+                if (pendingIds.size === 0) return remoteTasks;
+                // Merge: keep optimistic tasks not yet confirmed in remote snapshot
+                const remoteIds = new Set(remoteTasks.map(t => t.id));
+                const stillPending = prev.filter(t => pendingIds.has(t.id) && !remoteIds.has(t.id));
+                return [...remoteTasks, ...stillPending];
+            });
         });
 
         return () => {
@@ -247,14 +255,20 @@ export const useRecordings = () => {
 
     const addTask = useCallback(async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
         const newTask: Task = { ...taskData, id: Date.now().toString(), createdAt: new Date().toISOString() };
+        pendingTaskIdsRef.current.add(newTask.id);
         setTasks(prev => [...prev, newTask]); // optimistic — shows immediately
-        if (!user || !db || (db as any).type === 'mock') return;
+        if (!user || !db || (db as any).type === 'mock') {
+            pendingTaskIdsRef.current.delete(newTask.id);
+            return;
+        }
         try {
             const { setDoc } = await import('firebase/firestore');
             await setDoc(doc(db, 'users', user.uid, 'tasks', newTask.id), newTask);
         } catch (err) {
             console.error('addTask failed:', err);
             setTasks(prev => prev.filter(t => t.id !== newTask.id)); // rollback on error
+        } finally {
+            pendingTaskIdsRef.current.delete(newTask.id);
         }
     }, [user]);
 
