@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v39';
+const CACHE_NAME = 'second-brain-v40';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
