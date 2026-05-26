@@ -182,8 +182,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         navigateTo('detail');
     };
 
+    // ── Hub ──────────────────────────────────
     // ── Hub ────────────────────────────────────────────
-    // ── Hub ────────────────────────────────────────────────
     if (subView === 'hub') {
         return (
             <>
@@ -315,13 +315,41 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <div className="text-sm opacity-75">AI-tagged • Research with Claude</div>
                     </div>
                 </button>
+
+                {/* Notion Import – full width, only when connected */}
+                {notionToken && (
+                    <button
+                        onClick={() => { window.history.pushState({ personalModal: 'notionPicker' }, ''); setShowNotionPicker(true); }}
+                        aria-label="Import from Notion"
+                        className="w-full h-20 bg-[#2D2D2D] text-white rounded-3xl flex items-center justify-center gap-4 border-2 border-white/10"
+                    >
+                        <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center shrink-0">
+                            <span className="text-white font-black text-xl leading-none">N</span>
+                        </div>
+                        <div className="text-left">
+                            <div className="text-lg font-black uppercase">Import from Notion</div>
+                            <div className="text-sm opacity-60">Browse and import your pages</div>
+                        </div>
+                    </button>
+                )}
             </div>
+            {showNotionPicker && notionToken && (
+                <NotionPickerModal
+                    token={notionToken}
+                    onClose={() => {
+                        if (window.history.state?.personalModal === 'notionPicker') window.history.back();
+                        setShowNotionPicker(false);
+                    }}
+                    onImport={page => { handleImportFromNotion(page); }}
+                    importedUrls={importedNotionUrls}
+                />
+            )}
             </>
         );
     }
 
+    // ── Record new thought ───────────────────────────────
     // ── Record new thought ───────────────────────────────────────
-    // ── Record new thought ───────────────────────────────────────────────
     if (subView === 'recording') {
         return (
             <div className="flex flex-col gap-6">
@@ -342,8 +370,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Voice Notes list ────────────────────────────────────
-    // ── Voice Notes list ──────────────────────────────────────────────────
+    // ── Voice Notes list ────────────────────────
+    // ── Voice Notes list ──────────────────────────────────────
     if (subView === 'voiceNotes') {
         return (
             <div className="flex flex-col gap-6">
@@ -387,8 +415,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Personal Kanban ──────────────────────────────────────────
-    // ── Personal Kanban ──────────────────────────────────────────────────────────
+    // ── Personal Kanban ───────────────────────────
+    // ── Personal Kanban ────────────────────────────────────────────
     if (subView === 'kanban') {
         return (
             <div className="flex flex-col gap-6">
@@ -413,8 +441,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Physical Items list ─────────────────────────────────────
-    // ── Physical Items list ───────────────────────────────────────────────────
+    // ── Physical Items list ─────────────────────────
+    // ── Physical Items list ───────────────────────────────────────
     if (subView === 'physicalItems') {
         return (
             <div className="flex flex-col gap-6">
@@ -480,8 +508,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Add Physical Item ──────────────────────────────────────────
-    // ── Add Physical Item ──────────────────────────────────────────────────────────
+    // ── Add Physical Item ────────────────────────────
+    // ── Add Physical Item ────────────────────────────────────────────
     if (subView === 'addItem') {
         return (
             <AddPhysicalItemModal
@@ -495,8 +523,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Web Clips list ───────────────────────────────────────────
-    // ── Web Clips list ────────────────────────────────────────────────────────────
+    // ── Web Clips list ───────────────────────────
+    // ── Web Clips list ────────────────────────────────────────────
     if (subView === 'webClips') {
         const sortedClips = [...webClips].sort((a, b) => {
             const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
@@ -688,8 +716,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Add Web Clip ───────────────────────────────────────────────
-    // ── Add Web Clip ───────────────────────────────────────────────────────────────
+    // ── Add Web Clip ─────────────────────────────
+    // ── Add Web Clip ────────────────────────────────────────────
     if (subView === 'addWebClip') {
         return (
             <AddWebMemoryModal
@@ -702,8 +730,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Documents list ───────────────────────────────────────────
-    // ── Documents list ───────────────────────────────────────────────────────────
+    // ── Documents list ───────────────────────────
+    // ── Documents list ───────────────────────────────────────
     if (subView === 'documents') {
         return (
             <div className="flex flex-col gap-6">
@@ -764,8 +792,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Scanning ─────────────────────────────────────────────────
-    // ── Scanning ─────────────────────────────────────────────────────────────
+    // ── Scanning ───────────────────────────────────
+    // ── Scanning ──────────────────────────────────────────
     if (subView === 'scanning') {
         return (
             <AddDocumentModal
@@ -778,8 +806,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Detail view ───────────────────────────────────────────────
-    // ── Detail view ─────────────────────────────────────────────────────────────
+    // ── Detail view ─────────────────────────────────
+    // ── Detail view ──────────────────────────────────────────
     if (subView === 'detail' && selectedItem) {
         const prevView: SubView =
             selectedItem.type === 'voice' ? 'voiceNotes' :

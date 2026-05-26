@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { DriveFile } from '../services/googleDriveService';
 import { listDriveFiles, connectGoogleDrive, getStoredDriveToken } from '../services/googleDriveService';
 import { XIcon, SearchIcon, Loader2Icon, FileTextIcon } from './Icons';
-import { getStoredGoogleClientId } from '../services/googleCalendarService';
 
 interface DrivePickerModalProps {
     onClose: () => void;
@@ -34,7 +33,6 @@ const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, 
     const [isLoading, setIsLoading] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const hasClientId = !!getStoredGoogleClientId();
 
     const loadFiles = useCallback(async (t: string, q: string) => {
         setIsLoading(true);
@@ -106,30 +104,17 @@ const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, 
                 </header>
 
                 {!token ? (
-                    <div className="flex flex-col items-center gap-6 p-10">
-                        {!hasClientId ? (
-                            <>
-                                <p className="text-gray-400 font-bold text-center text-sm leading-relaxed">
-                                    Set up a Google Client ID in Settings → Google Calendar first, then come back to connect Drive.
-                                </p>
-                                <button onClick={onClose} className="px-8 py-4 bg-gray-700 text-white font-black rounded-2xl uppercase text-sm">
-                                    Close
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-gray-400 font-bold text-center text-sm">Connect your Google Drive to browse and import files.</p>
-                                {error && <p className="text-red-400 text-sm font-bold">{error}</p>}
-                                <button
-                                    onClick={handleConnect}
-                                    disabled={isConnecting}
-                                    className="px-10 py-5 bg-white text-gray-900 font-black rounded-2xl uppercase text-sm flex items-center gap-3 shadow-xl"
-                                >
-                                    {isConnecting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : DRIVE_LOGO}
-                                    Connect Google Drive
-                                </button>
-                            </>
-                        )}
+                    <div className="flex flex-col items-center gap-6 p-10 text-center">
+                        <p className="text-gray-300 font-bold text-sm leading-relaxed">
+                            Your Google Drive session has expired or isn't connected yet.
+                        </p>
+                        <p className="text-gray-500 text-sm leading-relaxed">
+                            Go to <strong className="text-white">Settings → Account & Sync</strong>, sign out, then sign back in with Google to get a fresh session.
+                        </p>
+                        {error && <p className="text-red-400 text-sm font-bold">{error}</p>}
+                        <button onClick={onClose} className="px-8 py-4 bg-gray-700 text-white font-black rounded-2xl uppercase text-sm">
+                            Close
+                        </button>
                     </div>
                 ) : (
                     <>
