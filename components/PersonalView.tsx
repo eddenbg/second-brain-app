@@ -837,7 +837,38 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             {(selectedItem as VoiceMemory).audioDataUrl && (
                                 <audio src={(selectedItem as VoiceMemory).audioDataUrl} controls className="w-full" />
                             )}
-                            <p className="text-xl leading-relaxed">{(selectedItem as VoiceMemory).transcript}</p>
+                            {(selectedItem as VoiceMemory).summary && (
+                                <div className="bg-gradient-to-br from-blue-900/40 to-blue-800/20 p-4 rounded-2xl border-2 border-blue-500/30">
+                                    <h3 className="font-black text-blue-400 uppercase text-sm tracking-widest mb-3">Summary</h3>
+                                    <p className="text-white leading-relaxed whitespace-pre-wrap">{(selectedItem as VoiceMemory).summary}</p>
+                                </div>
+                            )}
+                            {(selectedItem as VoiceMemory).actionItems && (selectedItem as VoiceMemory).actionItems!.length > 0 && (
+                                <div className="bg-gradient-to-br from-orange-900/40 to-orange-800/20 p-4 rounded-2xl border-2 border-orange-500/30">
+                                    <h3 className="font-black text-orange-400 uppercase text-sm tracking-widest mb-3">Action Items</h3>
+                                    <ul className="space-y-2">
+                                        {(selectedItem as VoiceMemory).actionItems!.map((item, idx) => (
+                                            <li key={idx} className="flex items-start gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={item.done}
+                                                    onChange={() => {
+                                                        const updated = { ...selectedItem } as VoiceMemory;
+                                                        updated.actionItems![idx].done = !item.done;
+                                                        onUpdate(updated);
+                                                    }}
+                                                    className="w-5 h-5 rounded accent-orange-400 mt-0.5 cursor-pointer"
+                                                />
+                                                <span className={item.done ? 'line-through text-gray-400' : 'text-white'}>{item.text}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            <div>
+                                <h3 className="font-black text-gray-400 uppercase text-sm tracking-widest mb-3">Full Transcript</h3>
+                                <p className="text-xl leading-relaxed">{(selectedItem as VoiceMemory).transcript}</p>
+                            </div>
                             {(selectedItem as VoiceMemory).transcript && (
                                 <ReadAloudButton text={(selectedItem as VoiceMemory).transcript} />
                             )}

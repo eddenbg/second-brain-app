@@ -4,7 +4,7 @@ import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayI
 import type { VoiceMemory } from '../types';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
-import { analyzeVoiceNote } from '../services/geminiService';
+import { analyzeVoiceNote, summarizeLectureTranscript } from '../services/geminiService';
 import { encode, downsampleTo16k } from '../utils/audio';
 
 interface RecorderProps {
@@ -254,14 +254,26 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         try {
             const analysis = await analyzeVoiceNote(transcript);
             const location = await getCurrentLocation();
-            
+
+            let summary = '';
+            let lectureActionItems: Array<{ text: string; done: boolean }> = [];
+
+            try {
+                const lectureAnalysis = await summarizeLectureTranscript(transcript);
+                summary = lectureAnalysis.summary;
+                lectureActionItems = lectureAnalysis.actionItems;
+            } catch (summaryError) {
+                console.warn('Could not generate lecture summary', summaryError);
+            }
+
             const newMemory: Omit<VoiceMemory, 'id' | 'date' | 'category'> = {
                 type: 'voice',
                 title: analysis.title || title,
                 transcript,
                 structuredTranscript,
                 videoDataUrl: videoDataUrl || undefined,
-                actionItems: analysis.actionItems.map(text => ({ text, done: false })),
+                summary: summary || undefined,
+                actionItems: lectureActionItems.length > 0 ? lectureActionItems : analysis.actionItems.map(text => ({ text, done: false })),
                 ...(location && { location }),
             };
             onSave(newMemory);
