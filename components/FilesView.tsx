@@ -10,7 +10,9 @@ import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
 import DrivePickerModal from './DrivePickerModal';
+import MoodlePickerModal from './MoodlePickerModal';
 import type { DriveFile } from '../services/googleDriveService';
+import type { MoodleContent } from '../types';
 
 interface FilesViewProps {
     memories: AnyMemory[];
@@ -18,9 +20,10 @@ interface FilesViewProps {
     onDelete: (id: string) => void;
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
+    moodleToken?: string | null;
 }
 
-// ── Media Preview Drawer ─────────────────────────────────────────────────────────────────────────────────────────
+// ── Media Preview Drawer ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const MediaPreviewDrawer: React.FC<{
     memory: AnyMemory;
     onClose: () => void;
@@ -145,8 +148,8 @@ const DRIVE_BUTTON_ICON = (
     </svg>
 );
 
-// ── Files View ────────────────────────────────────────────────────────────────────────────────────────────
-const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef }) => {
+// ── Files View ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef, moodleToken }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState<'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'drive' | 'hidden'>('all');
     const [previewMemory, setPreviewMemory] = useState<AnyMemory | null>(null);
@@ -157,6 +160,7 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
     const [isGeneratingMulti, setIsGeneratingMulti] = useState(false);
     const [activeStudyHub, setActiveStudyHub] = useState<{ type: any; content: string; title: string; videoUri?: string } | null>(null);
     const [showDrivePicker, setShowDrivePicker] = useState(false);
+    const [showMoodlePicker, setShowMoodlePicker] = useState(false);
 
     useEffect(() => {
         if (!backHandlerRef) return;
@@ -164,16 +168,36 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             if (activeStudyHub) { setActiveStudyHub(null); return true; }
             if (showSummaryPrompt) { setShowSummaryPrompt(false); return true; }
             if (showDrivePicker) { setShowDrivePicker(false); return true; }
+            if (showMoodlePicker) { setShowMoodlePicker(false); return true; }
             if (previewMemory) { setPreviewMemory(null); return true; }
             return false;
         };
         return () => { if (backHandlerRef) backHandlerRef.current = null; };
-    }, [backHandlerRef, activeStudyHub, showSummaryPrompt, showDrivePicker, previewMemory]);
+    }, [backHandlerRef, activeStudyHub, showSummaryPrompt, showDrivePicker, showMoodlePicker, previewMemory]);
 
     const importedDriveIds = useMemo(
         () => new Set(memories.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive').map(m => (m as FileMemory).driveId || '')),
         [memories]
     );
+
+    const importedMoodleUrls = useMemo(
+        () => new Set(memories.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'moodle').map(m => (m as FileMemory).fileUrl)),
+        [memories]
+    );
+
+    const handleImportFromMoodle = (content: MoodleContent, _courseId: number, courseName: string) => {
+        if (!content.fileurl) return;
+        onSave({
+            type: 'file',
+            title: content.name,
+            fileUrl: content.fileurl,
+            mimeType: content.mimetype || 'application/octet-stream',
+            sourceType: 'moodle',
+            moodleId: String(content.id),
+            course: courseName,
+            category: 'college',
+        } as Omit<FileMemory, 'id' | 'date'>);
+    };
 
     const handleImportFromDrive = (file: DriveFile) => {
         onSave({
@@ -247,6 +271,14 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                     importedIds={importedDriveIds}
                 />
             )}
+            {showMoodlePicker && moodleToken && (
+                <MoodlePickerModal
+                    token={moodleToken}
+                    onClose={() => { if (window.history.state?.filesModal === 'moodle') window.history.back(); setShowMoodlePicker(false); }}
+                    onImport={handleImportFromMoodle}
+                    importedUrls={importedMoodleUrls}
+                />
+            )}
 
             <header className="flex flex-col gap-3 shrink-0">
                 <div className="flex items-center justify-between gap-2">
@@ -269,6 +301,16 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                         {DRIVE_BUTTON_ICON}
                         Drive
                     </button>
+                    {moodleToken && (
+                        <button
+                            onClick={() => { window.history.pushState({ filesModal: 'moodle' }, ''); setShowMoodlePicker(true); }}
+                            aria-label="Import from Moodle"
+                            className="px-4 py-4 rounded-2xl font-black text-xs uppercase border-2 bg-[#f98012]/20 text-[#f98012] border-[#f98012]/30 flex items-center gap-1.5 shrink-0"
+                        >
+                            <span className="font-black text-sm leading-none">M</span>
+                            Moodle
+                        </button>
+                    )}
                     <button
                         onClick={() => { setIsSelectMode(!isSelectMode); setSelectedIds(new Set()); }}
                         aria-label={isSelectMode ? 'Cancel selection' : 'Select items'}

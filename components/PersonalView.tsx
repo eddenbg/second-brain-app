@@ -315,7 +315,35 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <div className="text-sm opacity-75">AI-tagged • Research with Claude</div>
                     </div>
                 </button>
+
+                {/* Notion Import – full width, only when connected */}
+                {notionToken && (
+                    <button
+                        onClick={() => { window.history.pushState({ personalModal: 'notionPicker' }, ''); setShowNotionPicker(true); }}
+                        aria-label="Import from Notion"
+                        className="w-full h-20 bg-[#2D2D2D] text-white rounded-3xl flex items-center justify-center gap-4 border-2 border-white/10"
+                    >
+                        <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center shrink-0">
+                            <span className="text-white font-black text-xl leading-none">N</span>
+                        </div>
+                        <div className="text-left">
+                            <div className="text-lg font-black uppercase">Import from Notion</div>
+                            <div className="text-sm opacity-60">Browse and import your pages</div>
+                        </div>
+                    </button>
+                )}
             </div>
+            {showNotionPicker && notionToken && (
+                <NotionPickerModal
+                    token={notionToken}
+                    onClose={() => {
+                        if (window.history.state?.personalModal === 'notionPicker') window.history.back();
+                        setShowNotionPicker(false);
+                    }}
+                    onImport={page => { handleImportFromNotion(page); }}
+                    importedUrls={importedNotionUrls}
+                />
+            )}
             </>
         );
     }
@@ -809,7 +837,38 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             {(selectedItem as VoiceMemory).audioDataUrl && (
                                 <audio src={(selectedItem as VoiceMemory).audioDataUrl} controls className="w-full" />
                             )}
-                            <p className="text-xl leading-relaxed">{(selectedItem as VoiceMemory).transcript}</p>
+                            {(selectedItem as VoiceMemory).summary && (
+                                <div className="bg-gradient-to-br from-blue-900/40 to-blue-800/20 p-4 rounded-2xl border-2 border-blue-500/30">
+                                    <h3 className="font-black text-blue-400 uppercase text-sm tracking-widest mb-3">Summary</h3>
+                                    <p className="text-white leading-relaxed whitespace-pre-wrap">{(selectedItem as VoiceMemory).summary}</p>
+                                </div>
+                            )}
+                            {(selectedItem as VoiceMemory).actionItems && (selectedItem as VoiceMemory).actionItems!.length > 0 && (
+                                <div className="bg-gradient-to-br from-orange-900/40 to-orange-800/20 p-4 rounded-2xl border-2 border-orange-500/30">
+                                    <h3 className="font-black text-orange-400 uppercase text-sm tracking-widest mb-3">Action Items</h3>
+                                    <ul className="space-y-2">
+                                        {(selectedItem as VoiceMemory).actionItems!.map((item, idx) => (
+                                            <li key={idx} className="flex items-start gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={item.done}
+                                                    onChange={() => {
+                                                        const updated = { ...selectedItem } as VoiceMemory;
+                                                        updated.actionItems![idx].done = !item.done;
+                                                        onUpdate(updated);
+                                                    }}
+                                                    className="w-5 h-5 rounded accent-orange-400 mt-0.5 cursor-pointer"
+                                                />
+                                                <span className={item.done ? 'line-through text-gray-400' : 'text-white'}>{item.text}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            <div>
+                                <h3 className="font-black text-gray-400 uppercase text-sm tracking-widest mb-3">Full Transcript</h3>
+                                <p className="text-xl leading-relaxed">{(selectedItem as VoiceMemory).transcript}</p>
+                            </div>
                             {(selectedItem as VoiceMemory).transcript && (
                                 <ReadAloudButton text={(selectedItem as VoiceMemory).transcript} />
                             )}

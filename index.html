@@ -27,6 +27,15 @@
     <meta name="msapplication-TileColor" content="#001F3F">
     <meta name="msapplication-TileImage" content="icon-192.png">
 
+    <!-- Capture beforeinstallprompt before React mounts so useInstallPrompt can find it -->
+    <script>
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__installPrompt = e;
+        window.dispatchEvent(new Event('installpromptready'));
+      });
+    </script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>

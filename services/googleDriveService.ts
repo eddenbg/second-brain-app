@@ -17,6 +17,10 @@ export interface DriveFile {
     exportLinks?: Record<string, string>;
 }
 
+export interface DriveItem extends DriveFile {
+    isFolder: boolean;
+}
+
 export const getStoredDriveToken = (): string | null => {
     const token = localStorage.getItem(DRIVE_TOKEN_KEY);
     const expiry = localStorage.getItem(DRIVE_TOKEN_EXPIRY_KEY);
@@ -61,6 +65,41 @@ export const disconnectGoogleDrive = () => {
     }
     localStorage.removeItem(DRIVE_TOKEN_KEY);
     localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+};
+
+export const listDriveFolder = async (token: string, folderId = 'root'): Promise<DriveItem[]> => {
+    const safeId = folderId.replace(/'/g, "\\'");
+    const q = [
+        `'${safeId}' in parents`,
+        `trashed=false`,
+        `(mimeType='application/vnd.google-apps.folder' or mimeType='application/pdf' or mimeType contains 'document' or mimeType contains 'presentation' or mimeType contains 'spreadsheet' or mimeType contains 'text/')`,
+    ].join(' and ');
+
+    const params = new URLSearchParams({
+        q,
+        fields: 'files(id,name,mimeType,size,modifiedTime,webViewLink,exportLinks)',
+        orderBy: 'folder,name',
+        pageSize: '100',
+    });
+
+    const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?${params}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!response.ok) {
+        if (response.status === 401) {
+            localStorage.removeItem(DRIVE_TOKEN_KEY);
+            localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+        }
+        throw new Error(`Drive API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return (data.files || []).map((f: any) => ({
+        ...f,
+        isFolder: f.mimeType === 'application/vnd.google-apps.folder',
+    }));
 };
 
 export const listDriveFiles = async (token: string, query = ''): Promise<DriveFile[]> => {

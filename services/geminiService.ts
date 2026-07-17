@@ -299,6 +299,52 @@ export async function generateTopicsForMemory(title: string, content: string): P
     } catch { return []; }
 }
 
+export async function summarizeLectureTranscript(
+    transcript: string
+): Promise<{ summary: string; actionItems: Array<{ text: string; done: boolean }> }> {
+    const ai = getGeminiInstance();
+    if (!ai) return { summary: '', actionItems: [] };
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: `Analyze this lecture transcript and provide:
+1. A concise summary (3-5 bullet points) of the key concepts covered
+2. Any action items, deadlines, or assignments mentioned (e.g., "Read Chapter 5", "Assignment due Friday")
+
+Transcript:
+${transcript.substring(0, 30000)}`,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        summary: {
+                            type: Type.STRING,
+                            description: "Bullet-point summary of key concepts (3-5 points)"
+                        },
+                        actionItems: {
+                            type: Type.ARRAY,
+                            items: { type: Type.STRING },
+                            description: "List of assignments, readings, or action items mentioned"
+                        }
+                    },
+                    required: ["summary", "actionItems"]
+                }
+            }
+        });
+        const parsed = JSON.parse(response.text || '{}');
+        const actionItems = (Array.isArray(parsed.actionItems) ? parsed.actionItems : [])
+            .map((item: string) => ({ text: item, done: false }));
+        return {
+            summary: parsed.summary || '',
+            actionItems
+        };
+    } catch (error) {
+        console.error('Error summarizing lecture:', error);
+        return { summary: '', actionItems: [] };
+    }
+}
+
 export async function processSharedUrl(
     url: string, title: string, text: string,
     availableTags?: string[]
