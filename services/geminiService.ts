@@ -378,3 +378,25 @@ export async function processSharedUrl(
         return JSON.parse(response.text || '{}');
     } catch (error) { throw new Error('Failed to analyze the shared content.'); }
 }
+
+export async function extractHandwritingFromImage(base64Data: string): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: [
+                {
+                    parts: [
+                        { inlineData: { mimeType: 'image/png', data: base64Data } },
+                        { text: `Extract all handwritten text from this image. Support both Hebrew (RTL) and English. Return the text exactly as written, preserving line breaks and layout when possible. If there are multiple sections, separate them with line breaks. Return ONLY the extracted text, no explanations.` }
+                    ]
+                }
+            ]
+        });
+        return response.text ?? "No text found in image.";
+    } catch (error) {
+        console.error('Error extracting handwriting:', error);
+        return "Error extracting text from image.";
+    }
+}

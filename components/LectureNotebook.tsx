@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { NotebookData, DrawingStroke, StrokePoint } from '../types';
-import { PenToolIcon, EraserIcon, FilePlusIcon, TrashIcon, XIcon, CheckIcon } from './Icons';
+import { PenToolIcon, EraserIcon, FilePlusIcon, TrashIcon, XIcon, CheckIcon, Loader2Icon } from './Icons';
+import { extractHandwritingFromImage } from '../services/geminiService';
 
 interface LectureNotebookProps {
     onUpdate: (data: NotebookData) => void;
@@ -17,6 +18,9 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
     const [showMaterialPicker, setShowMaterialPicker] = useState(false);
     const [bgImage, setBgImage] = useState<string | undefined>(initialData?.backgroundImageUrl);
+    const [extractedText, setExtractedText] = useState<string | null>(null);
+    const [isExtracting, setIsExtracting] = useState(false);
+    const [showTextModal, setShowTextModal] = useState(false);
     
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isDrawingRef = useRef(false);
@@ -99,6 +103,32 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
+    const convertHandwritingToText = async () => {
+        if (!canvasRef.current || strokes.length === 0) {
+            setExtractedText("No notes to convert. Start drawing first.");
+            setShowTextModal(true);
+            return;
+        }
+
+        setIsExtracting(true);
+        try {
+            const canvas = canvasRef.current;
+            const imageData = canvas.toDataURL('image/png');
+            // Extract base64 data without the data:image/png;base64, prefix
+            const base64 = imageData.split(',')[1];
+
+            const text = await extractHandwritingFromImage(base64);
+            setExtractedText(text);
+            setShowTextModal(true);
+        } catch (error) {
+            console.error('Conversion error:', error);
+            setExtractedText("Error converting handwriting to text. Please try again.");
+            setShowTextModal(true);
+        } finally {
+            setIsExtracting(false);
+        }
+    };
+
     // Redraw if background changes or on initial mount
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -150,14 +180,23 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </div>
                 
                 <div className="flex gap-2">
-                    <button 
+                    <button
                         onClick={() => setShowMaterialPicker(true)}
                         className="p-3 rounded-xl bg-gray-700 text-purple-400 hover:text-purple-300"
                         aria-label="Import Moodle Materials"
                     >
                         <FilePlusIcon className="w-6 h-6" />
                     </button>
-                    <button 
+                    <button
+                        onClick={convertHandwritingToText}
+                        disabled={isExtracting || strokes.length === 0}
+                        className="px-4 py-3 rounded-xl bg-blue-700 text-blue-100 hover:bg-blue-600 disabled:bg-gray-600 disabled:text-gray-400 font-bold text-sm uppercase tracking-wider flex items-center gap-2"
+                        aria-label="Convert notes to text"
+                    >
+                        {isExtracting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : '📝'}
+                        <span className="hidden sm:inline">Convert</span>
+                    </button>
+                    <button
                         onClick={clearCanvas}
                         className="p-3 rounded-xl bg-gray-700 text-red-400 hover:text-red-300"
                         aria-label="Clear Notebook"
@@ -167,24 +206,41 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </div>
             </div>
 
-            {/* Drawing Surface */}
-            <div className="flex-grow relative bg-[#1f2937]">
+            {/* Drawing Surface - Split Layout (PDF + Canvas) */}
+            <div className="flex-grow flex bg-[#1f2937]">
+                {/* Left: PDF/Slide Preview (if bgImage selected) */}
                 {bgImage && (
-                    <img src={bgImage} className="absolute inset-0 w-full h-full object-contain pointer-events-none opacity-50" alt="Lecture Slide Background" />
+                    <div className="w-2/5 overflow-y-auto border-r border-gray-700 bg-black/40 p-3">
+                        <img
+                            src={bgImage}
+                            className="w-full rounded-lg object-cover"
+                            alt="Lecture Slide Background"
+                        />
+                        <button
+                            onClick={() => setBgImage(undefined)}
+                            className="mt-3 w-full py-2 px-4 bg-red-900/40 text-red-300 rounded-lg text-sm font-bold hover:bg-red-900/60"
+                        >
+                            Clear PDF Background
+                        </button>
+                    </div>
                 )}
-                <canvas 
-                    ref={canvasRef}
-                    width={1200}
-                    height={1600}
-                    className="w-full h-full touch-none"
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                />
+
+                {/* Right: Drawing Canvas (always full width if no PDF, else 55%) */}
+                <div className={`relative ${bgImage ? 'flex-1' : 'w-full'}`}>
+                    <canvas
+                        ref={canvasRef}
+                        width={1200}
+                        height={1600}
+                        className="w-full h-full touch-none"
+                        onMouseDown={startDrawing}
+                        onMouseMove={draw}
+                        onMouseUp={stopDrawing}
+                        onMouseLeave={stopDrawing}
+                        onTouchStart={startDrawing}
+                        onTouchMove={draw}
+                        onTouchEnd={stopDrawing}
+                    />
+                </div>
             </div>
 
             {/* Material Picker Modal (Simulating Moodle Docs) */}
@@ -224,6 +280,49 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             {!isRecording && strokes.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
                     <p className="text-4xl font-black text-white rotate-[-15deg]">SYNCED LECTURE NOTEBOOK</p>
+                </div>
+            )}
+
+            {/* Extracted Text Modal */}
+            {showTextModal && (
+                <div className="absolute inset-0 z-30 bg-black/80 flex items-center justify-center p-6 rounded-2xl">
+                    <div className="bg-gray-800 rounded-3xl w-full max-w-2xl max-h-96 p-6 border-4 border-gray-700 space-y-4 flex flex-col">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-black text-white">Extracted Text</h3>
+                            <button
+                                onClick={() => setShowTextModal(false)}
+                                className="p-2 hover:bg-gray-700 rounded-lg"
+                            >
+                                <XIcon className="w-6 h-6 text-gray-400" />
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto bg-gray-900 p-4 rounded-2xl border-2 border-gray-700">
+                            <p className="text-white whitespace-pre-wrap leading-relaxed text-lg">
+                                {extractedText}
+                            </p>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => {
+                                    if (extractedText) {
+                                        navigator.clipboard.writeText(extractedText);
+                                        alert("Text copied to clipboard!");
+                                    }
+                                }}
+                                className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 uppercase tracking-wider"
+                            >
+                                Copy Text
+                            </button>
+                            <button
+                                onClick={() => setShowTextModal(false)}
+                                className="flex-1 py-3 bg-gray-700 text-white font-bold rounded-2xl hover:bg-gray-600 uppercase tracking-wider"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

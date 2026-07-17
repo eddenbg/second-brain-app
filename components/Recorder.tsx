@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Session, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayIcon, VideoIcon, GlobeIcon, EyeOffIcon, EyeIcon } from './Icons';
-import type { VoiceMemory } from '../types';
+import type { VoiceMemory, NotebookData } from '../types';
+import LectureNotebook from './LectureNotebook';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
 import { analyzeVoiceNote, summarizeLectureTranscript } from '../services/geminiService';
@@ -43,6 +44,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [error, setError] = useState<string | null>(null);
     const [captureMode, setCaptureMode] = useState<'physical' | 'remote'>('physical');
     const [privacyMode, setPrivacyMode] = useState(false);
+    const [notebookData, setNotebookData] = useState<NotebookData | null>(null);
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -67,6 +69,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         setTranscript('');
         setStructuredTranscript([]);
         setError(null);
+        setNotebookData(null);
         startTimeRef.current = Date.now();
 
         const ai = getGeminiInstance();
@@ -275,6 +278,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 summary: summary || undefined,
                 actionItems: lectureActionItems.length > 0 ? lectureActionItems : analysis.actionItems.map(text => ({ text, done: false })),
                 ...(location && { location }),
+                ...(notebookData && { notebook: notebookData }),
             };
             onSave(newMemory);
         } catch(e) {
@@ -401,31 +405,46 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             )}
 
              {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl">{error}</p>}
-            
-             <div className="bg-black/40 p-6 rounded-[2rem] max-h-96 overflow-y-auto border-2 border-white/10 scroll-smooth">
-                 <h4 className="text-xl font-black text-yellow-400 mb-3 uppercase tracking-tight">Live Transcript</h4>
-                 <div className="text-white text-2xl whitespace-pre-wrap leading-relaxed">
-                    {structuredTranscript.length > 0 ? (
-                        structuredTranscript.map((segment, idx) => (
-                            <span 
-                                key={idx} 
-                                onClick={() => {
-                                    if (videoDataUrl && videoRef.current) {
-                                        videoRef.current.currentTime = segment.timestamp;
-                                        videoRef.current.play();
-                                    }
-                                }}
-                                className={`cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300 transition-colors rounded px-1 ${videoDataUrl ? '' : 'pointer-events-none'}`}
-                            >
-                                {segment.text}
-                            </span>
-                        ))
-                    ) : (
-                        transcript || <span className="text-gray-500">Waiting for audio...</span>
-                    )}
-                 </div>
-                 {isRecording && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mt-4"></div>}
-            </div>
+
+             {/* Split view: Transcript + Drawing Canvas */}
+             <div className="flex gap-4 h-96">
+                {/* Left: Live Transcript */}
+                <div className="flex-1 bg-black/40 p-6 rounded-[2rem] overflow-y-auto border-2 border-white/10 scroll-smooth">
+                    <h4 className="text-xl font-black text-yellow-400 mb-3 uppercase tracking-tight">Live Transcript</h4>
+                    <div className="text-white text-lg whitespace-pre-wrap leading-relaxed">
+                        {structuredTranscript.length > 0 ? (
+                            structuredTranscript.map((segment, idx) => (
+                                <span
+                                    key={idx}
+                                    onClick={() => {
+                                        if (videoDataUrl && videoRef.current) {
+                                            videoRef.current.currentTime = segment.timestamp;
+                                            videoRef.current.play();
+                                        }
+                                    }}
+                                    className={`cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300 transition-colors rounded px-1 ${videoDataUrl ? '' : 'pointer-events-none'}`}
+                                >
+                                    {segment.text}
+                                </span>
+                            ))
+                        ) : (
+                            transcript || <span className="text-gray-500">Waiting for audio...</span>
+                        )}
+                    </div>
+                    {isRecording && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mt-4"></div>}
+                </div>
+
+                {/* Right: Drawing Canvas */}
+                {isRecording && (
+                    <div className="flex-1 border-2 border-white/10 rounded-[2rem] overflow-hidden bg-black/40">
+                        <LectureNotebook
+                            onUpdate={setNotebookData}
+                            startTime={startTimeRef.current}
+                            isRecording={isRecording}
+                        />
+                    </div>
+                )}
+             </div>
         </div>
         </>
     );
