@@ -60,5 +60,17 @@
       "form_factor": "wide",
       "type": "image/png"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "New Recording",
+      "description": "Start recording a lecture",
+      "url": "/?shortcut=record",
+      "icons": [{"src": "icon-192.png", "sizes": "192x192", "type": "image/png"}]
+    }
+  ],
+  "screenshots_config": {
+    "version": "2",
+    "target_type": "progressive_web_app"
+  }
 }

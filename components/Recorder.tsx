@@ -406,11 +406,23 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
              {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl">{error}</p>}
 
-             {/* Split view: Transcript + Drawing Canvas */}
-             <div className="flex gap-4 h-96">
-                {/* Left: Live Transcript */}
-                <div className="flex-1 bg-black/40 p-6 rounded-[2rem] overflow-y-auto border-2 border-white/10 scroll-smooth">
-                    <h4 className="text-xl font-black text-yellow-400 mb-3 uppercase tracking-tight">Live Transcript</h4>
+             {/* Full-screen Drawing Canvas during recording */}
+             {isRecording && (
+                <div className="flex-1 flex flex-col min-h-0">
+                    <div className="flex-1 border-2 border-white/10 rounded-[2rem] overflow-hidden bg-black/40">
+                        <LectureNotebook
+                            onUpdate={setNotebookData}
+                            startTime={startTimeRef.current}
+                            isRecording={isRecording}
+                        />
+                    </div>
+                </div>
+             )}
+
+             {/* Transcript appears only after stopping */}
+             {!isRecording && transcript && (
+                <div className="bg-black/40 p-6 rounded-[2rem] max-h-96 overflow-y-auto border-2 border-white/10 scroll-smooth">
+                    <h4 className="text-xl font-black text-yellow-400 mb-3 uppercase tracking-tight">Lecture Transcript</h4>
                     <div className="text-white text-lg whitespace-pre-wrap leading-relaxed">
                         {structuredTranscript.length > 0 ? (
                             structuredTranscript.map((segment, idx) => (
@@ -428,23 +440,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                                 </span>
                             ))
                         ) : (
-                            transcript || <span className="text-gray-500">Waiting for audio...</span>
+                            transcript || <span className="text-gray-500">No transcript captured</span>
                         )}
                     </div>
-                    {isRecording && <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse mt-4"></div>}
                 </div>
-
-                {/* Right: Drawing Canvas */}
-                {isRecording && (
-                    <div className="flex-1 border-2 border-white/10 rounded-[2rem] overflow-hidden bg-black/40">
-                        <LectureNotebook
-                            onUpdate={setNotebookData}
-                            startTime={startTimeRef.current}
-                            isRecording={isRecording}
-                        />
-                    </div>
-                )}
-             </div>
+             )}
         </div>
         </>
     );

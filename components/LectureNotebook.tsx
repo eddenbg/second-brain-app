@@ -170,11 +170,13 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     </button>
                     <div className="w-px h-8 bg-gray-600 self-center mx-1"></div>
                     {['#60A5FA', '#F87171', '#34D399', '#FBBF24', '#FFFFFF'].map(c => (
-                        <button 
+                        <button
                             key={c}
                             onClick={() => { setColor(c); setTool('pen'); }}
-                            className={`w-8 h-8 rounded-full border-2 transition-transform ${color === c && tool === 'pen' ? 'scale-125 border-white shadow-lg' : 'border-transparent'}`}
+                            className={`w-10 h-10 rounded-full border-3 transition-transform flex-shrink-0 ${color === c && tool === 'pen' ? 'scale-110 border-white shadow-lg' : 'border-gray-500'}`}
                             style={{ backgroundColor: c }}
+                            title={`Color: ${c}`}
+                            aria-label={`Color: ${c}`}
                         />
                     ))}
                 </div>
@@ -329,4 +331,4 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     );
 };
 
-export default LectureNotebook;
+export default React.memo(LectureNotebook);
