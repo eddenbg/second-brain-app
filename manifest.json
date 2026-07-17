@@ -45,5 +45,20 @@
       "protocol": "secondbrainapp",
       "url": "/?moodle_token=%s"
     }
+  ],
+  "prefer_related_applications": false,
+  "screenshots": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "form_factor": "narrow",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "form_factor": "wide",
+      "type": "image/png"
+    }
   ]
 }
