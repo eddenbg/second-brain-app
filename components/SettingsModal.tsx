@@ -30,6 +30,8 @@ interface SettingsModalProps {
     user?: User | null;
     onSignIn?: () => Promise<void>;
     onSignOut?: () => Promise<void>;
+    isDarkMode?: boolean;
+    onToggleDarkMode?: () => void;
 }
 
 const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) => {
@@ -71,7 +73,7 @@ const GOOGLE_LOGO = (
     </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode }) => {
     const { isInstallable, installApp } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
@@ -225,6 +227,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 </header>
 
                 <div className="flex-grow overflow-y-auto p-5 sm:p-8 space-y-6 sm:space-y-8">
+
+                    {/* Dark Mode Toggle */}
+                    <div className="p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-gray-700 bg-gray-900">
+                        <div className="flex items-center gap-3 sm:gap-4 justify-between">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-gray-700 to-black rounded-full flex items-center justify-center shrink-0">
+                                    <span className="text-white font-black text-lg">◐</span>
+                                </div>
+                                <div>
+                                    <p className="text-base sm:text-lg font-black text-white uppercase">Freak Mode</p>
+                                    <p className="text-gray-400 font-bold text-xs">{isDarkMode ? 'Dark theme activated' : 'Light theme active'}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={onToggleDarkMode}
+                                className={`relative w-14 h-8 rounded-full transition-all ${isDarkMode ? 'bg-purple-600' : 'bg-gray-600'}`}
+                                aria-label="Toggle dark mode"
+                            >
+                                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                            </button>
+                        </div>
+                    </div>
 
                     {/* Account & Sync */}
                     <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${user?.isAnonymous === false ? 'bg-blue-900/20 border-blue-600' : 'bg-gray-900 border-gray-700'}`}>

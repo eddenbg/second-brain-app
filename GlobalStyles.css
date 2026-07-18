@@ -4,6 +4,19 @@
   --bg-navy: #001F3F;
   --accent-blue: #FFFFFF;
   --text-white: #FFFFFF;
+  --bg-dark: #001F3F;
+  --text-dark: #FFFFFF;
+  --border-dark: #FFFFFF;
+}
+
+/* Dark mode (Freak Mode) */
+:root.dark {
+  --bg-navy: #000000;
+  --accent-blue: #FFFFFF;
+  --text-white: #FFFFFF;
+  --bg-dark: #111111;
+  --text-dark: #FFFFFF;
+  --border-dark: #FFFFFF;
 }
 
 * {
@@ -12,8 +25,8 @@
 }
 
 body {
-  background-color: var(--bg-navy) !important;
-  color: var(--text-white) !important;
+  background-color: var(--bg-dark) !important;
+  color: var(--text-dark) !important;
   font-family: 'Inter', sans-serif !important;
   font-weight: 700 !important;
   font-size: 18px !important;
@@ -22,6 +35,7 @@ body {
   overflow: hidden;
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Scale font on larger screens */
@@ -51,8 +65,8 @@ button {
   text-transform: uppercase !important;
   letter-spacing: 0.1em !important;
   border-radius: 16px !important;
-  transition: transform 0.15s ease, background 0.15s ease !important;
-  border: 3px solid var(--accent-blue) !important;
+  transition: transform 0.15s ease, background 0.15s ease, border-color 0.3s ease !important;
+  border: 3px solid var(--border-dark) !important;
 }
 
 @media (min-width: 768px) {
@@ -72,10 +86,11 @@ button:active { transform: scale(0.95) !important; }
 
 /* Cards */
 .card-brutal {
-  border: 3px solid var(--accent-blue) !important;
+  border: 3px solid var(--border-dark) !important;
   border-radius: 20px !important;
   padding: 16px !important;
   background-color: transparent !important;
+  transition: border-color 0.3s ease;
 }
 @media (min-width: 768px) {
   .card-brutal {
@@ -87,8 +102,9 @@ button:active { transform: scale(0.95) !important; }
 
 /* Navigation */
 .nav-bar {
-  background-color: var(--bg-navy) !important;
-  border-top: 3px solid var(--accent-blue) !important;
+  background-color: var(--bg-dark) !important;
+  border-top: 3px solid var(--border-dark) !important;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 @media (min-width: 768px) {
   .nav-bar { border-top-width: 4px !important; }
@@ -97,13 +113,14 @@ button:active { transform: scale(0.95) !important; }
 /* Inputs */
 input, textarea {
   background-color: transparent !important;
-  border: 3px solid var(--accent-blue) !important;
-  color: var(--text-white) !important;
+  border: 3px solid var(--border-dark) !important;
+  color: var(--text-dark) !important;
   padding: 16px !important;
   font-size: clamp(16px, 3vw, 22px) !important;
   font-weight: 700 !important;
   border-radius: 14px !important;
   width: 100% !important;
+  transition: border-color 0.3s ease;
 }
 @media (min-width: 768px) {
   input, textarea {

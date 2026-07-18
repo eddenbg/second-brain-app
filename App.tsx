@@ -28,6 +28,7 @@ function App() {
   const [view, setView] = useState<View>('personal');
   const [showSettings, setShowSettings] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('dark_mode') === '1');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
@@ -47,6 +48,20 @@ function App() {
 
   const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
   const filesBackHandlerRef = useRef<(() => boolean) | null>(null);
+
+  // Dark mode effect: apply/remove class and store preference
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('dark_mode', isDarkMode ? '1' : '0');
+  }, [isDarkMode]);
+
+  const toggleDarkMode = useCallback(() => {
+    setIsDarkMode(prev => !prev);
+  }, []);
 
   const {
     memories, addMemory, deleteMemory, updateMemory, bulkDeleteMemories,
@@ -411,6 +426,8 @@ function App() {
           onSignOut={signOutUser}
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={toggleDarkMode}
         />
       )}
       {showSchedule && (
