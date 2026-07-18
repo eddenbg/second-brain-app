@@ -13,6 +13,7 @@ import AddDocumentModal from './AddDocumentModal';
 import AddPhysicalItemModal from './AddPhysicalItemModal';
 import AddWebMemoryModal from './AddWebMemoryModal';
 import NotionPickerModal from './NotionPickerModal';
+import SearchBar from './SearchBar';
 import { generateSpeechFromText } from '../services/geminiService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
 import type { NotionPage } from '../services/notionService';
@@ -21,6 +22,7 @@ import { getLocationName } from '../utils/location';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { PlusCircleIcon } from './Icons';
 import TopicsBrowserModal from './TopicsBrowserModal';
+import SearchBar from './SearchBar';
 
 interface PersonalViewProps {
     memories: AnyMemory[];
@@ -47,7 +49,8 @@ type SubView =
   | 'addWebClip'
   | 'documents'
   | 'scanning'
-  | 'detail';
+  | 'detail'
+  | 'search';
 
 // --- Read-Aloud Button ---
 const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
@@ -110,6 +113,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const [subView, setSubView] = useState<SubView>('hub');
     const [showTopics, setShowTopics] = useState(false);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
+    const [searchResults, setSearchResults] = useState<AnyMemory[]>([]);
     const showTopicsRef = useRef(false);
     const showNotionPickerRef = useRef(false);
     const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
@@ -122,6 +126,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const [showTagManager, setShowTagManager] = useState(false);
     const [newTagInput, setNewTagInput] = useState('');
     const [showNotionPicker, setShowNotionPicker] = useState(false);
+    const [filteredMemories, setFilteredMemories] = useState<AnyMemory[]>(memories);
     const notionToken = useMemo(() => getStoredNotionToken(), [showNotionPicker]);
     const importedNotionUrls = useMemo(
         () => new Set((memories.filter(m => m.type === 'web') as WebMemory[]).map(m => m.url)),
@@ -133,6 +138,11 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const webClips = useMemo(() => memories.filter(m => m.type === 'web'), [memories]);
     const documents = useMemo(() => memories.filter(m => m.type === 'document'), [memories]);
     const personalTasks = useMemo(() => tasks.filter(t => t.category === 'personal'), [tasks]);
+
+    // Initialize filtered memories
+    useEffect(() => {
+        setFilteredMemories(memories);
+    }, [memories]);
 
     const goBack = useCallback(() => setSubView('hub'), []);
 
@@ -182,6 +192,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         navigateTo('detail');
     };
 
+    const handleSearch = (filtered: AnyMemory[]) => {
+        setSearchResults(filtered);
+        if (filtered.length > 0 || searchResults.length > 0) {
+            navigateTo('search');
+        }
+    };
+
     // ── Hub ────────────────────────────────────────────
     // ── Hub ────────────────────────────────────────────────
     if (subView === 'hub') {
@@ -198,6 +215,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 />
             )}
             <div className="flex flex-col gap-6">
+                {/* Search Bar */}
+                <SearchBar
+                    memories={memories}
+                    onResults={handleSearch}
+                    placeholder="Search all memories..."
+                />
+
                 {/* Install App Banner */}
                 {!isStandalone && !installDismissed && (
                     <div className={`w-full rounded-3xl p-5 relative flex flex-col gap-3 ${isInstallable ? 'bg-blue-600' : 'bg-[#0a3060]  border-2 border-blue-500'}`}>
@@ -373,6 +397,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     // ── Voice Notes list ────────────────────────────────────
     // ── Voice Notes list ──────────────────────────────────────────────────
     if (subView === 'voiceNotes') {
+        const filteredVoiceNotes = filteredMemories.filter(m => m.type === 'voice');
         return (
             <div className="flex flex-col gap-6">
                 <header className="flex items-center gap-4">
@@ -388,8 +413,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Plus size={32} strokeWidth={3} />
                     </button>
                 </header>
+                <SearchBar
+                    memories={voiceNotes}
+                    onResults={setFilteredMemories}
+                    placeholder="Search voice notes..."
+                />
                 <div className="flex flex-col gap-4">
-                    {voiceNotes.map(mem => (
+                    {filteredVoiceNotes.map(mem => (
                         <button
                             key={mem.id}
                             onClick={() => openDetail(mem)}
@@ -404,7 +434,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             </div>
                         </button>
                     ))}
-                    {voiceNotes.length === 0 && (
+                    {filteredVoiceNotes.length === 0 && (
                         <div className="py-20 text-center opacity-40">
                             <Mic size={64} className="mx-auto mb-4" strokeWidth={2} />
                             <p className="text-xl uppercase">No voice notes yet</p>

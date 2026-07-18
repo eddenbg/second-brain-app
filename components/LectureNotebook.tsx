@@ -22,6 +22,10 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [showTextModal, setShowTextModal] = useState(false);
     const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>>([]);
 
+    // Undo/Redo stacks
+    const [undoStack, setUndoStack] = useState<DrawingStroke[][]>([]);
+    const [redoStack, setRedoStack] = useState<DrawingStroke[][]>([]);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isDrawingRef = useRef(false);
     const currentStrokeRef = useRef<DrawingStroke | null>(null);
@@ -172,7 +176,14 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             convertLassoAreaToText();
             lassoPointsRef.current = [];
         } else if (currentStrokeRef.current) {
-            setStrokes(prev => [...prev, currentStrokeRef.current!]);
+            setStrokes(prev => {
+                const newStrokes = [...prev, currentStrokeRef.current!];
+                // Clear redo stack when new stroke is added
+                setRedoStack([]);
+                // Add previous state to undo stack
+                setUndoStack(undoStack => [...undoStack, prev]);
+                return newStrokes;
+            });
             currentStrokeRef.current = null;
         }
     };
@@ -276,12 +287,31 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const clearCanvas = () => {
         if (window.confirm("Clear all notes?")) {
             setStrokes([]);
+            setUndoStack([]);
+            setRedoStack([]);
             const canvas = canvasRef.current;
             const ctx = canvas?.getContext('2d');
             if (ctx && canvas) {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
         }
+    };
+
+    const handleUndo = () => {
+        if (strokes.length === 0) return;
+        const newUndoStack = [...undoStack, strokes];
+        const newStrokes = strokes.slice(0, -1);
+        setUndoStack(newUndoStack);
+        setRedoStack([]);
+        setStrokes(newStrokes);
+    };
+
+    const handleRedo = () => {
+        if (redoStack.length === 0) return;
+        const lastRedo = redoStack[redoStack.length - 1];
+        setUndoStack([...undoStack, strokes]);
+        setRedoStack(redoStack.slice(0, -1));
+        setStrokes(lastRedo);
     };
 
     return (
@@ -317,9 +347,50 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     >
                         📦 Select
                     </button>
+
+                    {/* Divider */}
+                    <div className="w-px h-6 bg-gray-600"></div>
+
+                    {/* Undo/Redo Buttons */}
+                    <button
+                        onClick={handleUndo}
+                        disabled={undoStack.length === 0}
+                        className="px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider disabled:bg-gray-800 disabled:text-gray-600 bg-blue-700 text-blue-100 hover:bg-blue-600"
+                        aria-label="Undo"
+                        title="Undo last stroke"
+                    >
+                        ↶ Undo
+                    </button>
+                    <button
+                        onClick={handleRedo}
+                        disabled={redoStack.length === 0}
+                        className="px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider disabled:bg-gray-800 disabled:text-gray-600 bg-blue-700 text-blue-100 hover:bg-blue-600"
+                        aria-label="Redo"
+                        title="Redo last undone stroke"
+                    >
+                        ↷ Redo
+                    </button>
                 </div>
 
                 <div className="flex gap-2">
+                    <button
+                        onClick={handleUndo}
+                        disabled={strokes.length === 0}
+                        className="px-3 py-2 rounded-xl bg-amber-600 text-amber-100 hover:bg-amber-500 disabled:bg-gray-600 disabled:text-gray-400 font-bold text-sm uppercase tracking-wider"
+                        aria-label="Undo last stroke"
+                        title="Undo"
+                    >
+                        ↶
+                    </button>
+                    <button
+                        onClick={handleRedo}
+                        disabled={redoStack.length === 0}
+                        className="px-3 py-2 rounded-xl bg-amber-600 text-amber-100 hover:bg-amber-500 disabled:bg-gray-600 disabled:text-gray-400 font-bold text-sm uppercase tracking-wider"
+                        aria-label="Redo last stroke"
+                        title="Redo"
+                    >
+                        ↷
+                    </button>
                     <button
                         onClick={convertLastStrokeToText}
                         disabled={isExtracting || strokes.length === 0}
