@@ -19,6 +19,38 @@
   --border-dark: #FFFFFF;
 }
 
+/* High contrast mode */
+:root.high-contrast {
+  --bg-navy: #000000;
+  --accent-blue: #FFFF00;
+  --text-white: #FFFFFF;
+  --bg-dark: #000000;
+  --text-dark: #FFFFFF;
+  --border-dark: #FFFF00;
+}
+
+:root.dark.high-contrast {
+  --bg-navy: #000000;
+  --accent-blue: #FFFF00;
+  --text-white: #FFFFFF;
+  --bg-dark: #000000;
+  --text-dark: #FFFFFF;
+  --border-dark: #FFFF00;
+}
+
+/* Font size scaling */
+:root {
+  --font-scale: 1;
+}
+
+:root.font-large {
+  --font-scale: 1.2;
+}
+
+:root.font-xlarge {
+  --font-scale: 1.5;
+}
+
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -29,18 +61,18 @@ body {
   color: var(--text-dark) !important;
   font-family: 'Inter', sans-serif !important;
   font-weight: 700 !important;
-  font-size: 18px !important;
+  font-size: calc(18px * var(--font-scale)) !important;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  line-height: 1.4;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Scale font on larger screens */
-@media (min-width: 640px) { body { font-size: 20px !important; } }
-@media (min-width: 1024px) { body { font-size: 22px !important; } }
+@media (min-width: 640px) { body { font-size: calc(20px * var(--font-scale)) !important; } }
+@media (min-width: 1024px) { body { font-size: calc(22px * var(--font-scale)) !important; } }
 
 h1, h2, h3, h4 {
   font-weight: 700 !important;

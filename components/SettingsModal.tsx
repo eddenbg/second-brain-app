@@ -32,6 +32,10 @@ interface SettingsModalProps {
     onSignOut?: () => Promise<void>;
     isDarkMode?: boolean;
     onToggleDarkMode?: () => void;
+    isHighContrast?: boolean;
+    onToggleHighContrast?: () => void;
+    fontSize?: 'normal' | 'large' | 'xlarge';
+    onCycleFontSize?: () => void;
 }
 
 const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) => {
@@ -73,7 +77,7 @@ const GOOGLE_LOGO = (
     </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize }) => {
     const { isInstallable, installApp } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
@@ -246,6 +250,56 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 aria-label="Toggle dark mode"
                             >
                                 <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* High Contrast Mode */}
+                    <div className="p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-gray-700 bg-gray-900">
+                        <div className="flex items-center gap-3 sm:gap-4 justify-between">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-full flex items-center justify-center shrink-0">
+                                    <span className="text-black font-black text-lg">◆</span>
+                                </div>
+                                <div>
+                                    <p className="text-base sm:text-lg font-black text-white uppercase">High Contrast</p>
+                                    <p className="text-gray-400 font-bold text-xs">{isHighContrast ? 'Maximum contrast enabled' : 'Standard contrast'}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={onToggleHighContrast}
+                                className={`relative w-14 h-8 rounded-full transition-all ${isHighContrast ? 'bg-yellow-500' : 'bg-gray-600'}`}
+                                aria-label="Toggle high contrast"
+                            >
+                                <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-transform ${isHighContrast ? 'translate-x-7' : 'translate-x-1'}`}></div>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Font Size Adjustment */}
+                    <div className="p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-gray-700 bg-gray-900">
+                        <div className="flex items-center gap-3 sm:gap-4 justify-between">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center shrink-0">
+                                    <span className="text-white font-black text-xl">A</span>
+                                </div>
+                                <div>
+                                    <p className="text-base sm:text-lg font-black text-white uppercase">Text Size</p>
+                                    <p className="text-gray-400 font-bold text-xs">
+                                        {fontSize === 'normal' && 'Standard'}
+                                        {fontSize === 'large' && 'Large (120%)'}
+                                        {fontSize === 'xlarge' && 'Extra Large (150%)'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={onCycleFontSize}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                                style={{ minHeight: 'unset' }}
+                            >
+                                {fontSize === 'normal' && 'A'}
+                                {fontSize === 'large' && 'A+'}
+                                {fontSize === 'xlarge' && 'A++'}
                             </button>
                         </div>
                     </div>

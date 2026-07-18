@@ -29,6 +29,10 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('dark_mode') === '1');
+  const [isHighContrast, setIsHighContrast] = useState(() => localStorage.getItem('high_contrast') === '1');
+  const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xlarge'>(() =>
+    (localStorage.getItem('font_size') as 'normal' | 'large' | 'xlarge') || 'normal'
+  );
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
@@ -59,8 +63,41 @@ function App() {
     localStorage.setItem('dark_mode', isDarkMode ? '1' : '0');
   }, [isDarkMode]);
 
+  // High contrast mode effect
+  useEffect(() => {
+    if (isHighContrast) {
+      document.documentElement.classList.add('high-contrast');
+    } else {
+      document.documentElement.classList.remove('high-contrast');
+    }
+    localStorage.setItem('high_contrast', isHighContrast ? '1' : '0');
+  }, [isHighContrast]);
+
+  // Font size effect
+  useEffect(() => {
+    document.documentElement.classList.remove('font-large', 'font-xlarge');
+    if (fontSize === 'large') {
+      document.documentElement.classList.add('font-large');
+    } else if (fontSize === 'xlarge') {
+      document.documentElement.classList.add('font-xlarge');
+    }
+    localStorage.setItem('font_size', fontSize);
+  }, [fontSize]);
+
   const toggleDarkMode = useCallback(() => {
     setIsDarkMode(prev => !prev);
+  }, []);
+
+  const toggleHighContrast = useCallback(() => {
+    setIsHighContrast(prev => !prev);
+  }, []);
+
+  const cycleFontSize = useCallback(() => {
+    setFontSize(prev => {
+      if (prev === 'normal') return 'large';
+      if (prev === 'large') return 'xlarge';
+      return 'normal';
+    });
   }, []);
 
   const {
@@ -428,6 +465,10 @@ function App() {
           onSaveMoodleToken={saveMoodleToken}
           isDarkMode={isDarkMode}
           onToggleDarkMode={toggleDarkMode}
+          isHighContrast={isHighContrast}
+          onToggleHighContrast={toggleHighContrast}
+          fontSize={fontSize}
+          onCycleFontSize={cycleFontSize}
         />
       )}
       {showSchedule && (

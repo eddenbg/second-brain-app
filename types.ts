@@ -7,6 +7,8 @@ export interface BaseMemory {
   topics?: string[];
   course?: string;
   isHidden?: boolean;
+  isFavorite?: boolean;
+  folderPath?: string;
   voiceNote?: {
     transcript: string;
     audioDataUrl?: string;
