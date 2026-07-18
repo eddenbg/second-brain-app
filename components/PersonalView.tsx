@@ -22,7 +22,6 @@ import { getLocationName } from '../utils/location';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { PlusCircleIcon } from './Icons';
 import TopicsBrowserModal from './TopicsBrowserModal';
-import SearchBar from './SearchBar';
 
 interface PersonalViewProps {
     memories: AnyMemory[];
@@ -394,6 +393,55 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
+    // ── Search Results ──────────────────────────────────────
+    if (subView === 'search') {
+        return (
+            <div className="flex flex-col gap-6">
+                <header className="flex items-center gap-4">
+                    <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
+                        <ArrowLeft size={32} strokeWidth={3} />
+                    </button>
+                    <h2 className="text-2xl font-black uppercase flex-grow">Search Results</h2>
+                </header>
+                <SearchBar
+                    memories={memories}
+                    onResults={setSearchResults}
+                    placeholder="Search all memories..."
+                />
+                <div className="flex flex-col gap-4">
+                    {searchResults.length > 0 ? (
+                        searchResults.map(mem => (
+                            <button
+                                key={mem.id}
+                                onClick={() => openDetail(mem)}
+                                className="card-brutal flex items-center gap-5 text-left hover:bg-white/5"
+                            >
+                                <div className="flex-shrink-0">
+                                    {mem.type === 'voice' && <Mic size={28} strokeWidth={3} className="text-[#3B82F6]" />}
+                                    {mem.type === 'document' && <FileText size={28} strokeWidth={3} className="text-[#F59E0B]" />}
+                                    {mem.type === 'web' && <Globe size={28} strokeWidth={3} className="text-[#8B5CF6]" />}
+                                    {mem.type === 'item' && <Package size={28} strokeWidth={3} className="text-[#F59E0B]" />}
+                                    {mem.type === 'video' && <Camera size={28} strokeWidth={3} className="text-[#10B981]" />}
+                                </div>
+                                <div className="flex-grow overflow-hidden">
+                                    <p className="text-lg font-black truncate">{mem.title}</p>
+                                    <p className="text-xs text-white/50 uppercase tracking-widest">
+                                        {mem.type.toUpperCase()} • {new Date(mem.date).toLocaleDateString()}
+                                    </p>
+                                </div>
+                            </button>
+                        ))
+                    ) : (
+                        <div className="py-20 text-center opacity-40">
+                            <FileText size={64} className="mx-auto mb-4" strokeWidth={2} />
+                            <p className="text-xl uppercase">No results found</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     // ── Voice Notes list ────────────────────────────────────
     // ── Voice Notes list ──────────────────────────────────────────────────
     if (subView === 'voiceNotes') {
@@ -556,7 +604,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     // ── Web Clips list ───────────────────────────────────────────
     // ── Web Clips list ────────────────────────────────────────────────────────────
     if (subView === 'webClips') {
-        const sortedClips = [...webClips].sort((a, b) => {
+        const filteredBySearch = filteredMemories.filter(m => m.type === 'web');
+        const sortedClips = [...filteredBySearch].sort((a, b) => {
             const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
             return sortOrder === 'newest' ? -diff : diff;
         });
@@ -619,6 +668,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Plus size={28} strokeWidth={3} />
                     </button>
                 </header>
+
+                {/* Search bar */}
+                <SearchBar
+                    memories={webClips}
+                    onResults={setFilteredMemories}
+                    placeholder="Search web clips..."
+                />
 
                 {/* Tag manager panel */}
                 {showTagManager && (
