@@ -20,15 +20,15 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [extractedText, setExtractedText] = useState<string | null>(null);
     const [isExtracting, setIsExtracting] = useState(false);
     const [showTextModal, setShowTextModal] = useState(false);
+    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>>([]);
 
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const isDrawingRef = useRef(false);
     const currentStrokeRef = useRef<DrawingStroke | null>(null);
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
 
-    // Fixed blue color for visibility (better for low vision)
-    const PEN_COLOR = '#60A5FA';
-    const ERASER_COLOR = '#1f2937';
+    // Fixed white color for better contrast against blue background
+    const PEN_COLOR = '#FFFFFF';
     const PEN_WIDTH = 3;
     const ERASER_WIDTH = 20;
     const LASSO_COLOR = '#FBBF24';
@@ -38,12 +38,14 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         onUpdate({ strokes, backgroundImageUrl: bgImage });
     }, [strokes, bgImage, onUpdate]);
 
-    // Redraw canvas when strokes change
+    // Redraw canvas when strokes or text annotations change
     useEffect(() => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (ctx && canvas) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw strokes
             strokes.forEach(stroke => {
                 ctx.beginPath();
                 ctx.strokeStyle = stroke.color;
@@ -56,8 +58,18 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 });
                 ctx.stroke();
             });
+
+            // Draw text annotations
+            textAnnotations.forEach(annotation => {
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 24px Arial, sans-serif';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 2;
+                ctx.strokeText(annotation.text, annotation.x, annotation.y);
+                ctx.fillText(annotation.text, annotation.x, annotation.y);
+            });
         }
-    }, [strokes]);
+    }, [strokes, textAnnotations]);
 
     const getPos = (e: React.MouseEvent | React.TouchEvent) => {
         const canvas = canvasRef.current;
@@ -84,10 +96,19 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
 
         if (tool === 'lasso') {
             lassoPointsRef.current = [pos];
+        } else if (tool === 'eraser') {
+            // Eraser removes strokes instead of drawing
+            const eraserRadius = ERASER_WIDTH / 2;
+            setStrokes(prev => prev.filter(stroke => {
+                // Keep strokes that don't intersect with eraser
+                return !stroke.points.some(p =>
+                    Math.hypot(p.x - pos.x, p.y - pos.y) < eraserRadius
+                );
+            }));
         } else {
             currentStrokeRef.current = {
-                color: tool === 'pen' ? PEN_COLOR : ERASER_COLOR,
-                width: tool === 'pen' ? PEN_WIDTH : ERASER_WIDTH,
+                color: PEN_COLOR,
+                width: PEN_WIDTH,
                 points: [{ ...pos, t: timestamp }]
             };
 
@@ -124,6 +145,14 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 ctx.stroke();
                 ctx.setLineDash([]);
             }
+        } else if (tool === 'eraser') {
+            // Eraser removes strokes as you drag
+            const eraserRadius = ERASER_WIDTH / 2;
+            setStrokes(prev => prev.filter(stroke => {
+                return !stroke.points.some(p =>
+                    Math.hypot(p.x - pos.x, p.y - pos.y) < eraserRadius
+                );
+            }));
         } else if (currentStrokeRef.current) {
             currentStrokeRef.current.points.push({ ...pos, t: timestamp });
             const ctx = canvasRef.current.getContext('2d');
@@ -150,8 +179,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
 
     const convertLastStrokeToText = async () => {
         if (strokes.length === 0) {
-            setExtractedText("No strokes to convert. Start drawing first.");
-            setShowTextModal(true);
+            alert("No strokes to convert. Start drawing first.");
             return;
         }
 
@@ -160,18 +188,44 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             const canvas = canvasRef.current;
             if (!canvas) return;
 
-            // Get just the last stroke and convert it
+            // Get just the last stroke's bounding box
             const lastStroke = strokes[strokes.length - 1];
-            const imageData = canvas.toDataURL('image/png');
-            const base64 = imageData.split(',')[1];
+            if (lastStroke.points.length === 0) return;
 
+            const xs = lastStroke.points.map(p => p.x);
+            const ys = lastStroke.points.map(p => p.y);
+            const minX = Math.min(...xs);
+            const minY = Math.min(...ys);
+            const maxX = Math.max(...xs);
+            const maxY = Math.max(...ys);
+
+            // Crop around the stroke
+            const cropCanvas = document.createElement('canvas');
+            cropCanvas.width = Math.max(maxX - minX + 20, 100);
+            cropCanvas.height = Math.max(maxY - minY + 20, 50);
+            const cropCtx = cropCanvas.getContext('2d');
+            if (!cropCtx) return;
+
+            cropCtx.drawImage(
+                canvas,
+                Math.max(minX - 10, 0), Math.max(minY - 10, 0),
+                cropCanvas.width, cropCanvas.height,
+                0, 0, cropCanvas.width, cropCanvas.height
+            );
+
+            const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
             const text = await extractHandwritingFromImage(base64);
-            setExtractedText(text);
-            setShowTextModal(true);
+
+            // Add text annotation to canvas at the stroke location
+            setTextAnnotations(prev => [...prev, {
+                text: text.trim(),
+                x: minX,
+                y: maxY + 30,
+                id: Date.now().toString()
+            }]);
         } catch (error) {
             console.error('Conversion error:', error);
-            setExtractedText("Error converting. Please try again.");
-            setShowTextModal(true);
+            alert("Error converting. Please try again.");
         } finally {
             setIsExtracting(false);
         }
@@ -202,13 +256,18 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 cropCtx.drawImage(canvas, minX, minY, cropCanvas.width, cropCanvas.height, 0, 0, cropCanvas.width, cropCanvas.height);
                 const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
                 const text = await extractHandwritingFromImage(base64);
-                setExtractedText(text);
-                setShowTextModal(true);
+
+                // Add text annotation to canvas below the selected area
+                setTextAnnotations(prev => [...prev, {
+                    text: text.trim(),
+                    x: minX,
+                    y: maxY + 30,
+                    id: Date.now().toString()
+                }]);
             }
         } catch (error) {
             console.error('Lasso conversion error:', error);
-            setExtractedText("Error with lasso conversion.");
-            setShowTextModal(true);
+            alert("Error with lasso conversion.");
         } finally {
             setIsExtracting(false);
         }
@@ -347,45 +406,6 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </div>
             )}
 
-            {/* Extracted Text Modal */}
-            {showTextModal && (
-                <div className="absolute inset-0 z-30 bg-black/80 flex items-center justify-center p-6">
-                    <div className="bg-gray-800 rounded-3xl w-full max-w-2xl max-h-96 p-6 border-4 border-gray-700 space-y-4 flex flex-col">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-xl font-black text-white">Extracted Text</h3>
-                            <button onClick={() => setShowTextModal(false)} className="p-2 hover:bg-gray-700 rounded-lg">
-                                <XIcon className="w-6 h-6 text-gray-400" />
-                            </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto bg-gray-900 p-4 rounded-2xl border-2 border-gray-700">
-                            <p className="text-white whitespace-pre-wrap leading-relaxed text-lg">
-                                {extractedText}
-                            </p>
-                        </div>
-
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => {
-                                    if (extractedText) {
-                                        navigator.clipboard.writeText(extractedText);
-                                        alert("Text copied!");
-                                    }
-                                }}
-                                className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 uppercase"
-                            >
-                                Copy
-                            </button>
-                            <button
-                                onClick={() => setShowTextModal(false)}
-                                className="flex-1 py-3 bg-gray-700 text-white font-bold rounded-2xl hover:bg-gray-600 uppercase"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {!isRecording && strokes.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
