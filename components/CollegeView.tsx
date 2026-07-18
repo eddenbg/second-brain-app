@@ -10,6 +10,7 @@ import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
 import NotebookViewer from './NotebookViewer';
+import SearchBar from './SearchBar';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';

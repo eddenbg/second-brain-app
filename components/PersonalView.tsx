@@ -819,6 +819,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     // ── Documents list ───────────────────────────────────────────
     // ── Documents list ───────────────────────────────────────────────────────────
     if (subView === 'documents') {
+        const filteredDocuments = filteredMemories.filter(m => m.type === 'document');
         return (
             <div className="flex flex-col gap-6">
                 <header className="flex items-center gap-4">
@@ -834,8 +835,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Camera size={32} strokeWidth={3} />
                     </button>
                 </header>
+                <SearchBar
+                    memories={documents}
+                    onResults={setFilteredMemories}
+                    placeholder="Search documents..."
+                />
                 <div className="flex flex-col gap-4">
-                    {documents.map(mem => {
+                    {filteredDocuments.map(mem => {
                         const d = mem as DocumentMemory;
                         return (
                             <div key={mem.id} className="card-brutal flex flex-col gap-4">
@@ -867,10 +873,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             </div>
                         );
                     })}
-                    {documents.length === 0 && (
+                    {filteredDocuments.length === 0 && (
                         <div className="py-20 text-center opacity-40">
                             <FileText size={64} className="mx-auto mb-4" strokeWidth={2} />
-                            <p className="text-xl uppercase">No documents yet</p>
+                            <p className="text-xl uppercase">{documents.length === 0 ? 'No documents yet' : 'No matching documents'}</p>
                         </div>
                     )}
                 </div>
