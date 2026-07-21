@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
     Volume2, Loader2, X, Package, Camera, FileText,
-    ListTodo, StopCircle, Play, Tag, Heart
+    ListTodo, StopCircle, Play, Tag
 } from 'lucide-react';
 import type { AnyMemory, VoiceMemory, DocumentMemory, Task, PhysicalItemMemory, WebMemory } from '../types';
 import Recorder from './Recorder';
@@ -15,6 +15,7 @@ import AddWebMemoryModal from './AddWebMemoryModal';
 import NotionPickerModal from './NotionPickerModal';
 import SearchBar from './SearchBar';
 import MemoryThumbnail from './MemoryThumbnail';
+import TranscriptionUploader from './TranscriptionUploader';
 import { generateSpeechFromText } from '../services/geminiService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
 import type { NotionPage } from '../services/notionService';
@@ -49,6 +50,7 @@ type SubView =
   | 'addWebClip'
   | 'documents'
   | 'scanning'
+  | 'transcribe'
   | 'detail'
   | 'search'
   | 'favorites';
@@ -114,7 +116,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const [subView, setSubView] = useState<SubView>('hub');
     const [showTopics, setShowTopics] = useState(false);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
-    const [searchResults, setSearchResults] = useState<AnyMemory[]>([]);
     const showTopicsRef = useRef(false);
     const showNotionPickerRef = useRef(false);
     const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
@@ -127,7 +128,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const [showTagManager, setShowTagManager] = useState(false);
     const [newTagInput, setNewTagInput] = useState('');
     const [showNotionPicker, setShowNotionPicker] = useState(false);
-    const [filteredMemories, setFilteredMemories] = useState<AnyMemory[]>(memories);
     const notionToken = useMemo(() => getStoredNotionToken(), [showNotionPicker]);
     const importedNotionUrls = useMemo(
         () => new Set((memories.filter(m => m.type === 'web') as WebMemory[]).map(m => m.url)),
@@ -139,11 +139,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const webClips = useMemo(() => memories.filter(m => m.type === 'web'), [memories]);
     const documents = useMemo(() => memories.filter(m => m.type === 'document'), [memories]);
     const personalTasks = useMemo(() => tasks.filter(t => t.category === 'personal'), [tasks]);
-
-    // Initialize filtered memories
-    useEffect(() => {
-        setFilteredMemories(memories);
-    }, [memories]);
 
     const goBack = useCallback(() => setSubView('hub'), []);
 
@@ -193,13 +188,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         navigateTo('detail');
     };
 
-    const handleSearch = (filtered: AnyMemory[]) => {
-        setSearchResults(filtered);
-        if (filtered.length > 0 || searchResults.length > 0) {
-            navigateTo('search');
-        }
-    };
-
     // ── Hub ────────────────────────────────────────────
     // ── Hub ────────────────────────────────────────────────
     if (subView === 'hub') {
@@ -216,13 +204,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 />
             )}
             <div className="flex flex-col gap-6">
-                {/* Search Bar */}
-                <SearchBar
-                    memories={memories}
-                    onResults={handleSearch}
-                    placeholder="Search all memories..."
-                />
-
                 {/* Install App Banner */}
                 {!isStandalone && !installDismissed && (
                     <div className={`w-full rounded-3xl p-5 relative flex flex-col gap-3 ${isInstallable ? 'bg-blue-600' : 'bg-[#0a3060]  border-2 border-blue-500'}`}>
@@ -313,17 +294,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <span className="text-lg font-black uppercase">Web Clips</span>
                         <span className="text-sm opacity-75">{webClips.length} saved</span>
                     </button>
-
-                    {/* Favorites */}
-                    <button
-                        onClick={() => navigateTo('favorites')}
-                        aria-label={`Favorites – ${memories.filter((m: any) => m.isFavorite).length} starred`}
-                        className="h-36 bg-[#EC4899] text-white rounded-3xl flex flex-col items-center justify-center gap-2"
-                    >
-                        <Heart className="w-12 h-12" strokeWidth={3} fill="currentColor" />
-                        <span className="text-lg font-black uppercase">Favorites</span>
-                        <span className="text-sm opacity-75">{memories.filter((m: any) => m.isFavorite).length} starred</span>
-                    </button>
                 </div>
 
                 {/* Scan Document – full width */}
@@ -336,6 +306,19 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     <div className="text-left">
                         <div className="text-xl font-black uppercase">Scan Document / Mail</div>
                         <div className="text-sm opacity-75">{documents.length} scanned • OCR + Read Aloud</div>
+                    </div>
+                </button>
+
+                {/* Transcribe Lecture – full width */}
+                <button
+                    onClick={() => navigateTo('transcribe')}
+                    aria-label="Transcribe lecture audio"
+                    className="w-full h-28 bg-[#10B981] text-white rounded-3xl flex items-center justify-center gap-4"
+                >
+                    <FileText className="w-14 h-14" strokeWidth={3} />
+                    <div className="text-left">
+                        <div className="text-xl font-black uppercase">Transcribe Lecture</div>
+                        <div className="text-sm opacity-75">Share M4A/MP4 • Get instant transcript</div>
                     </div>
                 </button>
 
@@ -406,105 +389,9 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
-    // ── Favorites ──────────────────────────────────────
-    if (subView === 'favorites') {
-        const favoriteMemories = memories.filter((m: any) => m.isFavorite);
-        return (
-            <div className="flex flex-col gap-6">
-                <header className="flex items-center gap-4">
-                    <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
-                        <ArrowLeft size={32} strokeWidth={3} />
-                    </button>
-                    <h2 className="text-2xl font-black uppercase flex-grow">Favorites</h2>
-                </header>
-                {favoriteMemories.length > 0 ? (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {favoriteMemories.map(mem => (
-                            <MemoryThumbnail
-                                key={mem.id}
-                                memory={mem}
-                                onClick={() => openDetail(mem)}
-                                onFavoriteToggle={(id, isFav) => onUpdateMemory(id, { isFavorite: isFav })}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="py-20 text-center opacity-40">
-                        <Heart size={64} className="mx-auto mb-4" strokeWidth={2} />
-                        <p className="text-xl uppercase">No favorites yet</p>
-                        <p className="text-sm mt-2">Star memories to add them here</p>
-                    </div>
-                )}
-            </div>
-        );
-    }
-
-    // ── Search Results ──────────────────────────────────────
-    if (subView === 'search') {
-        return (
-            <div className="flex flex-col gap-6">
-                <header className="flex items-center gap-4">
-                    <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
-                        <ArrowLeft size={32} strokeWidth={3} />
-                    </button>
-                    <h2 className="text-2xl font-black uppercase flex-grow">Search Results</h2>
-                </header>
-                <SearchBar
-                    memories={memories}
-                    onResults={setSearchResults}
-                    placeholder="Search all memories..."
-                />
-                <div className="flex flex-col gap-4">
-                    {searchResults.length > 0 ? (
-                        searchResults.map(mem => (
-                            <button
-                                key={mem.id}
-                                onClick={() => openDetail(mem)}
-                                className="card-brutal flex items-center gap-5 text-left hover:bg-white/5"
-                            >
-                                <div className="flex-shrink-0">
-                                    {mem.type === 'voice' && <Mic size={28} strokeWidth={3} className="text-[#3B82F6]" />}
-                                    {mem.type === 'document' && <FileText size={28} strokeWidth={3} className="text-[#F59E0B]" />}
-                                    {mem.type === 'web' && <Globe size={28} strokeWidth={3} className="text-[#8B5CF6]" />}
-                                    {mem.type === 'item' && <Package size={28} strokeWidth={3} className="text-[#F59E0B]" />}
-                                    {mem.type === 'video' && <Camera size={28} strokeWidth={3} className="text-[#10B981]" />}
-                                </div>
-                                <div className="flex-grow overflow-hidden">
-                                    <p className="text-lg font-black truncate">{mem.title}</p>
-                                    <p className="text-xs text-white/50 uppercase tracking-widest">
-                                        {mem.type.toUpperCase()} • {new Date(mem.date).toLocaleDateString()}
-                                    </p>
-                                </div>
-                            </button>
-                        ))
-                    ) : (
-                        <div className="py-20 text-center opacity-40">
-                            <FileText size={64} className="mx-auto mb-4" strokeWidth={2} />
-                            <p className="text-xl uppercase">No results found</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
     // ── Voice Notes list ────────────────────────────────────
     // ── Voice Notes list ──────────────────────────────────────────────────
     if (subView === 'voiceNotes') {
-        const filteredVoiceNotes = filteredMemories.filter(m => m.type === 'voice');
-
-        // Group by date
-        const groupedByDate = filteredVoiceNotes.reduce((acc: Record<string, any[]>, mem) => {
-            const dateKey = new Date(mem.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-            if (!acc[dateKey]) acc[dateKey] = [];
-            acc[dateKey].push(mem);
-            return acc;
-        }, {});
-
-        const sortedDates = Object.keys(groupedByDate).sort((a, b) =>
-            new Date(b).getTime() - new Date(a).getTime()
-        );
-
         return (
             <div className="flex flex-col gap-6">
                 <header className="flex items-center gap-4">
@@ -520,50 +407,23 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Plus size={32} strokeWidth={3} />
                     </button>
                 </header>
-                <SearchBar
-                    memories={voiceNotes}
-                    onResults={setFilteredMemories}
-                    placeholder="Search voice notes..."
-                />
-                <div className="flex flex-col gap-8">
-                    {sortedDates.length > 0 ? (
-                        sortedDates.map(dateKey => (
-                            <div key={dateKey} className="flex flex-col gap-3">
-                                <p className="text-xs font-black text-white/50 uppercase tracking-widest px-2">{dateKey}</p>
-                                <div className="flex flex-col gap-3">
-                                    {groupedByDate[dateKey].map(mem => (
-                                        <button
-                                            key={mem.id}
-                                            onClick={() => openDetail(mem)}
-                                            className="card-brutal flex items-center gap-5 text-left hover:bg-white/5 group"
-                                        >
-                                            <Mic size={32} strokeWidth={3} className="text-[#3B82F6] flex-shrink-0" />
-                                            <div className="flex-grow overflow-hidden">
-                                                <p className="text-lg font-black truncate">{mem.title}</p>
-                                                <p className="text-xs text-[#60A5FA] uppercase tracking-widest">
-                                                    {(mem as any).transcript?.substring(0, 60)}...
-                                                </p>
-                                            </div>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onUpdateMemory(mem.id, { isFavorite: !(mem as any).isFavorite });
-                                                }}
-                                                className="p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                                                aria-label="Toggle favorite"
-                                            >
-                                                <Heart
-                                                    size={20}
-                                                    className={(mem as any).isFavorite ? 'text-red-600 fill-red-600' : 'text-gray-400'}
-                                                    strokeWidth={3}
-                                                />
-                                            </button>
-                                        </button>
-                                    ))}
-                                </div>
+                <div className="flex flex-col gap-4">
+                    {voiceNotes.map(mem => (
+                        <button
+                            key={mem.id}
+                            onClick={() => openDetail(mem)}
+                            className="card-brutal flex items-center gap-5 text-left hover:bg-white/5"
+                        >
+                            <Mic size={36} strokeWidth={3} className="text-[#3B82F6] flex-shrink-0" />
+                            <div className="flex-grow overflow-hidden">
+                                <p className="text-xl font-black truncate">{mem.title}</p>
+                                <p className="text-sm text-[#60A5FA] uppercase tracking-widest">
+                                    {new Date(mem.date).toLocaleDateString()}
+                                </p>
                             </div>
-                        ))
-                    ) : (
+                        </button>
+                    ))}
+                    {voiceNotes.length === 0 && (
                         <div className="py-20 text-center opacity-40">
                             <Mic size={64} className="mx-auto mb-4" strokeWidth={2} />
                             <p className="text-xl uppercase">No voice notes yet</p>
@@ -685,8 +545,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     // ── Web Clips list ───────────────────────────────────────────
     // ── Web Clips list ────────────────────────────────────────────────────────────
     if (subView === 'webClips') {
-        const filteredBySearch = filteredMemories.filter(m => m.type === 'web');
-        const sortedClips = [...filteredBySearch].sort((a, b) => {
+        const sortedClips = [...webClips].sort((a, b) => {
             const diff = new Date(a.date).getTime() - new Date(b.date).getTime();
             return sortOrder === 'newest' ? -diff : diff;
         });
@@ -749,13 +608,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Plus size={28} strokeWidth={3} />
                     </button>
                 </header>
-
-                {/* Search bar */}
-                <SearchBar
-                    memories={webClips}
-                    onResults={setFilteredMemories}
-                    placeholder="Search web clips..."
-                />
 
                 {/* Tag manager panel */}
                 {showTagManager && (
@@ -900,7 +752,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     // ── Documents list ───────────────────────────────────────────
     // ── Documents list ───────────────────────────────────────────────────────────
     if (subView === 'documents') {
-        const filteredDocuments = filteredMemories.filter(m => m.type === 'document');
         return (
             <div className="flex flex-col gap-6">
                 <header className="flex items-center gap-4">
@@ -916,13 +767,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Camera size={32} strokeWidth={3} />
                     </button>
                 </header>
-                <SearchBar
-                    memories={documents}
-                    onResults={setFilteredMemories}
-                    placeholder="Search documents..."
-                />
                 <div className="flex flex-col gap-4">
-                    {filteredDocuments.map(mem => {
+                    {documents.map(mem => {
                         const d = mem as DocumentMemory;
                         return (
                             <div key={mem.id} className="card-brutal flex flex-col gap-4">
@@ -954,10 +800,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             </div>
                         );
                     })}
-                    {filteredDocuments.length === 0 && (
+                    {documents.length === 0 && (
                         <div className="py-20 text-center opacity-40">
                             <FileText size={64} className="mx-auto mb-4" strokeWidth={2} />
-                            <p className="text-xl uppercase">{documents.length === 0 ? 'No documents yet' : 'No matching documents'}</p>
+                            <p className="text-xl uppercase">No documents yet</p>
                         </div>
                     )}
                 </div>
@@ -976,6 +822,23 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     navigateTo('documents');
                 }}
             />
+        );
+    }
+
+    // ── Transcribe ────────────────────────────────────────────────
+    // ── Transcribe ────────────────────────────────────────────────────────────────
+    if (subView === 'transcribe') {
+        return (
+            <div className="flex flex-col h-full p-4 sm:p-6 overflow-y-auto bg-gray-900">
+                <button
+                    onClick={goBack}
+                    className="mb-6 flex items-center gap-2 text-white/70 hover:text-white transition-colors"
+                >
+                    <ArrowLeft size={24} strokeWidth={3} />
+                    <span className="font-bold uppercase">Back</span>
+                </button>
+                <TranscriptionUploader />
+            </div>
         );
     }
 

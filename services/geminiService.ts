@@ -400,3 +400,47 @@ export async function extractHandwritingFromImage(base64Data: string): Promise<s
         return "Error extracting text from image.";
     }
 }
+
+export async function transcribeAudioFile(
+    file: File,
+    onProgress?: (progress: number) => void
+): Promise<string> {
+    const ai = getGeminiInstance();
+    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+
+    try {
+        onProgress?.(10);
+
+        // Convert file to base64
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        const base64Data = Array.from(uint8Array)
+            .map((byte) => String.fromCharCode(byte))
+            .join('');
+        const encodedData = btoa(base64Data);
+
+        onProgress?.(30);
+
+        // Determine MIME type
+        const mimeType = file.type || 'audio/mp4';
+
+        // Call Gemini with audio file
+        const response = await ai.models.generateContent({
+            model,
+            contents: [
+                {
+                    parts: [
+                        { inlineData: { mimeType, data: encodedData } },
+                        { text: 'Transcribe this audio file completely and accurately. Support both Hebrew (RTL) and English. Return the full transcript, preserving all spoken words and natural pauses. Do not add interpretations, only transcribed speech.' }
+                    ]
+                }
+            ]
+        });
+
+        onProgress?.(100);
+        return response.text ?? "No transcript could be generated from the audio file.";
+    } catch (error) {
+        console.error('Error transcribing audio:', error);
+        return "Error transcribing audio file. Please try again or check file format.";
+    }
+}

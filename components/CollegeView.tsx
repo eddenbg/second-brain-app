@@ -9,8 +9,7 @@ import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
-import NotebookViewer from './NotebookViewer';
-import SearchBar from './SearchBar';
+import TranscriptionUploader from './TranscriptionUploader';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -89,7 +88,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     backHandlerRef
 }) => {
     const [mainTab, setMainTab] = useState<'courses' | 'files' | 'tasks'>('courses');
-    const [view, setView] = useState<'list' | 'dashboard' | 'detail' | 'recording' | 'scanning' | 'generalScan'>('list');
+    const [view, setView] = useState<'list' | 'dashboard' | 'detail' | 'recording' | 'scanning' | 'generalScan' | 'transcribe'>('list');
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
     const [newCourseName, setNewCourseName] = useState('');
@@ -103,6 +102,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         try { return JSON.parse(localStorage.getItem('college_recent_access') || '{}'); } catch { return {}; }
     });
     const [fileFilter, setFileFilter] = useState<'all' | 'recordings' | 'docs'>('all');
+    const [sharedAudioData, setSharedAudioData] = useState<any | null>(null);
 
     // Study Session
     const [showStudyPrompt, setShowStudyPrompt] = useState(false);
@@ -140,13 +140,35 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             if (activeStudyHub) { setActiveStudyHub(null); return true; }
             if (showStudyPrompt) { setShowStudyPrompt(false); return true; }
             if (view === 'detail') { setView('dashboard'); return true; }
-            if (view === 'recording' || view === 'scanning') { setView('dashboard'); return true; }
+            if (view === 'recording' || view === 'scanning' || view === 'transcribe') { setView('dashboard'); return true; }
             if (view === 'generalScan') { setView('list'); return true; }
             if (view === 'dashboard') { setView('list'); setSelectedCourse(null); return true; }
             return false;
         };
         return () => { if (backHandlerRef) backHandlerRef.current = null; };
     }, [view, backHandlerRef, showStudyPrompt, activeStudyHub]);
+
+    // Detect share intent and auto-launch transcription
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('shared') === 'true' && params.get('type') === 'audio') {
+            try {
+                const sharedData = sessionStorage.getItem('sharedAudioData');
+                if (sharedData) {
+                    const data = JSON.parse(sharedData);
+                    setSharedAudioData(data);
+                    window.history.replaceState({}, '', '/college');
+                    // Auto-navigate to transcribe view
+                    window.history.pushState({ collegeView: 'transcribe' }, '');
+                    setView('transcribe');
+                    // Clear after 1 second to avoid issues
+                    setTimeout(() => sessionStorage.removeItem('sharedAudioData'), 1000);
+                }
+            } catch (error) {
+                console.error('Error processing shared audio:', error);
+            }
+        }
+    }, []);
 
     const handleSelectCourse = (course: string) => {
         const updated = { ...recentAccess, [course]: Date.now() };
@@ -378,6 +400,19 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </button>
                     </div>
 
+                    {/* Transcribe Lecture – full width */}
+                    <button
+                        onClick={() => { window.history.pushState({ collegeView: 'transcribe' }, ''); setView('transcribe'); }}
+                        aria-label="Transcribe lecture audio from Samsung Notes"
+                        className="w-full h-28 bg-emerald-700 text-white rounded-3xl flex items-center justify-center gap-4"
+                    >
+                        <FileText size={40} strokeWidth={3} />
+                        <div className="text-left">
+                            <div className="text-lg font-black uppercase">Transcribe Lecture</div>
+                            <div className="text-sm opacity-75">Share M4A/MP4 • Get instant transcript</div>
+                        </div>
+                    </button>
+
                     {/* Study Session — only shown when course has materials */}
                     {(memoriesByCourse[selectedCourse] || []).length > 0 && (
                         <button
@@ -488,6 +523,22 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             );
         }
 
+        // ── Transcribe Lecture ────────────────────────────────────────────────────
+        if (view === 'transcribe') {
+            return (
+                <div className="flex flex-col h-full p-4 sm:p-6 overflow-y-auto">
+                    <button
+                        onClick={handleBack}
+                        className="mb-6 flex items-center gap-2 text-white/70 hover:text-white transition-colors"
+                    >
+                        <ArrowLeft size={24} strokeWidth={3} />
+                        <span className="font-bold uppercase">Back</span>
+                    </button>
+                    <TranscriptionUploader preloadedFile={sharedAudioData} />
+                </div>
+            );
+        }
+
         // ── Detail ────────────────────────────────────────────────────────────────────────
         if (view === 'detail' && selectedItem) {
             return (
@@ -537,15 +588,6 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                                 </li>
                                             ))}
                                         </ul>
-                                    </div>
-                                )}
-                                {(selectedItem as VoiceMemory).notebook && (
-                                    <div>
-                                        <h3 className="font-black text-purple-400 uppercase text-sm tracking-widest mb-3">My Lecture Notes</h3>
-                                        <NotebookViewer
-                                            notebook={(selectedItem as VoiceMemory).notebook!}
-                                            syncWithAudio={true}
-                                        />
                                     </div>
                                 )}
                                 <div>
