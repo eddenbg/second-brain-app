@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { transcribeAudioFile } from '../services/geminiService';
 import { Download, Copy, Check, X, Loader2Icon } from 'lucide-react';
 
@@ -8,13 +8,66 @@ interface TranscriptionResult {
   timestamp: number;
 }
 
-const TranscriptionUploader: React.FC = () => {
+interface TranscriptionUploaderProps {
+  preloadedFile?: {
+    fileName: string;
+    mimeType: string;
+    base64Data: string;
+  };
+}
+
+const TranscriptionUploader: React.FC<TranscriptionUploaderProps> = ({ preloadedFile }) => {
   const [transcript, setTranscript] = useState<TranscriptionResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-process preloaded file from share intent
+  React.useEffect(() => {
+    if (preloadedFile && !transcript && !isProcessing) {
+      processPreloadedFile();
+    }
+  }, [preloadedFile, transcript, isProcessing]);
+
+  const processPreloadedFile = async () => {
+    if (!preloadedFile) return;
+
+    setIsProcessing(true);
+    setError(null);
+    setProgress(0);
+
+    try {
+      // Convert base64 back to File object
+      const byteCharacters = atob(preloadedFile.base64Data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const file = new File([byteArray], preloadedFile.fileName, { type: preloadedFile.mimeType });
+
+      // Transcribe the file
+      const text = await transcribeAudioFile(file, setProgress);
+
+      if (text.includes('Error') || text.includes('error')) {
+        setError(text);
+      } else {
+        setTranscript({
+          fileName: preloadedFile.fileName,
+          transcript: text,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err) {
+      setError('Failed to transcribe audio. Please try again.');
+      console.error(err);
+    } finally {
+      setIsProcessing(false);
+      setProgress(0);
+    }
+  };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

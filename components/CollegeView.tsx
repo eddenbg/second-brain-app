@@ -102,6 +102,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         try { return JSON.parse(localStorage.getItem('college_recent_access') || '{}'); } catch { return {}; }
     });
     const [fileFilter, setFileFilter] = useState<'all' | 'recordings' | 'docs'>('all');
+    const [sharedAudioData, setSharedAudioData] = useState<any | null>(null);
 
     // Study Session
     const [showStudyPrompt, setShowStudyPrompt] = useState(false);
@@ -146,6 +147,28 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         };
         return () => { if (backHandlerRef) backHandlerRef.current = null; };
     }, [view, backHandlerRef, showStudyPrompt, activeStudyHub]);
+
+    // Detect share intent and auto-launch transcription
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('shared') === 'true' && params.get('type') === 'audio') {
+            try {
+                const sharedData = sessionStorage.getItem('sharedAudioData');
+                if (sharedData) {
+                    const data = JSON.parse(sharedData);
+                    setSharedAudioData(data);
+                    window.history.replaceState({}, '', '/college');
+                    // Auto-navigate to transcribe view
+                    window.history.pushState({ collegeView: 'transcribe' }, '');
+                    setView('transcribe');
+                    // Clear after 1 second to avoid issues
+                    setTimeout(() => sessionStorage.removeItem('sharedAudioData'), 1000);
+                }
+            } catch (error) {
+                console.error('Error processing shared audio:', error);
+            }
+        }
+    }, []);
 
     const handleSelectCourse = (course: string) => {
         const updated = { ...recentAccess, [course]: Date.now() };
@@ -511,7 +534,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         <ArrowLeft size={24} strokeWidth={3} />
                         <span className="font-bold uppercase">Back</span>
                     </button>
-                    <TranscriptionUploader />
+                    <TranscriptionUploader preloadedFile={sharedAudioData} />
                 </div>
             );
         }
