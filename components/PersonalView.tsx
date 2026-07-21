@@ -13,6 +13,9 @@ import AddDocumentModal from './AddDocumentModal';
 import AddPhysicalItemModal from './AddPhysicalItemModal';
 import AddWebMemoryModal from './AddWebMemoryModal';
 import NotionPickerModal from './NotionPickerModal';
+import SearchBar from './SearchBar';
+import MemoryThumbnail from './MemoryThumbnail';
+import TranscriptionUploader from './TranscriptionUploader';
 import { generateSpeechFromText } from '../services/geminiService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
 import type { NotionPage } from '../services/notionService';
@@ -47,7 +50,10 @@ type SubView =
   | 'addWebClip'
   | 'documents'
   | 'scanning'
-  | 'detail';
+  | 'transcribe'
+  | 'detail'
+  | 'search'
+  | 'favorites';
 
 // --- Read-Aloud Button ---
 const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
@@ -300,6 +306,19 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     <div className="text-left">
                         <div className="text-xl font-black uppercase">Scan Document / Mail</div>
                         <div className="text-sm opacity-75">{documents.length} scanned • OCR + Read Aloud</div>
+                    </div>
+                </button>
+
+                {/* Transcribe Lecture – full width */}
+                <button
+                    onClick={() => navigateTo('transcribe')}
+                    aria-label="Transcribe lecture audio"
+                    className="w-full h-28 bg-[#10B981] text-white rounded-3xl flex items-center justify-center gap-4"
+                >
+                    <FileText className="w-14 h-14" strokeWidth={3} />
+                    <div className="text-left">
+                        <div className="text-xl font-black uppercase">Transcribe Lecture</div>
+                        <div className="text-sm opacity-75">Share M4A/MP4 • Get instant transcript</div>
                     </div>
                 </button>
 
@@ -803,6 +822,23 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     navigateTo('documents');
                 }}
             />
+        );
+    }
+
+    // ── Transcribe ────────────────────────────────────────────────
+    // ── Transcribe ────────────────────────────────────────────────────────────────
+    if (subView === 'transcribe') {
+        return (
+            <div className="flex flex-col h-full p-4 sm:p-6 overflow-y-auto bg-gray-900">
+                <button
+                    onClick={goBack}
+                    className="mb-6 flex items-center gap-2 text-white/70 hover:text-white transition-colors"
+                >
+                    <ArrowLeft size={24} strokeWidth={3} />
+                    <span className="font-bold uppercase">Back</span>
+                </button>
+                <TranscriptionUploader />
+            </div>
         );
     }
 
