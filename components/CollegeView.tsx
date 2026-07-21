@@ -9,6 +9,7 @@ import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
+import TranscriptionUploader from './TranscriptionUploader';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -87,7 +88,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     backHandlerRef
 }) => {
     const [mainTab, setMainTab] = useState<'courses' | 'files' | 'tasks'>('courses');
-    const [view, setView] = useState<'list' | 'dashboard' | 'detail' | 'recording' | 'scanning' | 'generalScan'>('list');
+    const [view, setView] = useState<'list' | 'dashboard' | 'detail' | 'recording' | 'scanning' | 'generalScan' | 'transcribe'>('list');
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
     const [newCourseName, setNewCourseName] = useState('');
@@ -138,7 +139,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             if (activeStudyHub) { setActiveStudyHub(null); return true; }
             if (showStudyPrompt) { setShowStudyPrompt(false); return true; }
             if (view === 'detail') { setView('dashboard'); return true; }
-            if (view === 'recording' || view === 'scanning') { setView('dashboard'); return true; }
+            if (view === 'recording' || view === 'scanning' || view === 'transcribe') { setView('dashboard'); return true; }
             if (view === 'generalScan') { setView('list'); return true; }
             if (view === 'dashboard') { setView('list'); setSelectedCourse(null); return true; }
             return false;
@@ -376,6 +377,19 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </button>
                     </div>
 
+                    {/* Transcribe Lecture – full width */}
+                    <button
+                        onClick={() => { window.history.pushState({ collegeView: 'transcribe' }, ''); setView('transcribe'); }}
+                        aria-label="Transcribe lecture audio from Samsung Notes"
+                        className="w-full h-28 bg-emerald-700 text-white rounded-3xl flex items-center justify-center gap-4"
+                    >
+                        <FileText size={40} strokeWidth={3} />
+                        <div className="text-left">
+                            <div className="text-lg font-black uppercase">Transcribe Lecture</div>
+                            <div className="text-sm opacity-75">Share M4A/MP4 • Get instant transcript</div>
+                        </div>
+                    </button>
+
                     {/* Study Session — only shown when course has materials */}
                     {(memoriesByCourse[selectedCourse] || []).length > 0 && (
                         <button
@@ -483,6 +497,22 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         window.history.back();
                     }}
                 />
+            );
+        }
+
+        // ── Transcribe Lecture ────────────────────────────────────────────────────
+        if (view === 'transcribe') {
+            return (
+                <div className="flex flex-col h-full p-4 sm:p-6 overflow-y-auto">
+                    <button
+                        onClick={handleBack}
+                        className="mb-6 flex items-center gap-2 text-white/70 hover:text-white transition-colors"
+                    >
+                        <ArrowLeft size={24} strokeWidth={3} />
+                        <span className="font-bold uppercase">Back</span>
+                    </button>
+                    <TranscriptionUploader />
+                </div>
             );
         }
 
