@@ -45,6 +45,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [captureMode, setCaptureMode] = useState<'physical' | 'remote'>('physical');
     const [privacyMode, setPrivacyMode] = useState(false);
     const [notebookData, setNotebookData] = useState<NotebookData | null>(null);
+    const [recordingTime, setRecordingTime] = useState(0);
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -251,6 +252,24 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         return () => document.removeEventListener('visibilitychange', handleVisibility);
     }, [isRecording]);
 
+    // Recording timer
+    useEffect(() => {
+        if (!isRecording) {
+            setRecordingTime(0);
+            return;
+        }
+        const interval = setInterval(() => {
+            setRecordingTime(prev => prev + 1);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isRecording]);
+
+    const formatTime = (seconds: number): string => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
 
     const handleSave = async () => {
         setIsProcessing(true);
@@ -290,6 +309,70 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
     };
     
+    // Full-screen recording mode with notebook
+    if (isRecording && !audioOnly && captureMode !== 'remote') {
+        return (
+            <div className="fixed inset-0 bg-black z-[100] flex flex-col">
+                {/* Privacy screen overlay */}
+                {privacyMode && (
+                    <div
+                        className="fixed inset-0 bg-black z-[9999] flex items-end justify-end p-6"
+                        onClick={() => setPrivacyMode(false)}
+                        aria-label="Tap anywhere to show recording screen"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={e => e.key === 'Enter' && setPrivacyMode(false)}
+                    >
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse opacity-30" />
+                    </div>
+                )}
+
+                {/* Top toolbar with controls */}
+                <div className="bg-black/60 backdrop-blur border-b-2 border-white/10 px-4 py-3 flex items-center justify-between z-10">
+                    {/* Recording timer (blinking red) */}
+                    <button
+                        onClick={() => setPrivacyMode(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-full font-black text-sm animate-pulse"
+                        aria-label="Hide screen"
+                    >
+                        <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                        {formatTime(recordingTime)}
+                    </button>
+
+                    <div className="flex-1" />
+
+                    {/* Control buttons at top right */}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={stopRecording}
+                            aria-label="Stop recording"
+                            className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-full font-black text-sm uppercase transition-all"
+                        >
+                            Stop
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={isProcessing}
+                            aria-label="Save recording"
+                            className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-full font-black text-sm uppercase transition-all disabled:bg-gray-600"
+                        >
+                            {isProcessing ? 'Saving...' : 'Save'}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Full-screen canvas */}
+                <div className="flex-1 overflow-hidden">
+                    <LectureNotebook
+                        onUpdate={setNotebookData}
+                        startTime={startTimeRef.current}
+                        isRecording={isRecording}
+                    />
+                </div>
+            </div>
+        );
+    }
+
     return (
         <>
         {/* Privacy screen overlay — covers everything when active */}

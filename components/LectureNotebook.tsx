@@ -20,7 +20,9 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [extractedText, setExtractedText] = useState<string | null>(null);
     const [isExtracting, setIsExtracting] = useState(false);
     const [showTextModal, setShowTextModal] = useState(false);
-    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>>([]);
+    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>([]);
+    const [hasLassoSelection, setHasLassoSelection] = useState(false);
+    const [lastLassoSelection, setLastLassoSelection] = useState<{ x: number; y: number; minX: number; minY: number; maxX: number; maxY: number } | null>(null);;
 
     // Undo/Redo stacks
     const [undoStack, setUndoStack] = useState<DrawingStroke[][]>([]);
@@ -172,8 +174,17 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         isDrawingRef.current = false;
 
         if (tool === 'lasso' && lassoPointsRef.current.length > 0) {
-            // Handle lasso selection - convert enclosed area to text
-            convertLassoAreaToText();
+            // Handle lasso selection - just mark that selection is active
+            const points = lassoPointsRef.current;
+            const xs = points.map(p => p.x);
+            const ys = points.map(p => p.y);
+            const minX = Math.max(0, Math.min(...xs) - 10);
+            const minY = Math.max(0, Math.min(...ys) - 10);
+            const maxX = Math.max(...xs) + 10;
+            const maxY = Math.max(...ys) + 10;
+
+            setLastLassoSelection({ x: minX, y: minY, minX, minY, maxX, maxY });
+            setHasLassoSelection(true);
             lassoPointsRef.current = [];
         } else if (currentStrokeRef.current) {
             setStrokes(prev => {
@@ -243,22 +254,16 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     };
 
     const convertLassoAreaToText = async () => {
-        if (lassoPointsRef.current.length < 3) return;
+        if (!lastLassoSelection) return;
 
         setIsExtracting(true);
         try {
             const canvas = canvasRef.current;
             if (!canvas) return;
 
-            // Crop to lasso area and convert
-            const points = lassoPointsRef.current;
-            const xs = points.map(p => p.x);
-            const ys = points.map(p => p.y);
-            const minX = Math.max(0, Math.min(...xs) - 10);
-            const minY = Math.max(0, Math.min(...ys) - 10);
-            const maxX = Math.min(canvas.width, Math.max(...xs) + 10);
-            const maxY = Math.min(canvas.height, Math.max(...ys) + 10);
+            const { minX, minY, maxX, maxY } = lastLassoSelection;
 
+            // Crop to lasso area and convert
             const cropCanvas = document.createElement('canvas');
             cropCanvas.width = maxX - minX;
             cropCanvas.height = maxY - minY;
@@ -268,17 +273,21 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
                 const text = await extractHandwritingFromImage(base64);
 
-                // Add text annotation to canvas below the selected area
+                // Add text annotation at the selected area (replace handwriting)
                 setTextAnnotations(prev => [...prev, {
                     text: text.trim(),
                     x: minX,
-                    y: maxY + 30,
+                    y: minY + (cropCanvas.height / 2),
                     id: Date.now().toString()
                 }]);
+
+                // Clear the selected area and reset selection
+                setHasLassoSelection(false);
+                setLastLassoSelection(null);
             }
         } catch (error) {
             console.error('Lasso conversion error:', error);
-            alert("Error with lasso conversion.");
+            alert("Error converting handwriting to text.");
         } finally {
             setIsExtracting(false);
         }
@@ -315,117 +324,91 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     };
 
     return (
-        <div className="flex flex-col h-full bg-gray-900 rounded-2xl overflow-hidden border-2 border-gray-700">
-            {/* Simplified Toolbar */}
-            <div className="flex items-center justify-between p-3 bg-gray-800 border-b border-gray-700 shrink-0">
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setTool('pen')}
-                        className={`px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider ${
-                            tool === 'pen' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'
-                        }`}
-                        aria-label="Pen Tool"
-                    >
-                        ✏️ Pen
-                    </button>
-                    <button
-                        onClick={() => setTool('eraser')}
-                        className={`px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider ${
-                            tool === 'eraser' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400'
-                        }`}
-                        aria-label="Eraser Tool"
-                    >
-                        🧹 Erase
-                    </button>
-                    <button
-                        onClick={() => setTool('lasso')}
-                        className={`px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider ${
-                            tool === 'lasso' ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400'
-                        }`}
-                        aria-label="Lasso Selection Tool"
-                        title="Draw a box to select area for text conversion"
-                    >
-                        📦 Select
-                    </button>
+        <div className="flex flex-col h-full bg-[#001F3F] overflow-hidden">
+            {/* Top Toolbar - Samsung Notes Style */}
+            <div className="flex items-center gap-2 p-3 bg-black/60 backdrop-blur border-b border-white/10 shrink-0">
+                {/* Drawing Tools */}
+                <button
+                    onClick={() => { setTool('pen'); setHasLassoSelection(false); }}
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'pen' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                    aria-label="Pen Tool"
+                    title="Draw with pen"
+                >
+                    ✏️
+                </button>
+                <button
+                    onClick={() => { setTool('eraser'); setHasLassoSelection(false); }}
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'eraser' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                    aria-label="Eraser Tool"
+                    title="Erase"
+                >
+                    🧹
+                </button>
+                <button
+                    onClick={() => setTool('lasso')}
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'lasso' ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                    aria-label="Lasso Selection Tool"
+                    title="Select handwriting with lasso"
+                >
+                    ⭕
+                </button>
 
-                    {/* Divider */}
-                    <div className="w-px h-6 bg-gray-600"></div>
+                {/* Divider */}
+                <div className="w-px h-6 bg-gray-600 mx-1"></div>
 
-                    {/* Undo/Redo Buttons */}
-                    <button
-                        onClick={handleUndo}
-                        disabled={undoStack.length === 0}
-                        className="px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider disabled:bg-gray-800 disabled:text-gray-600 bg-blue-700 text-blue-100 hover:bg-blue-600"
-                        aria-label="Undo"
-                        title="Undo last stroke"
-                    >
-                        ↶ Undo
-                    </button>
-                    <button
-                        onClick={handleRedo}
-                        disabled={redoStack.length === 0}
-                        className="px-4 py-2 rounded-xl transition-all font-bold uppercase tracking-wider disabled:bg-gray-800 disabled:text-gray-600 bg-blue-700 text-blue-100 hover:bg-blue-600"
-                        aria-label="Redo"
-                        title="Redo last undone stroke"
-                    >
-                        ↷ Redo
-                    </button>
-                </div>
+                {/* Undo/Redo */}
+                <button
+                    onClick={handleUndo}
+                    disabled={undoStack.length === 0}
+                    className="p-2 rounded-lg transition-all bg-gray-700 text-gray-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Undo"
+                    title="Undo"
+                >
+                    ↶
+                </button>
+                <button
+                    onClick={handleRedo}
+                    disabled={redoStack.length === 0}
+                    className="p-2 rounded-lg transition-all bg-gray-700 text-gray-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Redo"
+                    title="Redo"
+                >
+                    ↷
+                </button>
 
-                <div className="flex gap-2">
-                    <button
-                        onClick={handleUndo}
-                        disabled={strokes.length === 0}
-                        className="px-3 py-2 rounded-xl bg-amber-600 text-amber-100 hover:bg-amber-500 disabled:bg-gray-600 disabled:text-gray-400 font-bold text-sm uppercase tracking-wider"
-                        aria-label="Undo last stroke"
-                        title="Undo"
-                    >
-                        ↶
-                    </button>
-                    <button
-                        onClick={handleRedo}
-                        disabled={redoStack.length === 0}
-                        className="px-3 py-2 rounded-xl bg-amber-600 text-amber-100 hover:bg-amber-500 disabled:bg-gray-600 disabled:text-gray-400 font-bold text-sm uppercase tracking-wider"
-                        aria-label="Redo last stroke"
-                        title="Redo"
-                    >
-                        ↷
-                    </button>
-                    <button
-                        onClick={convertLastStrokeToText}
-                        disabled={isExtracting || strokes.length === 0}
-                        className="px-4 py-2 rounded-xl bg-green-700 text-green-100 hover:bg-green-600 disabled:bg-gray-600 disabled:text-gray-400 font-bold text-sm uppercase tracking-wider flex items-center gap-2"
-                        aria-label="Convert last stroke to text"
-                        title="Convert your last handwritten word to text"
-                    >
-                        {isExtracting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : '📝'}
-                        <span className="hidden sm:inline">Word</span>
-                    </button>
-                    <button
-                        onClick={() => setShowMaterialPicker(true)}
-                        className="px-4 py-2 rounded-xl bg-purple-700 text-purple-100 hover:bg-purple-600 font-bold text-sm uppercase tracking-wider"
-                        aria-label="Import PDF slides"
-                    >
-                        📄
-                    </button>
-                    <button
-                        onClick={clearCanvas}
-                        className="px-4 py-2 rounded-xl bg-red-700 text-red-100 hover:bg-red-600 font-bold text-sm uppercase tracking-wider"
-                        aria-label="Clear Notebook"
-                    >
-                        🗑️
-                    </button>
-                </div>
+                {/* Text Conversion Button - appears after lasso selection */}
+                {hasLassoSelection && (
+                    <>
+                        <div className="w-px h-6 bg-gray-600 mx-1"></div>
+                        <button
+                            onClick={convertLassoAreaToText}
+                            disabled={isExtracting}
+                            className="p-2 rounded-lg transition-all bg-green-600 text-white hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            aria-label="Convert selection to text"
+                            title="Convert handwriting to text"
+                        >
+                            {isExtracting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : 'T'}
+                        </button>
+                    </>
+                )}
+
+                <div className="flex-1" />
             </div>
 
-            {/* Drawing Surface */}
-            <div className="flex-grow flex bg-[#1f2937] overflow-hidden">
-                {bgImage && (
-                    <div className="w-2/5 overflow-y-auto border-r border-gray-700 bg-black/40 p-3">
+            {/* Drawing Surface - Full Screen Canvas */}
+            <div className="flex-1 flex overflow-hidden">
+                {bgImage && isRecording && (
+                    <div className="w-1/3 overflow-y-auto border-r border-gray-700 bg-black/40 p-2">
                         <img src={bgImage} className="w-full rounded-lg object-cover" alt="Lecture Slide" />
                         <button
                             onClick={() => setBgImage(undefined)}
-                            className="mt-3 w-full py-2 px-4 bg-red-900/40 text-red-300 rounded-lg text-sm font-bold hover:bg-red-900/60"
+                            className="mt-2 w-full py-1 px-2 bg-red-900/40 text-red-300 rounded-lg text-xs font-bold hover:bg-red-900/60"
                         >
                             Clear PDF
                         </button>
