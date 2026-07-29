@@ -3,6 +3,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { generateTitleForContent } from '../services/geminiService';
 import type { PhysicalItemMemory, VideoItemMemory, AnyMemory } from '../types';
 import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon, Loader2Icon } from './Icons';
+import { Image } from 'lucide-react';
 import MiniRecorder from './MiniRecorder';
 import { getCurrentLocation } from '../utils/location';
 import { Modality, Session } from '@google/genai';
@@ -282,7 +283,7 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                                     <CameraIcon className="w-5 h-5"/> Camera
                                 </button>
                                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-4 bg-gray-700 text-white font-black rounded-2xl flex items-center justify-center gap-3 uppercase text-xs">
-                                    <UploadIcon className="w-5 h-5"/> File
+                                    <Image className="w-5 h-5"/> Gallery
                                 </button>
                                 <input type="file" ref={fileInputRef} onChange={handleFileChange} accept={mode === 'photo' ? "image/*" : "video/*"} className="hidden" />
                             </>

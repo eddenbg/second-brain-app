@@ -299,13 +299,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 {/* Scan Document – full width */}
                 <button
                     onClick={() => navigateTo('scanning')}
-                    aria-label={`Scan Document – ${documents.length} scanned`}
+                    aria-label={`Scan or upload document – ${documents.length} scanned`}
                     className="w-full h-28 bg-[#EF4444] text-white rounded-3xl flex items-center justify-center gap-4"
                 >
                     <Camera className="w-14 h-14" strokeWidth={3} />
                     <div className="text-left">
-                        <div className="text-xl font-black uppercase">Scan Document / Mail</div>
-                        <div className="text-sm opacity-75">{documents.length} scanned • OCR + Read Aloud</div>
+                        <div className="text-xl font-black uppercase">Scan or Upload Doc</div>
+                        <div className="text-sm opacity-75">{documents.length} documents • Scan, Upload or OCR</div>
                     </div>
                 </button>
 
