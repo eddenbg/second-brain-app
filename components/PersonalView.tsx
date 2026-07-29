@@ -309,19 +309,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </div>
                 </button>
 
-                {/* Transcribe Lecture – full width */}
-                <button
-                    onClick={() => navigateTo('transcribe')}
-                    aria-label="Transcribe lecture audio"
-                    className="w-full h-28 bg-[#10B981] text-white rounded-3xl flex items-center justify-center gap-4"
-                >
-                    <FileText className="w-14 h-14" strokeWidth={3} />
-                    <div className="text-left">
-                        <div className="text-xl font-black uppercase">Transcribe Lecture</div>
-                        <div className="text-sm opacity-75">Share M4A/MP4 • Get instant transcript</div>
-                    </div>
-                </button>
-
                 {/* Topics – full width */}
                 <button
                     onClick={() => { window.history.pushState({ personalModal: 'topics' }, ''); setShowTopics(true); }}

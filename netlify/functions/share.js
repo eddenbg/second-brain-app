@@ -5,7 +5,36 @@ export default async (req, context) => {
   }
 
   try {
-    const formData = await req.formData();
+    let formData;
+    try {
+      formData = await req.formData();
+    } catch (e) {
+      console.error('FormData parsing error:', e.message);
+      return new Response(
+        `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Error</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #001F3F;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <h2>Error Processing File</h2>
+    <p>Could not parse the shared file. Please try again or check that you're sharing an audio file.</p>
+    <p><a href="/" style="color: white;">Return to app</a></p>
+</body>
+</html>`,
+        { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      );
+    }
 
     // Handle text/URL shares (fallback to web clips)
     const text = formData.get('text');
@@ -27,13 +56,35 @@ export default async (req, context) => {
       });
     }
 
-    // Handle audio file share
-    const audioFile = formData.get('audio');
+    // Handle audio file share - try multiple possible field names
+    let audioFile = formData.get('audio');
+    if (!audioFile) audioFile = formData.get('files'); // Try alternate field name
+
     if (!audioFile) {
-      return new Response(JSON.stringify({ error: 'No file provided' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return new Response(
+        `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Error</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #001F3F;
+            font-family: system-ui, -apple-system, sans-serif;
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <h2>No file provided</h2>
+    <p>Please share an audio file (M4A, MP3, MP4, WAV, or WebM).</p>
+    <p><a href="/" style="color: white;">Return to app</a></p>
+</body>
+</html>`,
+        { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+      );
     }
 
     // Validate file type
