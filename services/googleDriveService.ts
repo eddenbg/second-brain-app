@@ -1,5 +1,6 @@
 import { loadGIS, getStoredGoogleClientId } from './googleCalendarService';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { retryWithExponentialBackoff } from '../utils/retryWithExponentialBackoff';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -83,9 +84,12 @@ export const listDriveFolder = async (token: string, folderId = 'root'): Promise
         pageSize: '100',
     });
 
-    const response = await fetchWithTimeout(
-        `https://www.googleapis.com/drive/v3/files?${params}`,
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
+    const response = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(
+            `https://www.googleapis.com/drive/v3/files?${params}`,
+            { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
+        ),
+        { maxRetries: 2, initialDelayMs: 1000 }
     );
 
     if (!response.ok) {
@@ -116,9 +120,12 @@ export const listDriveFiles = async (token: string, query = ''): Promise<DriveFi
         pageSize: '50',
     });
 
-    const response = await fetchWithTimeout(
-        `https://www.googleapis.com/drive/v3/files?${params}`,
-        { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
+    const response = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(
+            `https://www.googleapis.com/drive/v3/files?${params}`,
+            { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
+        ),
+        { maxRetries: 2, initialDelayMs: 1000 }
     );
 
     if (!response.ok) {

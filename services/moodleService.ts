@@ -1,5 +1,6 @@
 import type { CalendarEvent, MoodleCourse, MoodleContent } from '../types';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { retryWithExponentialBackoff } from '../utils/retryWithExponentialBackoff';
 
 /**
  * All Moodle requests are now routed through a Netlify function proxy
@@ -33,8 +34,12 @@ export const fetchMoodleEvents = async (token: string): Promise<CalendarEvent[]>
     try {
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events`;
         console.log(`[MoodleService] Fetching events...`);
-        const response = await fetchWithTimeout(url, { timeout: 45000 });
-        
+
+        const response = await retryWithExponentialBackoff(() =>
+            fetchWithTimeout(url, { timeout: 45000 }),
+            { maxRetries: 3, initialDelayMs: 1000 }
+        );
+
         if (!response.ok) {
             const text = await response.text();
             console.error(`[MoodleService] Events fetch failed with status ${response.status}: ${text}`);
@@ -49,11 +54,11 @@ export const fetchMoodleEvents = async (token: string): Promise<CalendarEvent[]>
 
         const data = await response.json();
         console.log(`[MoodleService] Events fetched successfully`);
-        
+
         if (data.error) {
             throw new Error(data.error);
         }
-        
+
         if (data.events) {
             return data.events.map((e: any) => ({
                 id: `moodle_${e.id}`,
@@ -77,8 +82,12 @@ export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]>
         // Switched to a more reliable Moodle function to fetch courses for the current user.
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_course_get_enrolled_courses_by_timeline_classification&classification=inprogress`;
         console.log(`[MoodleService] Fetching courses...`);
-        const response = await fetchWithTimeout(url, { timeout: 45000 });
-        
+
+        const response = await retryWithExponentialBackoff(() =>
+            fetchWithTimeout(url, { timeout: 45000 }),
+            { maxRetries: 3, initialDelayMs: 1000 }
+        );
+
         if (!response.ok) {
             const text = await response.text();
             console.error(`[MoodleService] Courses fetch failed with status ${response.status}: ${text}`);
@@ -93,10 +102,10 @@ export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]>
 
         const data = await response.json();
         console.log(`[MoodleService] Courses fetched successfully`);
-        
+
         if (data.error) throw new Error(data.error);
         if (data.exception) throw new Error(data.message);
-        
+
         // This function returns an object with a 'courses' array
         return data.courses || [];
     } catch (e) {
@@ -110,8 +119,12 @@ export const fetchCourseContents = async (token: string, courseId: number): Prom
     try {
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_course_get_contents&courseid=${courseId}`;
         console.log(`[MoodleService] Fetching contents for course ${courseId}...`);
-        const response = await fetchWithTimeout(url, { timeout: 45000 });
-        
+
+        const response = await retryWithExponentialBackoff(() =>
+            fetchWithTimeout(url, { timeout: 45000 }),
+            { maxRetries: 3, initialDelayMs: 1000 }
+        );
+
         if (!response.ok) {
             const text = await response.text();
             console.error(`[MoodleService] Contents fetch failed with status ${response.status}: ${text}`);
@@ -126,7 +139,7 @@ export const fetchCourseContents = async (token: string, courseId: number): Prom
 
         const sections = await response.json();
         console.log(`[MoodleService] Contents fetched successfully for course ${courseId}`);
-        
+
         if (sections.error) throw new Error(sections.error);
         if (sections.exception) throw new Error(sections.message);
 

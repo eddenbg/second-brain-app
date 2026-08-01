@@ -1,5 +1,6 @@
 import type { CalendarEvent } from '../types';
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { retryWithExponentialBackoff } from '../utils/retryWithExponentialBackoff';
 
 const CLIENT_ID_STORAGE_KEY = 'google_oauth_client_id';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
@@ -88,7 +89,10 @@ export const fetchGoogleCalendarEvents = async (token: string): Promise<Calendar
     const timeMax = new Date(now.getFullYear(), now.getMonth() + 3, 0).toISOString();
 
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime&maxResults=100`;
-    const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 });
+    const response = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }),
+        { maxRetries: 3, initialDelayMs: 1000 }
+    );
 
     if (!response.ok) {
         if (response.status === 401) {

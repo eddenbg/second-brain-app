@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { retryWithExponentialBackoff } from '../utils/retryWithExponentialBackoff';
 
 const NOTION_TOKEN_KEY = 'notion_integration_token';
 const NOTION_CLIENT_ID_KEY = 'notion_client_id';
@@ -40,7 +41,10 @@ export const searchNotionPages = async (token: string, query = ''): Promise<Noti
     const params = new URLSearchParams({ token, action: 'search' });
     if (query) params.set('query', query);
 
-    const res = await fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 });
+    const res = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 }),
+        { maxRetries: 2, initialDelayMs: 1000 }
+    );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
@@ -60,12 +64,15 @@ const blockToText = (block: any): string => {
 };
 
 export const createScanPage = async (token: string, title: string, text: string, parentPageId: string): Promise<string> => {
-    const res = await fetchWithTimeout(PROXY, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, action: 'createPage', title, text, parentPageId }),
-        timeout: 30000,
-    });
+    const res = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(PROXY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, action: 'createPage', title, text, parentPageId }),
+            timeout: 30000,
+        }),
+        { maxRetries: 2, initialDelayMs: 1000 }
+    );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
     return data.url;
@@ -73,7 +80,10 @@ export const createScanPage = async (token: string, title: string, text: string,
 
 export const fetchNotionPageContent = async (token: string, pageId: string): Promise<string> => {
     const params = new URLSearchParams({ token, action: 'blocks', pageId });
-    const res = await fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 });
+    const res = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 }),
+        { maxRetries: 2, initialDelayMs: 1000 }
+    );
     if (!res.ok) return '';
     const data = await res.json();
     return (data.results || []).map(blockToText).filter(Boolean).join('\n').slice(0, 8000);
