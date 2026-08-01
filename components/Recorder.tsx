@@ -53,6 +53,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const frameIntervalRef = useRef<number | null>(null);
     const startTimeRef = useRef<number>(0);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const recordingTimerRef = useRef<number | null>(null);
+    const MAX_RECORDING_SECONDS = 3600; // 1 hour max
 
     const stopAllMedia = useCallback(() => {
         if (stream) {
@@ -134,8 +137,22 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             mediaRecorderRef.current.start();
 
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            audioContextRef.current = audioContext;
             await audioContext.resume();
             const actualSampleRate = audioContext.sampleRate;
+
+            // Auto-stop recording if it exceeds max duration
+            recordingTimerRef.current = window.setInterval(() => {
+                setRecordingTime(t => {
+                    if (t >= MAX_RECORDING_SECONDS) {
+                        setError(`Recording limit (${MAX_RECORDING_SECONDS} seconds) reached. Recording stopped automatically.`);
+                        stopRecording();
+                        return t;
+                    }
+                    return t + 1;
+                });
+            }, 1000);
+
             sessionPromiseRef.current = ai.live.connect({
                 model: 'gemini-2.5-flash-native-audio-latest',
                 callbacks: {
@@ -146,7 +163,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             const inputData = e.inputBuffer.getChannelData(0);
                             const int16 = downsampleTo16k(inputData, actualSampleRate);
                             const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
-                            sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: pcmBlob }));
+                            sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: pcmBlob })).catch((err) => {
+                                console.error('Failed to send audio to session:', err);
+                            });
                         };
                         source.connect(scriptProcessor);
                         scriptProcessor.connect(audioContext.destination);
@@ -170,6 +189,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                                         const base64Data = await blobToBase64(blob);
                                         sessionPromiseRef.current?.then((session) => {
                                             session.sendRealtimeInput({ media: { data: base64Data, mimeType: 'image/jpeg' } });
+                                        }).catch((err) => {
+                                            console.error('Failed to send frame to session:', err);
                                         });
                                     }
                                 }, 'image/jpeg', JPEG_QUALITY
@@ -184,8 +205,23 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                         }
                     },
-                    onerror: (e) => { console.error(e); setError('Live transcription failed. Make sure your Gemini API key (Settings → AI Features) has Gemini Live access enabled at aistudio.google.com.'); },
-                    onclose: () => { audioContext.close(); },
+                    onerror: (e) => {
+                        console.error('Gemini Live error:', e);
+                        setError('Live transcription failed. Make sure your Gemini API key (Settings → AI Features) has Gemini Live access enabled at aistudio.google.com.');
+                    },
+                    onclose: () => {
+                        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                            audioContextRef.current.close();
+                        }
+                        if (frameIntervalRef.current) {
+                            clearInterval(frameIntervalRef.current);
+                            frameIntervalRef.current = null;
+                        }
+                        if (recordingTimerRef.current) {
+                            clearInterval(recordingTimerRef.current);
+                            recordingTimerRef.current = null;
+                        }
+                    },
                 },
                 config: {
                     responseModalities: [Modality.AUDIO],
@@ -218,11 +254,44 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const stopRecording = async () => {
         setIsRecording(false);
         mediaRecorderRef.current?.stop();
-        if (sessionPromiseRef.current) {
-            const session = await sessionPromiseRef.current;
-            session.close();
-            sessionPromiseRef.current = null;
+
+        // Clear recording timer
+        if (recordingTimerRef.current) {
+            clearInterval(recordingTimerRef.current);
+            recordingTimerRef.current = null;
         }
+
+        // Clear frame capture interval
+        if (frameIntervalRef.current) {
+            clearInterval(frameIntervalRef.current);
+            frameIntervalRef.current = null;
+        }
+
+        // Close session safely with timeout
+        if (sessionPromiseRef.current) {
+            try {
+                const session = await Promise.race([
+                    sessionPromiseRef.current,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Session close timeout')), 5000))
+                ]) as Session;
+                session.close();
+            } catch (err) {
+                console.error('Error closing session:', err);
+            } finally {
+                sessionPromiseRef.current = null;
+            }
+        }
+
+        // Close audio context safely
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            try {
+                audioContextRef.current.close();
+            } catch (err) {
+                console.error('Error closing audio context:', err);
+            }
+            audioContextRef.current = null;
+        }
+
         stopAllMedia();
     };
     

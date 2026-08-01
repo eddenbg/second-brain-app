@@ -1,8 +1,23 @@
+// Helper function to escape HTML to prevent XSS
+const escapeHtml = (text) => {
+  if (!text) return '';
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, char => map[char]);
+};
+
 export default async (req, context) => {
   // Only accept POST requests
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
+
+  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB limit
 
   try {
     let formData;
@@ -96,11 +111,32 @@ export default async (req, context) => {
       );
     }
 
+    // Validate file size
+    if (audioFile.size > MAX_FILE_SIZE) {
+      const sizeMB = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+      return new Response(
+        JSON.stringify({ error: `File is too large. Maximum size is ${sizeMB}MB.` }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Read file as buffer
     const buffer = Buffer.from(await audioFile.arrayBuffer());
     const base64Data = buffer.toString('base64');
-    const fileName = audioFile.name || `lecture-${Date.now()}.m4a`;
-    const mimeType = audioFile.type || 'audio/m4a';
+    const fileName = escapeHtml(audioFile.name || `lecture-${Date.now()}.m4a`);
+    const mimeType = escapeHtml(audioFile.type || 'audio/m4a');
+
+    // Check sessionStorage size before storing
+    const estimatedSize = base64Data.length + JSON.stringify({fileName, mimeType}).length;
+    const maxSessionStorage = 5 * 1024 * 1024; // 5MB sessionStorage limit
+    if (estimatedSize > maxSessionStorage * 0.8) {
+      return new Response(
+        JSON.stringify({
+          error: `File is too large for browser storage (${(estimatedSize / (1024*1024)).toFixed(1)}MB). Maximum is about 4MB. Please use a smaller file.`
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Create an HTML page that stores file in sessionStorage and redirects to app
     const html = `<!DOCTYPE html>
@@ -147,6 +183,15 @@ export default async (req, context) => {
     </div>
     <script>
         try {
+            // Check sessionStorage availability and space
+            const testKey = '__sessionStorage_test__';
+            try {
+                sessionStorage.setItem(testKey, '1');
+                sessionStorage.removeItem(testKey);
+            } catch (e) {
+                throw new Error('sessionStorage is not available or full');
+            }
+
             // Store file data in sessionStorage
             sessionStorage.setItem('sharedAudioData', JSON.stringify({
                 fileName: '${fileName}',
@@ -159,7 +204,8 @@ export default async (req, context) => {
             window.location.replace('/college?shared=true&type=audio');
         } catch (error) {
             console.error('Error storing shared file:', error);
-            document.body.innerHTML = '<p>Error: ' + error.message + '</p>';
+            const errorMsg = error?.message || 'Unknown error occurred';
+            document.body.innerHTML = '<p>Error: ' + (errorMsg.length > 100 ? errorMsg.substring(0, 100) + '...' : errorMsg).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c])) + '</p>';
         }
     </script>
 </body>
@@ -175,6 +221,7 @@ export default async (req, context) => {
 
   } catch (error) {
     console.error('Share handler error:', error);
+    const errorMsg = escapeHtml(error?.message || 'Failed to process shared file');
     return new Response(
       `<!DOCTYPE html>
 <html>
@@ -193,7 +240,7 @@ export default async (req, context) => {
 </head>
 <body>
     <h2>Error Processing File</h2>
-    <p>${error.message || 'Failed to process shared file'}</p>
+    <p>${errorMsg}</p>
     <p><a href="/" style="color: white;">Return to app</a></p>
 </body>
 </html>`,
