@@ -9,7 +9,9 @@ import FilesView from './components/FilesView';
 import SettingsModal from './components/SettingsModal';
 import TopInstallBanner from './components/TopInstallBanner';
 import ConfirmationModal from './components/ConfirmationModal';
+import OfflineBanner from './components/OfflineBanner';
 import { useRecordings } from './hooks/useRecordings';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
@@ -26,6 +28,7 @@ const viewTitles: Record<View, string> = {
 };
 
 function App() {
+  const isOnline = useOnlineStatus();
   const [view, setView] = useState<View>('personal');
   const [showSettings, setShowSettings] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -392,6 +395,7 @@ function App() {
   return (
     <div className="min-h-screen bg-[#001F3F] flex flex-col text-white overflow-hidden" style={{ height: '100dvh' }}>
       <TopInstallBanner />
+      <OfflineBanner isOnline={isOnline} />
 
       {/* Processing share overlay */}
       {isProcessingShare && (
