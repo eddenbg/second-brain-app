@@ -9,6 +9,7 @@ import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
+import ConfirmationModal from './ConfirmationModal';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -97,6 +98,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [courseSortBy, setCourseSortBy] = useState<'alpha' | 'manual' | 'recent'>(() =>
         (localStorage.getItem('college_sort_by') as 'alpha' | 'manual' | 'recent') || 'alpha'
     );
+    const [confirmDialog, setConfirmDialog] = useState<{ course: string; count: number } | null>(null);
     const [recentAccess, setRecentAccess] = useState<Record<string, number>>(() => {
         try { return JSON.parse(localStorage.getItem('college_recent_access') || '{}'); } catch { return {}; }
     });
@@ -313,8 +315,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                     <button
                                         onClick={() => {
                                             const count = memoriesByCourse[course]?.length || 0;
-                                            const msg = count > 0 ? `Delete "${course}" and all ${count} item${count !== 1 ? 's' : ''} inside it?` : `Delete course "${course}"?`;
-                                            if (window.confirm(msg)) deleteCourse(course);
+                                            setConfirmDialog({ course, count });
                                         }}
                                         className="absolute top-2 right-2 p-1 text-white/20 hover:text-red-400 transition-colors"
                                         aria-label={`Delete ${course}`}
@@ -344,8 +345,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                     <button
                                         onClick={() => {
                                             const count = memoriesByCourse[course]?.length || 0;
-                                            const msg = count > 0 ? `Delete "${course}" and all ${count} item${count !== 1 ? 's' : ''} inside it?` : `Delete course "${course}"?`;
-                                            if (window.confirm(msg)) deleteCourse(course);
+                                            setConfirmDialog({ course, count });
                                         }}
                                         className="flex-shrink-0 p-2 text-white/30 hover:text-red-400 transition-colors"
                                         aria-label={`Delete ${course}`}
@@ -615,6 +615,21 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         if (window.history.state?.collegeModal === 'studyHub') window.history.back();
                         setActiveStudyHub(null);
                     }}
+                />
+            )}
+
+            {confirmDialog && (
+                <ConfirmationModal
+                    title="Delete Course"
+                    message={confirmDialog.count > 0 ? `Delete "${confirmDialog.course}" and all ${confirmDialog.count} item${confirmDialog.count !== 1 ? 's' : ''} inside it?` : `Delete course "${confirmDialog.course}"?`}
+                    confirmText="Delete"
+                    cancelText="Cancel"
+                    isDangerous={true}
+                    onConfirm={() => {
+                        deleteCourse(confirmDialog.course);
+                        setConfirmDialog(null);
+                    }}
+                    onCancel={() => setConfirmDialog(null)}
                 />
             )}
 

@@ -14,6 +14,8 @@ interface AddDocumentModalProps {
 
 type Phase = 'inputChoice' | 'camera' | 'processing' | 'done' | 'error';
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for documents
+
 const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onClose }) => {
     const [phase, setPhase] = useState<Phase>('inputChoice');
     const [statusMessage, setStatusMessage] = useState('Starting camera…');
@@ -78,7 +80,9 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         setStatusMessage('Extracting text…');
 
         try {
-            const base64 = imageDataUrl.split(',')[1];
+            const parts = imageDataUrl.split(',');
+            const base64 = parts[1];
+            if (!base64) throw new Error('Invalid image data');
             const mimeType = imageDataUrl.includes('png') ? 'image/png' : 'image/jpeg';
             const [text, location] = await Promise.all([
                 extractTextFromImage(base64, mimeType),
@@ -111,10 +115,21 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         const file = e.target.files?.[0];
         if (!file) return;
 
+        // Validate file size
+        if (file.size > MAX_FILE_SIZE) {
+            setPhase('error');
+            setStatusMessage(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum is 50MB.`);
+            return;
+        }
+
         const reader = new FileReader();
         reader.onload = (event) => {
             const imageDataUrl = event.target?.result as string;
             processImage(imageDataUrl);
+        };
+        reader.onerror = () => {
+            setPhase('error');
+            setStatusMessage('Failed to read file. Please try again.');
         };
         reader.readAsDataURL(file);
     };

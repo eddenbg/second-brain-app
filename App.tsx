@@ -8,6 +8,7 @@ import ScheduleView from './components/ScheduleView';
 import FilesView from './components/FilesView';
 import SettingsModal from './components/SettingsModal';
 import TopInstallBanner from './components/TopInstallBanner';
+import ConfirmationModal from './components/ConfirmationModal';
 import { useRecordings } from './hooks/useRecordings';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
@@ -40,6 +41,7 @@ function App() {
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ eventId: string } | null>(null);
   // Capture share params immediately on mount before auth loads (prevents race condition)
   const pendingShareRef = useRef<{ url: string; title: string; text: string } | null>(null);
   const [webCategories, setWebCategories] = useState<string[]>(() => {
@@ -278,9 +280,7 @@ function App() {
   };
 
   const deleteCalendarEvent = (eventId: string) => {
-      if (window.confirm('Delete event?')) {
-          setCalendarEvents(prev => prev.filter(e => e.id !== eventId));
-      }
+      setConfirmDialog({ eventId });
   };
 
   // Load Google Calendar events
@@ -477,6 +477,21 @@ function App() {
           onClose={() => toggleSchedule(false)}
           onAddEvent={addCalendarEvent}
           onDeleteEvent={deleteCalendarEvent}
+        />
+      )}
+
+      {confirmDialog && (
+        <ConfirmationModal
+          title="Delete Event"
+          message="Are you sure you want to delete this event?"
+          confirmText="Delete"
+          cancelText="Cancel"
+          isDangerous={true}
+          onConfirm={() => {
+            setCalendarEvents(prev => prev.filter(e => e.id !== confirmDialog.eventId));
+            setConfirmDialog(null);
+          }}
+          onCancel={() => setConfirmDialog(null)}
         />
       )}
 

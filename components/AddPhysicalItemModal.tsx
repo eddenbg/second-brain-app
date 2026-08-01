@@ -16,6 +16,8 @@ interface AddPhysicalItemModalProps {
     onSave: (memory: Omit<PhysicalItemMemory | VideoItemMemory, 'id' | 'date' | 'category'>) => void;
 }
 
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB limit for videos and images
+
 const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, onSave }) => {
     const [mode, setMode] = useState<'photo' | 'video'>('photo');
     const [title, setTitle] = useState('');
@@ -98,18 +100,38 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const result = e.target?.result as string;
-                if (mode === 'photo') setImageDataUrl(result);
-                else setVideoDataUrl(result);
-                stopCamera();
-            };
-            if(mode === 'photo') reader.readAsDataURL(file);
-            else if (file.type.startsWith('video/')) reader.readAsDataURL(file);
-            else setError('Please select a valid video file.');
+        if (!file) return;
+
+        // Validate file size
+        if (file.size > MAX_FILE_SIZE) {
+            setError(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum is 200MB.`);
+            return;
         }
+
+        // Validate file type
+        if (mode === 'photo') {
+            if (!file.type.startsWith('image/')) {
+                setError('Please select a valid image file.');
+                return;
+            }
+        } else if (mode === 'video') {
+            if (!file.type.startsWith('video/')) {
+                setError('Please select a valid video file.');
+                return;
+            }
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const result = e.target?.result as string;
+            if (mode === 'photo') setImageDataUrl(result);
+            else setVideoDataUrl(result);
+            stopCamera();
+        };
+        reader.onerror = () => {
+            setError('Failed to read file. Please try again.');
+        };
+        reader.readAsDataURL(file);
     };
     
     const startRecording = async () => {

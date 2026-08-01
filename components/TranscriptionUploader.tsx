@@ -16,6 +16,8 @@ interface TranscriptionUploaderProps {
   };
 }
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB limit for audio files
+
 const TranscriptionUploader: React.FC<TranscriptionUploaderProps> = ({ preloadedFile }) => {
   const [transcript, setTranscript] = useState<TranscriptionResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -72,6 +74,12 @@ const TranscriptionUploader: React.FC<TranscriptionUploaderProps> = ({ preloaded
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      setError(`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum is 50MB.`);
+      return;
+    }
 
     // Validate file type
     const validTypes = ['audio/mpeg', 'audio/mp4', 'audio/m4a', 'audio/wav', 'audio/webm'];

@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { NotebookData, DrawingStroke, StrokePoint } from '../types';
 import { PenToolIcon, EraserIcon, FilePlusIcon, TrashIcon, XIcon, CheckIcon, Loader2Icon } from './Icons';
+import ConfirmationModal from './ConfirmationModal';
 import { extractHandwritingFromImage } from '../services/geminiService';
 
 interface LectureNotebookProps {
@@ -23,6 +24,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>>([]);
     const [hasLassoSelection, setHasLassoSelection] = useState(false);
     const [lastLassoSelection, setLastLassoSelection] = useState<{ x: number; y: number; minX: number; minY: number; maxX: number; maxY: number } | null>(null);;
+    const [showClearConfirm, setShowClearConfirm] = useState(false);
 
     // Undo/Redo stacks
     const [undoStack, setUndoStack] = useState<DrawingStroke[][]>([]);
@@ -294,16 +296,19 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     };
 
     const clearCanvas = () => {
-        if (window.confirm("Clear all notes?")) {
-            setStrokes([]);
-            setUndoStack([]);
-            setRedoStack([]);
-            const canvas = canvasRef.current;
-            const ctx = canvas?.getContext('2d');
-            if (ctx && canvas) {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            }
+        setShowClearConfirm(true);
+    };
+
+    const handleClearConfirm = () => {
+        setStrokes([]);
+        setUndoStack([]);
+        setRedoStack([]);
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext('2d');
+        if (ctx && canvas) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
+        setShowClearConfirm(false);
     };
 
     const handleUndo = () => {
@@ -460,6 +465,18 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </div>
             )}
 
+
+            {showClearConfirm && (
+                <ConfirmationModal
+                    title="Clear Notes"
+                    message="Are you sure you want to clear all notes? This cannot be undone."
+                    confirmText="Clear"
+                    cancelText="Cancel"
+                    isDangerous={true}
+                    onConfirm={handleClearConfirm}
+                    onCancel={() => setShowClearConfirm(false)}
+                />
+            )}
 
             {!isRecording && strokes.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
