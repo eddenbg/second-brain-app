@@ -26,7 +26,7 @@ export const StudyChat: React.FC<{ memories: AnyMemory[]; initialContext: string
         setIsLoading(true);
         try {
             const contextPrompt = `RESEARCH CONTEXT: ${initialContext}\n\nUSER QUESTION: ${q}`;
-            const response = await answerQuestionFromContext(memories, [], contextPrompt);
+            const response = await answerQuestionFromContext(memories, [], contextPrompt, []);
             setMessages(prev => [...prev, { sender: 'ai', text: response }]);
         } catch {
             setMessages(prev => [...prev, { sender: 'ai', text: 'Error connecting to your Second Brain.' }]);

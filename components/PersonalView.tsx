@@ -876,9 +876,9 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                                     type="checkbox"
                                                     checked={item.done}
                                                     onChange={() => {
-                                                        const updated = { ...selectedItem } as VoiceMemory;
-                                                        updated.actionItems![idx].done = !item.done;
-                                                        onUpdate(updated);
+                                                        if (selectedItem) {
+                                                            onUpdateMemory(selectedItem.id, { actionItems: selectedItem.actionItems?.map((ai, i) => i === idx ? { ...ai, done: !ai.done } : ai) });
+                                                        }
                                                     }}
                                                     className="w-5 h-5 rounded accent-orange-400 mt-0.5 cursor-pointer"
                                                 />

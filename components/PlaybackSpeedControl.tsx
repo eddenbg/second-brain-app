@@ -1,11 +1,11 @@
-import React from 'lucide-react';
+import React from 'react';
 
 interface PlaybackSpeedControlProps {
     currentSpeed: number;
     onSpeedChange: (speed: number) => void;
 }
 
-const PlaybackSpeedControl: React.FC<PlaybackSpeedControlProps> = ({ currentSpeed, onSpeedChange }) => {
+const PlaybackSpeedControl: React.FC<PlaybackSpeedControlProps> = ({ currentSpeed, onSpeedChange }: PlaybackSpeedControlProps) => {
     const speeds = [0.75, 1, 1.25, 1.5, 2];
 
     return (

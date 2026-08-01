@@ -157,9 +157,6 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     const data = JSON.parse(sharedData);
                     setSharedAudioData(data);
                     window.history.replaceState({}, '', '/college');
-                    // Auto-navigate to transcribe view
-                    window.history.pushState({ collegeView: 'transcribe' }, '');
-                    setView('transcribe');
                     // Clear after 1 second to avoid issues
                     setTimeout(() => sessionStorage.removeItem('sharedAudioData'), 1000);
                 }
@@ -548,9 +545,9 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                                         type="checkbox"
                                                         checked={item.done}
                                                         onChange={() => {
-                                                            const updated = { ...selectedItem } as VoiceMemory;
-                                                            updated.actionItems![idx].done = !item.done;
-                                                            onUpdate(updated);
+                                                            if (selectedItem) {
+                                                                onUpdate(selectedItem.id, { actionItems: selectedItem.actionItems?.map((ai, i) => i === idx ? { ...ai, done: !ai.done } : ai) });
+                                                            }
                                                         }}
                                                         className="w-5 h-5 rounded accent-orange-400 mt-0.5 cursor-pointer"
                                                     />
