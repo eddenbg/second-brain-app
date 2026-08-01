@@ -1,4 +1,5 @@
 import type { CalendarEvent, MoodleCourse, MoodleContent } from '../types';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 /**
  * All Moodle requests are now routed through a Netlify function proxy
@@ -7,7 +8,7 @@ import type { CalendarEvent, MoodleCourse, MoodleContent } from '../types';
 
 export const loginWithCredentials = async (username: string, password: string): Promise<string> => {
     const url = `/api/moodleProxy?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url, { timeout: 45000 });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Login failed');
     if (!data.token) throw new Error('No token returned. Check your username/password.');
@@ -18,7 +19,7 @@ export const testMoodleConnection = async (token: string): Promise<boolean> => {
     if (!token) return false;
     try {
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_webservice_get_site_info`;
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url, { timeout: 30000 });
         if (!response.ok) return false;
         const data = await response.json();
         return !data.exception && !data.error;
@@ -32,7 +33,7 @@ export const fetchMoodleEvents = async (token: string): Promise<CalendarEvent[]>
     try {
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events`;
         console.log(`[MoodleService] Fetching events...`);
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url, { timeout: 45000 });
         
         if (!response.ok) {
             const text = await response.text();
@@ -76,7 +77,7 @@ export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]>
         // Switched to a more reliable Moodle function to fetch courses for the current user.
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_course_get_enrolled_courses_by_timeline_classification&classification=inprogress`;
         console.log(`[MoodleService] Fetching courses...`);
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url, { timeout: 45000 });
         
         if (!response.ok) {
             const text = await response.text();
@@ -109,7 +110,7 @@ export const fetchCourseContents = async (token: string, courseId: number): Prom
     try {
         const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_course_get_contents&courseid=${courseId}`;
         console.log(`[MoodleService] Fetching contents for course ${courseId}...`);
-        const response = await fetch(url);
+        const response = await fetchWithTimeout(url, { timeout: 45000 });
         
         if (!response.ok) {
             const text = await response.text();

@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+
 const NOTION_TOKEN_KEY = 'notion_integration_token';
 const NOTION_CLIENT_ID_KEY = 'notion_client_id';
 const NOTION_CLIENT_SECRET_KEY = 'notion_client_secret';
@@ -38,7 +40,7 @@ export const searchNotionPages = async (token: string, query = ''): Promise<Noti
     const params = new URLSearchParams({ token, action: 'search' });
     if (query) params.set('query', query);
 
-    const res = await fetch(`${PROXY}?${params}`);
+    const res = await fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
@@ -58,10 +60,11 @@ const blockToText = (block: any): string => {
 };
 
 export const createScanPage = async (token: string, title: string, text: string, parentPageId: string): Promise<string> => {
-    const res = await fetch(PROXY, {
+    const res = await fetchWithTimeout(PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, action: 'createPage', title, text, parentPageId }),
+        timeout: 30000,
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
@@ -70,7 +73,7 @@ export const createScanPage = async (token: string, title: string, text: string,
 
 export const fetchNotionPageContent = async (token: string, pageId: string): Promise<string> => {
     const params = new URLSearchParams({ token, action: 'blocks', pageId });
-    const res = await fetch(`${PROXY}?${params}`);
+    const res = await fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 });
     if (!res.ok) return '';
     const data = await res.json();
     return (data.results || []).map(blockToText).filter(Boolean).join('\n').slice(0, 8000);
