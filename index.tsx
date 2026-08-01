@@ -4,6 +4,16 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './GlobalStyles.css';
 
+// Register service worker for PWA offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    const swUrl = new URL('sw.js', window.location.href).href;
+    navigator.serviceWorker.register(swUrl).catch((error) => {
+      console.warn('Service Worker registration failed:', error);
+    });
+  });
+}
+
 // Capture beforeinstallprompt as early as possible (before React mounts)
 // Stored on window to avoid circular module imports
 (window as any).__installPrompt = null;
