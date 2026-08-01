@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { MicIcon, BookOpenIcon, BrainCircuitIcon, CameraIcon, GlobeIcon, SettingsIcon, CalendarIcon, FolderIcon } from './Icons';
-import type { View } from '../App';
+import type { View } from './BottomNavBar';
 
 interface SidebarProps {
   view: View;
@@ -51,12 +51,10 @@ const Sidebar: React.FC<SidebarProps> = ({ view, setView, onOpenSettings, onOpen
         </div>
 
         <div className="flex-grow space-y-3">
+            <SidebarItem label="Personal" icon={<MicIcon />} isActive={view === 'personal'} onClick={() => setView('personal')} />
             <SidebarItem label="College" icon={<BookOpenIcon />} isActive={view === 'college'} onClick={() => setView('college')} />
-            <SidebarItem label="Items" icon={<CameraIcon />} isActive={view === 'physical'} onClick={() => setView('physical')} />
-            <SidebarItem label="Files" icon={<FolderIcon />} isActive={view === 'files'} onClick={() => setView('files')} />
             <SidebarItem label="Ask AI" icon={<BrainCircuitIcon />} isActive={view === 'askai'} onClick={() => setView('askai')} />
-            <SidebarItem label="Web Clips" icon={<GlobeIcon />} isActive={view === 'webclips'} onClick={() => setView('webclips')} />
-            <SidebarItem label="Personal" icon={<MicIcon />} isActive={view === 'voicenotes'} onClick={() => setView('voicenotes')} />
+            <SidebarItem label="Files" icon={<FolderIcon />} isActive={view === 'files'} onClick={() => setView('files')} />
         </div>
 
         <div className="space-y-3 pt-6 border-t border-gray-800">

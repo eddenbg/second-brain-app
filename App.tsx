@@ -131,7 +131,7 @@ function App() {
                 title: item.name,
                 category: 'college',
                 course: mc.fullname,
-                url: item.fileurl,
+                fileUrl: item.fileurl,
                 mimeType: item.mimetype,
               } as Omit<FileMemory, 'id' | 'date'>);
             }

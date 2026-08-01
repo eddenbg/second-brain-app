@@ -20,7 +20,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [extractedText, setExtractedText] = useState<string | null>(null);
     const [isExtracting, setIsExtracting] = useState(false);
     const [showTextModal, setShowTextModal] = useState(false);
-    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>([]);
+    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>>([]);
     const [hasLassoSelection, setHasLassoSelection] = useState(false);
     const [lastLassoSelection, setLastLassoSelection] = useState<{ x: number; y: number; minX: number; minY: number; maxX: number; maxY: number } | null>(null);;
 
@@ -66,7 +66,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             });
 
             // Draw text annotations
-            textAnnotations.forEach(annotation => {
+            textAnnotations.forEach((annotation: { text: string; x: number; y: number; id: string }) => {
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = 'bold 24px Arial, sans-serif';
                 ctx.strokeStyle = '#000000';
@@ -239,7 +239,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             const text = await extractHandwritingFromImage(base64);
 
             // Add text annotation to canvas at the stroke location
-            setTextAnnotations(prev => [...prev, {
+            setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
                 text: text.trim(),
                 x: minX,
                 y: maxY + 30,
@@ -274,7 +274,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 const text = await extractHandwritingFromImage(base64);
 
                 // Add text annotation at the selected area (replace handwriting)
-                setTextAnnotations(prev => [...prev, {
+                setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
                     text: text.trim(),
                     x: minX,
                     y: minY + (cropCanvas.height / 2),
