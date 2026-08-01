@@ -46,6 +46,34 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         onUpdate({ strokes, backgroundImageUrl: bgImage });
     }, [strokes, bgImage, onUpdate]);
 
+    // Handle canvas resize to match container size
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const resizeCanvas = () => {
+            const parent = canvas.parentElement;
+            if (!parent) return;
+
+            const rect = parent.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            // Set canvas resolution to match display size
+            canvas.width = Math.floor(rect.width * dpr);
+            canvas.height = Math.floor(rect.height * dpr);
+
+            // Scale context to account for device pixel ratio
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.scale(dpr, dpr);
+            }
+        };
+
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        return () => window.removeEventListener('resize', resizeCanvas);
+    }, []);
+
     // Redraw canvas when strokes or text annotations change
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -420,12 +448,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     </div>
                 )}
 
-                <div className={`relative ${bgImage ? 'flex-1' : 'w-full'}`}>
+                <div className={`relative ${bgImage ? 'flex-1' : 'w-full'}`} style={{ display: 'flex' }}>
                     <canvas
                         ref={canvasRef}
-                        width={1200}
-                        height={1600}
                         className="w-full h-full touch-none cursor-crosshair"
+                        style={{ display: 'block', maxWidth: '100%', maxHeight: '100%' }}
                         onMouseDown={startDrawing}
                         onMouseMove={draw}
                         onMouseUp={stopDrawing}
