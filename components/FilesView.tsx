@@ -31,6 +31,8 @@ const MediaPreviewDrawer: React.FC<{
 }> = ({ memory, onClose, onUpdate }) => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [listeningMode, setListeningMode] = useState<'full' | 'summary' | null>(null);
+    const [generatedSummary, setGeneratedSummary] = useState<string | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -42,15 +44,29 @@ const MediaPreviewDrawer: React.FC<{
         };
     }, []);
 
-    const toggleAudio = async () => {
+    const toggleAudio = async (mode: 'full' | 'summary') => {
         if (isPlaying) {
             audioSourceRef.current?.stop();
             setIsPlaying(false);
+            setListeningMode(null);
             return;
         }
-        const textToRead = (memory as VoiceMemory).transcript || (memory as DocumentMemory).extractedText || (memory as FileMemory).summary || memory.title;
+
+        let textToRead = '';
+        if (memory.type === 'file') {
+            if (mode === 'summary') {
+                textToRead = (memory as FileMemory).summary || generatedSummary || '';
+            } else {
+                // For full article, read title + summary or available content
+                textToRead = `Article: ${memory.title}. ` + ((memory as FileMemory).summary || 'Article content available via link.');
+            }
+        } else {
+            textToRead = (memory as VoiceMemory).transcript || (memory as DocumentMemory).extractedText || (memory as FileMemory).summary || memory.title;
+        }
+
         if (!textToRead) return;
         setIsGenerating(true);
+        setListeningMode(mode);
         try {
             const audioB64 = await generateSpeechFromText(textToRead);
             if (audioB64 && audioContextRef.current) {
@@ -59,7 +75,7 @@ const MediaPreviewDrawer: React.FC<{
                 const source = audioContextRef.current.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioContextRef.current.destination);
-                source.onended = () => setIsPlaying(false);
+                source.onended = () => { setIsPlaying(false); setListeningMode(null); };
                 source.start(0);
                 audioSourceRef.current = source;
                 setIsPlaying(true);
@@ -96,11 +112,17 @@ const MediaPreviewDrawer: React.FC<{
                             <div className="bg-indigo-900/30 p-10 rounded-full border-4 border-indigo-500 shadow-2xl">
                                 <FileTextIcon className="w-20 h-20 text-indigo-400" />
                             </div>
-                            <button onClick={toggleAudio} disabled={isGenerating} className="px-10 py-5 bg-teal-600 text-white font-black rounded-3xl text-xl shadow-xl flex items-center gap-4">
-                                {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <StopCircleIcon className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
-                                {isPlaying ? 'STOP READING' : 'READ SUMMARY'}
-                            </button>
-                            <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">
+                            <div className="flex flex-col gap-4 w-full">
+                                <button onClick={() => toggleAudio('full')} disabled={isGenerating} className="px-10 py-5 bg-blue-600 text-white font-black rounded-3xl text-lg shadow-xl flex items-center justify-center gap-4">
+                                    {isGenerating && listeningMode === 'full' ? <Loader2Icon className="w-7 h-7 animate-spin" /> : isPlaying && listeningMode === 'full' ? <StopCircleIcon className="w-7 h-7" /> : <Volume2Icon className="w-7 h-7" />}
+                                    {isPlaying && listeningMode === 'full' ? 'STOP READING' : 'LISTEN TO ARTICLE'}
+                                </button>
+                                <button onClick={() => toggleAudio('summary')} disabled={isGenerating} className="px-10 py-5 bg-purple-600 text-white font-black rounded-3xl text-lg shadow-xl flex items-center justify-center gap-4">
+                                    {isGenerating && listeningMode === 'summary' ? <Loader2Icon className="w-7 h-7 animate-spin" /> : isPlaying && listeningMode === 'summary' ? <StopCircleIcon className="w-7 h-7" /> : <Volume2Icon className="w-7 h-7" />}
+                                    {isPlaying && listeningMode === 'summary' ? 'STOP READING' : 'LISTEN TO GIST'}
+                                </button>
+                            </div>
+                            <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest text-sm">
                                 {(memory as FileMemory).sourceType === 'drive' ? 'Open in Drive' : 'Download Original'}
                             </a>
                         </div>
