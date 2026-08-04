@@ -126,7 +126,7 @@ export async function extractTextFromImage(base64Data: string, mimeType: string)
             contents: { 
                 parts: [
                     { inlineData: { mimeType, data: base64Data } }, 
-                    { text: `Extract all text from this image exactly as written. Support both printed and handwritten text in Hebrew or English. Preserve line breaks and original layout.` }
+                    { text: `Extract all text from this image exactly as written. PRIORITIZE Hebrew first, then English if present. Support both printed and handwritten text. Preserve line breaks and original layout. Return text in the language it was written.` }
                 ] 
             },
         });
@@ -389,7 +389,7 @@ export async function extractHandwritingFromImage(base64Data: string): Promise<s
                 {
                     parts: [
                         { inlineData: { mimeType: 'image/png', data: base64Data } },
-                        { text: `Extract all handwritten text from this image. Support both Hebrew (RTL) and English. Return the text exactly as written, preserving line breaks and layout when possible. If there are multiple sections, separate them with line breaks. Return ONLY the extracted text, no explanations.` }
+                        { text: `Extract all handwritten text from this image. PRIORITIZE Hebrew (RTL) first, then English if present. Return the text exactly as written, preserving line breaks and layout when possible. If there are multiple sections, separate them with line breaks. Return ONLY the extracted text, no explanations.` }
                     ]
                 }
             ]

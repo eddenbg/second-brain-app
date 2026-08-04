@@ -163,6 +163,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
             await onSignIn();
             setIsGoogleConnected(!!getStoredToken());
             setIsDriveConnected(!!getStoredDriveToken());
+            // Close modal after successful sign-in
+            setTimeout(() => onClose(), 500);
         } catch (e: any) {
             if (e.code === 'auth/unauthorized-domain') {
                 setSignInError('Domain not authorized. Go to Firebase Console → Authentication → Settings → Authorized domains and add eddenbg-second-brain.netlify.app');
