@@ -10,6 +10,7 @@ import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
 import ConfirmationModal from './ConfirmationModal';
+import MoodlePickerModal from './MoodlePickerModal';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -104,6 +105,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     });
     const [fileFilter, setFileFilter] = useState<'all' | 'recordings' | 'docs'>('all');
     const [sharedAudioData, setSharedAudioData] = useState<any | null>(null);
+    const [showMoodlePicker, setShowMoodlePicker] = useState(false);
+    const [importedMoodleUrls, setImportedMoodleUrls] = useState<Set<string>>(new Set());
 
     // Study Session
     const [showStudyPrompt, setShowStudyPrompt] = useState(false);
@@ -195,6 +198,21 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         setMainTab('courses');
     };
 
+    const handleImportMoodleContent = (content: any, courseId: number, courseName: string) => {
+        if (content.fileurl) {
+            const url = content.fileurl;
+            setImportedMoodleUrls(prev => new Set(prev).add(url));
+            onSave({
+                type: 'file',
+                title: content.name,
+                category: 'college',
+                course: courseName,
+                url: url,
+                source: 'moodle'
+            });
+        }
+    };
+
     const handleGenerateStudy = async (focus: string, type: 'written' | 'audio' | 'video' | 'research') => {
         if (!selectedCourse) return;
         const courseMaterials = memoriesByCourse[selectedCourse] || [];
@@ -227,18 +245,33 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         if (view === 'list') {
             return (
                 <div className="flex flex-col gap-6">
-                    {/* General scan button */}
-                    <button
-                        onClick={() => { window.history.pushState({ collegeView: 'generalScan' }, ''); setView('generalScan'); }}
-                        aria-label="Scan a general college document"
-                        className="w-full h-24 bg-white text-[#001F3F] rounded-3xl flex items-center justify-center gap-4"
-                    >
-                        <Camera className="w-12 h-12" strokeWidth={3} />
-                        <div className="text-left">
-                            <div className="text-lg font-black uppercase">Scan College Doc</div>
-                            <div className="text-sm opacity-60">Timetable, handouts, etc.</div>
-                        </div>
-                    </button>
+                    {/* General scan button and Moodle button */}
+                    <div className="flex gap-3">
+                        <button
+                            onClick={() => { window.history.pushState({ collegeView: 'generalScan' }, ''); setView('generalScan'); }}
+                            aria-label="Scan a general college document"
+                            className="flex-1 h-24 bg-white text-[#001F3F] rounded-3xl flex items-center justify-center gap-4"
+                        >
+                            <Camera className="w-12 h-12" strokeWidth={3} />
+                            <div className="text-left">
+                                <div className="text-lg font-black uppercase">Scan Doc</div>
+                                <div className="text-sm opacity-60">Handout, timetable, etc.</div>
+                            </div>
+                        </button>
+                        {moodleToken && (
+                            <button
+                                onClick={() => setShowMoodlePicker(true)}
+                                aria-label="Browse Moodle files"
+                                className="flex-1 h-24 bg-[#f98012] text-white rounded-3xl flex items-center justify-center gap-4"
+                            >
+                                <Folder className="w-12 h-12" strokeWidth={3} />
+                                <div className="text-left">
+                                    <div className="text-lg font-black uppercase">Moodle Files</div>
+                                    <div className="text-sm opacity-70">Browse courses</div>
+                                </div>
+                            </button>
+                        )}
+                    </div>
 
                     {/* New course input */}
                     <div className="flex gap-3">
@@ -733,6 +766,15 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         onOpenMemory={handleOpenMemory}
                     />
                 </div>
+            )}
+
+            {showMoodlePicker && moodleToken && (
+                <MoodlePickerModal
+                    token={moodleToken}
+                    onClose={() => setShowMoodlePicker(false)}
+                    onImport={handleImportMoodleContent}
+                    importedUrls={importedMoodleUrls}
+                />
             )}
         </div>
     );

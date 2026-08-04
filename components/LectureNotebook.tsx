@@ -34,6 +34,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const isDrawingRef = useRef(false);
     const currentStrokeRef = useRef<DrawingStroke | null>(null);
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
+    const eraserPositionsRef = useRef<{ x: number; y: number }[]>([]);
 
     // Fixed white color for better contrast against blue background
     const PEN_COLOR = '#FFFFFF';
@@ -133,14 +134,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         if (tool === 'lasso') {
             lassoPointsRef.current = [pos];
         } else if (tool === 'eraser') {
-            // Eraser removes strokes instead of drawing
-            const eraserRadius = ERASER_WIDTH / 2;
-            setStrokes(prev => prev.filter(stroke => {
-                // Keep strokes that don't intersect with eraser
-                return !stroke.points.some(p =>
-                    Math.hypot(p.x - pos.x, p.y - pos.y) < eraserRadius
-                );
-            }));
+            eraserPositionsRef.current = [pos];
         } else {
             currentStrokeRef.current = {
                 color: PEN_COLOR,
@@ -182,13 +176,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 ctx.setLineDash([]);
             }
         } else if (tool === 'eraser') {
-            // Eraser removes strokes as you drag
-            const eraserRadius = ERASER_WIDTH / 2;
-            setStrokes(prev => prev.filter(stroke => {
-                return !stroke.points.some(p =>
-                    Math.hypot(p.x - pos.x, p.y - pos.y) < eraserRadius
-                );
-            }));
+            eraserPositionsRef.current.push(pos);
         } else if (currentStrokeRef.current) {
             currentStrokeRef.current.points.push({ ...pos, t: timestamp });
             const ctx = canvasRef.current.getContext('2d');
@@ -216,6 +204,23 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             setLastLassoSelection({ x: minX, y: minY, minX, minY, maxX, maxY });
             setHasLassoSelection(true);
             lassoPointsRef.current = [];
+        } else if (tool === 'eraser' && eraserPositionsRef.current.length > 0) {
+            // Batch eraser updates - only update state once when erasing stops
+            const eraserRadius = ERASER_WIDTH / 2;
+            const positions = eraserPositionsRef.current;
+            setStrokes(prev => {
+                const updated = prev.filter(stroke => {
+                    return !stroke.points.some(p =>
+                        positions.some(pos => Math.hypot(p.x - pos.x, p.y - pos.y) < eraserRadius)
+                    );
+                });
+                if (updated.length < prev.length) {
+                    setUndoStack(undoStack => [...undoStack, prev]);
+                    setRedoStack([]);
+                }
+                return updated;
+            });
+            eraserPositionsRef.current = [];
         } else if (currentStrokeRef.current) {
             setStrokes(prev => {
                 const newStrokes = [...prev, currentStrokeRef.current!];
