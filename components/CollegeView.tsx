@@ -11,6 +11,7 @@ import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
 import ConfirmationModal from './ConfirmationModal';
 import MoodlePickerModal from './MoodlePickerModal';
+import NotebookViewer from './NotebookViewer';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -588,6 +589,19 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                                 </li>
                                             ))}
                                         </ul>
+                                    </div>
+                                )}
+                                {(selectedItem as VoiceMemory).notebook && (
+                                    <div>
+                                        <h3 className="font-black text-purple-400 uppercase text-sm tracking-widest mb-3">My Lecture Notes</h3>
+                                        <NotebookViewer
+                                            notebook={(selectedItem as VoiceMemory).notebook!}
+                                            audioElement={
+                                                (selectedItem as VoiceMemory).audioDataUrl
+                                                    ? (document.querySelector('audio') as HTMLAudioElement)
+                                                    : undefined
+                                            }
+                                        />
                                     </div>
                                 )}
                                 <div>
