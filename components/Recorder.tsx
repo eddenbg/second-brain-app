@@ -46,7 +46,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [privacyMode, setPrivacyMode] = useState(false);
     const [notebookData, setNotebookData] = useState<NotebookData | null>(null);
     const [recordingTime, setRecordingTime] = useState(0);
-    const [showTranscriptPanel, setShowTranscriptPanel] = useState(true);
+    const [showSummarize, setShowSummarize] = useState(false);
+    const [summaryText, setSummaryText] = useState<string>('');
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -341,21 +342,37 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
+    const handleSummarize = async () => {
+        setIsProcessing(true);
+        try {
+            const lectureAnalysis = await summarizeLectureTranscript(transcript);
+            setSummaryText(lectureAnalysis.summary || 'Could not generate summary. Please try again.');
+        } catch(e) {
+            console.error("Summarization failed", e);
+            setSummaryText('Error generating summary. Please try again.');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleSave = async () => {
         setIsProcessing(true);
         try {
             const analysis = await analyzeVoiceNote(transcript);
             const location = await getCurrentLocation();
 
-            let summary = '';
+            let summary = summaryText || '';
             let lectureActionItems: Array<{ text: string; done: boolean }> = [];
 
-            try {
-                const lectureAnalysis = await summarizeLectureTranscript(transcript);
-                summary = lectureAnalysis.summary;
-                lectureActionItems = lectureAnalysis.actionItems;
-            } catch (summaryError) {
-                console.warn('Could not generate lecture summary', summaryError);
+            // If we don't have a summary yet, generate it
+            if (!summary) {
+                try {
+                    const lectureAnalysis = await summarizeLectureTranscript(transcript);
+                    summary = lectureAnalysis.summary;
+                    lectureActionItems = lectureAnalysis.actionItems;
+                } catch (summaryError) {
+                    console.warn('Could not generate lecture summary', summaryError);
+                }
             }
 
             const newMemory: Omit<VoiceMemory, 'id' | 'date' | 'category'> = {
@@ -379,17 +396,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
     };
     
-    // Full-screen recording mode with notebook + live transcript (Samsung Notes-like)
+    // Full-screen recording mode with notebook (transcription happens silently in background)
     if (isRecording && !audioOnly && captureMode !== 'remote') {
-        const transcriptRef = useRef<HTMLDivElement>(null);
-
-        // Auto-scroll transcript to bottom as new content arrives
-        useEffect(() => {
-            if (transcriptRef.current) {
-                transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
-            }
-        }, [transcript]);
-
         return (
             <div className="fixed inset-0 bg-black z-[100] flex flex-col">
                 {/* Privacy screen overlay */}
@@ -418,19 +426,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         {formatTime(recordingTime)}
                     </button>
 
-                    {/* Transcript toggle button */}
+                    {/* Listening indicator in center */}
                     <div className="flex-1 flex justify-center">
-                        <button
-                            onClick={() => setShowTranscriptPanel(!showTranscriptPanel)}
-                            className={`px-4 py-2 rounded-full font-black text-sm uppercase transition-all ${
-                                showTranscriptPanel
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-700 text-gray-300'
-                            }`}
-                            aria-label={showTranscriptPanel ? 'Hide transcript' : 'Show transcript'}
-                        >
-                            {transcript ? `📝 Transcript ${transcript.length > 0 ? '✓' : ''}` : '📝 Listening...'}
-                        </button>
+                        <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
+                            🎙️ Recording (Transcribing in background)
+                        </div>
                     </div>
 
                     {/* Control buttons at top right */}
@@ -453,61 +453,18 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     </div>
                 </div>
 
-                {/* Split-screen: Drawing canvas (left) + Live transcript (right) */}
-                <div className="flex-1 overflow-hidden flex gap-2 p-2 bg-black">
-                    {/* Drawing Canvas - takes remaining space if transcript is hidden */}
-                    <div className={`flex flex-col transition-all ${showTranscriptPanel ? 'flex-1' : 'flex-1'}`}>
-                        <LectureNotebook
-                            onUpdate={setNotebookData}
-                            startTime={startTimeRef.current}
-                            isRecording={isRecording}
-                        />
-                    </div>
-
-                    {/* Live Transcript Panel - appears on right when visible */}
-                    {showTranscriptPanel && (
-                        <div className="w-1/3 min-w-[300px] bg-gray-900/80 border-2 border-blue-600 rounded-xl flex flex-col overflow-hidden backdrop-blur">
-                            <div className="px-4 py-3 bg-blue-600/20 border-b border-blue-600/50">
-                                <h3 className="text-sm font-black text-blue-400 uppercase tracking-widest">Live Transcript</h3>
-                            </div>
-
-                            {/* Scrollable transcript area */}
-                            <div
-                                ref={transcriptRef}
-                                className="flex-1 overflow-y-auto px-4 py-4 space-y-2 text-sm leading-relaxed scroll-smooth"
-                            >
-                                {transcript ? (
-                                    <div className="text-white/90 whitespace-pre-wrap">
-                                        {structuredTranscript.length > 0 ? (
-                                            structuredTranscript.map((segment, idx) => (
-                                                <span key={idx} className="block mb-2">
-                                                    {segment.text.includes('VISUAL NOTE:') ? (
-                                                        <span className="text-green-400 font-bold italic">{segment.text}</span>
-                                                    ) : (
-                                                        segment.text
-                                                    )}
-                                                </span>
-                                            ))
-                                        ) : (
-                                            <span className="text-gray-400">{transcript}</span>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <p className="text-gray-500 text-xs italic">Listening to lecture...</p>
-                                )}
-                            </div>
-
-                            {/* Transcript stats */}
-                            <div className="px-4 py-2 border-t border-gray-700 bg-black/40 text-xs text-gray-400">
-                                <p>Words: {transcript.split(/\s+/).length} | Hebrew + English</p>
-                            </div>
-                        </div>
-                    )}
+                {/* Full-screen drawing canvas (transcription happens silently in background) */}
+                <div className="flex-1 overflow-hidden">
+                    <LectureNotebook
+                        onUpdate={setNotebookData}
+                        startTime={startTimeRef.current}
+                        isRecording={isRecording}
+                    />
                 </div>
 
                 {/* Bottom tip bar */}
                 <div className="bg-black/40 border-t border-white/10 px-4 py-2 text-xs text-gray-400 text-center">
-                    ✍️ Draw/write notes with your stylus or touch • Tap 📝 to hide/show transcript • Use Lasso tool to convert handwriting to text
+                    ✍️ Draw/write notes freely • Use ✍️ EXTRACT to convert handwriting to text • Full transcript appears after you stop
                 </div>
             </div>
         );
@@ -644,9 +601,23 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
              {/* Transcript appears only after stopping */}
              {!isRecording && transcript && (
-                <div className="bg-black/40 p-6 rounded-[2rem] max-h-96 overflow-y-auto border-2 border-white/10 scroll-smooth">
-                    <h4 className="text-xl font-black text-yellow-400 mb-3 uppercase tracking-tight">Lecture Transcript</h4>
-                    <div className="text-white text-lg whitespace-pre-wrap leading-relaxed">
+                <div className="bg-black/40 p-6 rounded-[2rem] border-2 border-white/10 scroll-smooth">
+                    <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-xl font-black text-yellow-400 uppercase tracking-tight">Lecture Transcript</h4>
+                        <button
+                            onClick={() => {
+                                setShowSummarize(true);
+                                setSummaryText('');
+                                handleSummarize();
+                            }}
+                            disabled={isProcessing}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-black text-sm uppercase transition-all disabled:bg-gray-600"
+                            aria-label="Summarize transcript"
+                        >
+                            {isProcessing ? 'Summarizing...' : '✨ Summarize'}
+                        </button>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto mb-4 text-white text-sm leading-relaxed whitespace-pre-wrap">
                         {structuredTranscript.length > 0 ? (
                             structuredTranscript.map((segment, idx) => (
                                 <span
@@ -657,14 +628,75 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                                             videoRef.current.play();
                                         }
                                     }}
-                                    className={`cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300 transition-colors rounded px-1 ${videoDataUrl ? '' : 'pointer-events-none'}`}
+                                    className={`${segment.text.includes('VISUAL NOTE:') ? 'text-green-400 font-bold italic' : 'text-gray-300'} ${videoDataUrl ? 'cursor-pointer hover:bg-yellow-500/30 hover:text-yellow-300' : 'pointer-events-none'} transition-colors rounded px-1`}
                                 >
                                     {segment.text}
                                 </span>
                             ))
                         ) : (
-                            transcript || <span className="text-gray-500">No transcript captured</span>
+                            <span className="text-gray-400">{transcript}</span>
                         )}
+                    </div>
+                    <p className="text-xs text-gray-500">Transcript captured: {transcript.split(/\s+/).filter(Boolean).length} words</p>
+                </div>
+             )}
+
+             {/* Summary Modal - appears after clicking Summarize */}
+             {showSummarize && !isRecording && (
+                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-gray-800 rounded-[2rem] w-full max-w-2xl max-h-[80vh] flex flex-col border-4 border-gray-700 shadow-2xl">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b-2 border-gray-700 flex items-center justify-between shrink-0">
+                            <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Lecture Summary</h3>
+                            <button
+                                onClick={() => setShowSummarize(false)}
+                                className="p-2 bg-gray-700 rounded-xl hover:bg-gray-600 transition-all"
+                                aria-label="Close summary"
+                            >
+                                <XIcon className="w-6 h-6 text-white" />
+                            </button>
+                        </div>
+
+                        {/* Summary Content */}
+                        <div className="flex-grow overflow-y-auto px-6 py-6">
+                            {isProcessing ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                    <Loader2Icon className="w-12 h-12 animate-spin text-blue-500" />
+                                    <p className="text-gray-400 font-bold">Generating summary from transcript...</p>
+                                </div>
+                            ) : summaryText ? (
+                                <div className="space-y-6">
+                                    <div>
+                                        <h4 className="text-sm font-black text-blue-400 uppercase tracking-widest mb-3">Summary</h4>
+                                        <p className="text-white text-lg leading-relaxed whitespace-pre-wrap">
+                                            {summaryText}
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-12 gap-4">
+                                    <p className="text-gray-400 font-bold">No summary generated yet.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 border-t-2 border-gray-700 bg-gray-900/50 flex gap-3">
+                            <button
+                                onClick={() => setShowSummarize(false)}
+                                className="flex-1 py-3 bg-gray-700 text-white rounded-2xl font-black uppercase hover:bg-gray-600 transition-all"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={isProcessing}
+                                className="flex-1 py-3 bg-green-600 text-white rounded-2xl font-black uppercase hover:bg-green-500 disabled:bg-gray-600 transition-all flex items-center justify-center gap-3"
+                            >
+                                {isProcessing ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <SaveIcon className="w-5 h-5" />}
+                                {isProcessing ? 'Saving...' : 'Save Lecture'}
+                            </button>
+                        </div>
                     </div>
                 </div>
              )}
