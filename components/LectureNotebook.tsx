@@ -388,13 +388,13 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </button>
                 <button
                     onClick={() => setTool('lasso')}
-                    className={`p-2 rounded-lg transition-all ${
-                        tool === 'lasso' ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    className={`px-3 py-2 rounded-lg transition-all font-black text-xs uppercase tracking-widest flex items-center gap-1.5 ${
+                        tool === 'lasso' ? 'bg-yellow-600 text-white shadow-lg ring-2 ring-yellow-400' : 'bg-gray-700 text-gray-300 hover:bg-yellow-600/30 hover:text-yellow-400'
                     }`}
-                    aria-label="Lasso Selection Tool"
-                    title="Select handwriting with lasso"
+                    aria-label="Lasso Selection Tool - Convert handwriting to text"
+                    title="Select handwriting area to convert to text (Hebrew priority)"
                 >
-                    ⭕
+                    ✍️ EXTRACT
                 </button>
 
                 {/* Divider */}
@@ -427,11 +427,12 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                         <button
                             onClick={convertLassoAreaToText}
                             disabled={isExtracting}
-                            className="p-2 rounded-lg transition-all bg-green-600 text-white hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            className="px-3 py-2 rounded-lg transition-all bg-green-600 text-white hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg"
                             aria-label="Convert selection to text"
-                            title="Convert handwriting to text"
+                            title="Convert handwriting to text (Hebrew + English)"
                         >
-                            {isExtracting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : 'T'}
+                            {isExtracting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : '🎯'}
+                            {isExtracting ? 'Converting...' : 'CONVERT'}
                         </button>
                     </>
                 )}

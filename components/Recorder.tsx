@@ -46,6 +46,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [privacyMode, setPrivacyMode] = useState(false);
     const [notebookData, setNotebookData] = useState<NotebookData | null>(null);
     const [recordingTime, setRecordingTime] = useState(0);
+    const [showTranscriptPanel, setShowTranscriptPanel] = useState(true);
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -378,8 +379,17 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
     };
     
-    // Full-screen recording mode with notebook
+    // Full-screen recording mode with notebook + live transcript (Samsung Notes-like)
     if (isRecording && !audioOnly && captureMode !== 'remote') {
+        const transcriptRef = useRef<HTMLDivElement>(null);
+
+        // Auto-scroll transcript to bottom as new content arrives
+        useEffect(() => {
+            if (transcriptRef.current) {
+                transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+            }
+        }, [transcript]);
+
         return (
             <div className="fixed inset-0 bg-black z-[100] flex flex-col">
                 {/* Privacy screen overlay */}
@@ -408,7 +418,20 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         {formatTime(recordingTime)}
                     </button>
 
-                    <div className="flex-1" />
+                    {/* Transcript toggle button */}
+                    <div className="flex-1 flex justify-center">
+                        <button
+                            onClick={() => setShowTranscriptPanel(!showTranscriptPanel)}
+                            className={`px-4 py-2 rounded-full font-black text-sm uppercase transition-all ${
+                                showTranscriptPanel
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-700 text-gray-300'
+                            }`}
+                            aria-label={showTranscriptPanel ? 'Hide transcript' : 'Show transcript'}
+                        >
+                            {transcript ? `📝 Transcript ${transcript.length > 0 ? '✓' : ''}` : '📝 Listening...'}
+                        </button>
+                    </div>
 
                     {/* Control buttons at top right */}
                     <div className="flex gap-2">
@@ -430,13 +453,61 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     </div>
                 </div>
 
-                {/* Full-screen canvas */}
-                <div className="flex-1 overflow-hidden">
-                    <LectureNotebook
-                        onUpdate={setNotebookData}
-                        startTime={startTimeRef.current}
-                        isRecording={isRecording}
-                    />
+                {/* Split-screen: Drawing canvas (left) + Live transcript (right) */}
+                <div className="flex-1 overflow-hidden flex gap-2 p-2 bg-black">
+                    {/* Drawing Canvas - takes remaining space if transcript is hidden */}
+                    <div className={`flex flex-col transition-all ${showTranscriptPanel ? 'flex-1' : 'flex-1'}`}>
+                        <LectureNotebook
+                            onUpdate={setNotebookData}
+                            startTime={startTimeRef.current}
+                            isRecording={isRecording}
+                        />
+                    </div>
+
+                    {/* Live Transcript Panel - appears on right when visible */}
+                    {showTranscriptPanel && (
+                        <div className="w-1/3 min-w-[300px] bg-gray-900/80 border-2 border-blue-600 rounded-xl flex flex-col overflow-hidden backdrop-blur">
+                            <div className="px-4 py-3 bg-blue-600/20 border-b border-blue-600/50">
+                                <h3 className="text-sm font-black text-blue-400 uppercase tracking-widest">Live Transcript</h3>
+                            </div>
+
+                            {/* Scrollable transcript area */}
+                            <div
+                                ref={transcriptRef}
+                                className="flex-1 overflow-y-auto px-4 py-4 space-y-2 text-sm leading-relaxed scroll-smooth"
+                            >
+                                {transcript ? (
+                                    <div className="text-white/90 whitespace-pre-wrap">
+                                        {structuredTranscript.length > 0 ? (
+                                            structuredTranscript.map((segment, idx) => (
+                                                <span key={idx} className="block mb-2">
+                                                    {segment.text.includes('VISUAL NOTE:') ? (
+                                                        <span className="text-green-400 font-bold italic">{segment.text}</span>
+                                                    ) : (
+                                                        segment.text
+                                                    )}
+                                                </span>
+                                            ))
+                                        ) : (
+                                            <span className="text-gray-400">{transcript}</span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-500 text-xs italic">Listening to lecture...</p>
+                                )}
+                            </div>
+
+                            {/* Transcript stats */}
+                            <div className="px-4 py-2 border-t border-gray-700 bg-black/40 text-xs text-gray-400">
+                                <p>Words: {transcript.split(/\s+/).length} | Hebrew + English</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Bottom tip bar */}
+                <div className="bg-black/40 border-t border-white/10 px-4 py-2 text-xs text-gray-400 text-center">
+                    ✍️ Draw/write notes with your stylus or touch • Tap 📝 to hide/show transcript • Use Lasso tool to convert handwriting to text
                 </div>
             </div>
         );
