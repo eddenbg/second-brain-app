@@ -115,24 +115,36 @@ export const useRecordings = () => {
         // Memories Listener
         const memoriesRef = collection(db, 'users', user.uid, 'memories');
         const qMemories = query(memoriesRef, orderBy('date', 'desc'));
-        const unsubMemories = onSnapshot(qMemories, (snapshot) => {
-            const remoteMemories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AnyMemory[];
-            setMemories(remoteMemories);
-        });
+        const unsubMemories = onSnapshot(
+            qMemories,
+            (snapshot) => {
+                const remoteMemories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AnyMemory[];
+                setMemories(remoteMemories);
+            },
+            (error) => {
+                console.error('Memories listener error:', error);
+            }
+        );
 
         // Tasks Listener
         const tasksRef = collection(db, 'users', user.uid, 'tasks');
-        const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
-            const remoteTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
-            setTasks(prev => {
-                const pendingIds = pendingTaskIdsRef.current;
-                if (pendingIds.size === 0) return remoteTasks;
-                // Merge: keep optimistic tasks not yet confirmed in remote snapshot
-                const remoteIds = new Set(remoteTasks.map(t => t.id));
-                const stillPending = prev.filter(t => pendingIds.has(t.id) && !remoteIds.has(t.id));
-                return [...remoteTasks, ...stillPending];
-            });
-        });
+        const unsubTasks = onSnapshot(
+            tasksRef,
+            (snapshot) => {
+                const remoteTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
+                setTasks(prev => {
+                    const pendingIds = pendingTaskIdsRef.current;
+                    if (pendingIds.size === 0) return remoteTasks;
+                    // Merge: keep optimistic tasks not yet confirmed in remote snapshot
+                    const remoteIds = new Set(remoteTasks.map(t => t.id));
+                    const stillPending = prev.filter(t => pendingIds.has(t.id) && !remoteIds.has(t.id));
+                    return [...remoteTasks, ...stillPending];
+                });
+            },
+            (error) => {
+                console.error('Tasks listener error:', error);
+            }
+        );
 
         return () => {
             unsubMemories();
@@ -143,18 +155,24 @@ export const useRecordings = () => {
     // 3b. Separate Real-time Listener for Settings to ensure cross-device sync
     useEffect(() => {
         if (!user || !db || (db as any).type === 'mock') return;
-        
+
         const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-        const unsubSettings = onSnapshot(settingsRef, (doc) => {
-            if (doc.exists()) {
-                const data = doc.data();
-                setSavedCourses(data.courses || []);
-                setMoodleToken(data.moodleToken || null);
-            } else {
-                setSavedCourses([]);
-                setMoodleToken(null);
+        const unsubSettings = onSnapshot(
+            settingsRef,
+            (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    setSavedCourses(data.courses || []);
+                    setMoodleToken(data.moodleToken || null);
+                } else {
+                    setSavedCourses([]);
+                    setMoodleToken(null);
+                }
+            },
+            (error) => {
+                console.error('Settings listener error:', error);
             }
-        });
+        );
 
         return () => unsubSettings();
 

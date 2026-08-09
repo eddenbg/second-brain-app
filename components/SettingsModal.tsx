@@ -112,6 +112,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         return () => unsubscribe?.();
     }, []);
 
+    // Auto-close modal when user returns from OAuth redirect
+    useEffect(() => {
+        if (isSigningIn) return; // Don't close while actively signing in
+
+        const token = getStoredToken();
+        if (token && isGoogleConnected) {
+            // Token exists and was recently set, close the modal
+            const timer = setTimeout(() => onClose(), 300);
+            return () => clearTimeout(timer);
+        }
+    }, [isGoogleConnected, isSigningIn, onClose]);
+
     const handleMoodleLogin = async () => {
         const u = moodleUsername.trim();
         const p = moodlePassword.trim();
@@ -161,14 +173,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setSignInError(null);
         try {
             await onSignIn();
-            setIsGoogleConnected(!!getStoredToken());
-            setIsDriveConnected(!!getStoredDriveToken());
-            // Close modal after successful sign-in
-            setTimeout(() => onClose(), 500);
+            // For redirect-based flows, the modal will auto-close when user returns
+            // For popup flows, check if tokens are present immediately
+            if (getStoredToken()) {
+                setIsGoogleConnected(true);
+                setIsDriveConnected(!!getStoredDriveToken());
+                // Close modal only if popup flow succeeded (token already stored)
+                setTimeout(() => onClose(), 300);
+            }
+            // If no token yet, stay open - user is in redirect flow
         } catch (e: any) {
             if (e.code === 'auth/unauthorized-domain') {
                 setSignInError('Domain not authorized. Go to Firebase Console → Authentication → Settings → Authorized domains and add eddenbg-second-brain.netlify.app');
-            } else {
+            } else if (e.code !== 'auth/popup-blocked' && e.code !== 'auth/popup-cancelled') {
+                // Don't show error for popup/redirect flows - they're expected
                 setSignInError(e.message || 'Sign-in failed. Please try again.');
             }
             console.error('Google sign-in error', e.code, e.message);
