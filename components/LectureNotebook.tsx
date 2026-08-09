@@ -15,7 +15,7 @@ interface LectureNotebookProps {
 
 const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData, startTime, isRecording, courseMaterials }) => {
     const [strokes, setStrokes] = useState<DrawingStroke[]>(initialData?.strokes || []);
-    const [tool, setTool] = useState<'pen' | 'eraser' | 'lasso'>('pen');
+    const [tool, setTool] = useState<'pen' | 'eraser' | 'lasso' | 'rectangle' | 'circle' | 'line'>('pen');
     const [showMaterialPicker, setShowMaterialPicker] = useState(false);
     const [bgImage, setBgImage] = useState<string | undefined>(initialData?.backgroundImageUrl);
     const [extractedText, setExtractedText] = useState<string | null>(null);
@@ -35,12 +35,20 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const currentStrokeRef = useRef<DrawingStroke | null>(null);
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
     const eraserPositionsRef = useRef<{ x: number; y: number }[]>([]);
+    const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+    const SNAP_GRID = 10; // Snap to 10px grid
 
     // Fixed white color for better contrast against blue background
     const PEN_COLOR = '#FFFFFF';
     const PEN_WIDTH = 3;
     const ERASER_WIDTH = 20;
     const LASSO_COLOR = '#FBBF24';
+    const SHAPE_COLOR = '#FFFFFF';
+    const SHAPE_WIDTH = 2;
+
+    const snapToGrid = (value: number, gridSize: number = SNAP_GRID): number => {
+        return Math.round(value / gridSize) * gridSize;
+    };
 
     // Sync notebook data with parent
     useEffect(() => {
@@ -135,6 +143,8 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             lassoPointsRef.current = [pos];
         } else if (tool === 'eraser') {
             eraserPositionsRef.current = [pos];
+        } else if (['rectangle', 'circle', 'line'].includes(tool)) {
+            shapeStartRef.current = { x: snapToGrid(pos.x), y: snapToGrid(pos.y) };
         } else {
             currentStrokeRef.current = {
                 color: PEN_COLOR,
@@ -151,6 +161,52 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 ctx.strokeStyle = currentStrokeRef.current.color;
                 ctx.lineWidth = currentStrokeRef.current.width;
             }
+        }
+    };
+
+    const drawShapePreview = (startPos: { x: number; y: number }, endPos: { x: number; y: number }, shapeType: string) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        // Redraw everything first
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        strokes.forEach(stroke => {
+            ctx.beginPath();
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            stroke.points.forEach((p, i) => {
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.stroke();
+        });
+
+        // Draw shape preview
+        const snapX = snapToGrid(endPos.x);
+        const snapY = snapToGrid(endPos.y);
+        const width = snapX - startPos.x;
+        const height = snapY - startPos.y;
+
+        ctx.strokeStyle = SHAPE_COLOR;
+        ctx.lineWidth = SHAPE_WIDTH;
+
+        if (shapeType === 'rectangle') {
+            ctx.strokeRect(startPos.x, startPos.y, width, height);
+        } else if (shapeType === 'circle') {
+            const radius = Math.sqrt(width * width + height * height) / 2;
+            ctx.beginPath();
+            ctx.arc(startPos.x + width / 2, startPos.y + height / 2, radius, 0, 2 * Math.PI);
+            ctx.stroke();
+        } else if (shapeType === 'line') {
+            ctx.beginPath();
+            ctx.moveTo(startPos.x, startPos.y);
+            ctx.lineTo(snapX, snapY);
+            ctx.stroke();
         }
     };
 
@@ -177,6 +233,8 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             }
         } else if (tool === 'eraser') {
             eraserPositionsRef.current.push(pos);
+        } else if (['rectangle', 'circle', 'line'].includes(tool) && shapeStartRef.current) {
+            drawShapePreview(shapeStartRef.current, pos, tool);
         } else if (currentStrokeRef.current) {
             currentStrokeRef.current.points.push({ ...pos, t: timestamp });
             const ctx = canvasRef.current.getContext('2d');
@@ -187,7 +245,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
-    const stopDrawing = () => {
+    const stopDrawing = (e?: React.MouseEvent | React.TouchEvent) => {
         if (!isDrawingRef.current) return;
         isDrawingRef.current = false;
 
@@ -221,6 +279,63 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 return updated;
             });
             eraserPositionsRef.current = [];
+        } else if (['rectangle', 'circle', 'line'].includes(tool) && shapeStartRef.current && e) {
+            // Create shape stroke
+            const endPos = getPos(e);
+            const snapX = snapToGrid(endPos.x);
+            const snapY = snapToGrid(endPos.y);
+            const startPos = shapeStartRef.current;
+            const timestamp = Date.now() - startTime;
+
+            let shapePoints: StrokePoint[] = [];
+
+            if (tool === 'rectangle') {
+                // Create rectangle outline as points
+                shapePoints = [
+                    { x: startPos.x, y: startPos.y, t: timestamp },
+                    { x: snapX, y: startPos.y, t: timestamp },
+                    { x: snapX, y: snapY, t: timestamp },
+                    { x: startPos.x, y: snapY, t: timestamp },
+                    { x: startPos.x, y: startPos.y, t: timestamp }
+                ];
+            } else if (tool === 'circle') {
+                // Create circle as points
+                const centerX = startPos.x + (snapX - startPos.x) / 2;
+                const centerY = startPos.y + (snapY - startPos.y) / 2;
+                const radius = Math.sqrt(
+                    Math.pow(snapX - startPos.x, 2) + Math.pow(snapY - startPos.y, 2)
+                ) / 2;
+                for (let i = 0; i <= 360; i += 10) {
+                    const angle = (i * Math.PI) / 180;
+                    shapePoints.push({
+                        x: centerX + radius * Math.cos(angle),
+                        y: centerY + radius * Math.sin(angle),
+                        t: timestamp
+                    });
+                }
+            } else if (tool === 'line') {
+                shapePoints = [
+                    { x: startPos.x, y: startPos.y, t: timestamp },
+                    { x: snapX, y: snapY, t: timestamp }
+                ];
+            }
+
+            if (shapePoints.length > 0) {
+                const newStroke: DrawingStroke = {
+                    color: SHAPE_COLOR,
+                    width: SHAPE_WIDTH,
+                    points: shapePoints
+                };
+
+                setStrokes(prev => {
+                    const newStrokes = [...prev, newStroke];
+                    setRedoStack([]);
+                    setUndoStack(undoStack => [...undoStack, prev]);
+                    return newStrokes;
+                });
+            }
+
+            shapeStartRef.current = null;
         } else if (currentStrokeRef.current) {
             setStrokes(prev => {
                 const newStrokes = [...prev, currentStrokeRef.current!];
@@ -386,15 +501,52 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 >
                     🧹
                 </button>
+
+                {/* Shape Tools */}
+                <button
+                    onClick={() => { setTool('rectangle'); setHasLassoSelection(false); }}
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'rectangle' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                    aria-label="Rectangle Tool"
+                    title="Draw rectangle (snaps to grid)"
+                >
+                    ⬜
+                </button>
+                <button
+                    onClick={() => { setTool('circle'); setHasLassoSelection(false); }}
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'circle' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                    aria-label="Circle Tool"
+                    title="Draw circle (snaps to grid)"
+                >
+                    ⭕
+                </button>
+                <button
+                    onClick={() => { setTool('line'); setHasLassoSelection(false); }}
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'line' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                    }`}
+                    aria-label="Line Tool"
+                    title="Draw line (snaps to grid)"
+                >
+                    📏
+                </button>
+
                 <button
                     onClick={() => setTool('lasso')}
-                    className={`px-3 py-2 rounded-lg transition-all font-black text-xs uppercase tracking-widest flex items-center gap-1.5 ${
-                        tool === 'lasso' ? 'bg-yellow-600 text-white shadow-lg ring-2 ring-yellow-400' : 'bg-gray-700 text-gray-300 hover:bg-yellow-600/30 hover:text-yellow-400'
+                    className={`p-2 rounded-lg transition-all ${
+                        tool === 'lasso'
+                            ? hasLassoSelection
+                                ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-400'
+                                : 'bg-yellow-600 text-white shadow-lg ring-2 ring-yellow-400'
+                            : 'bg-gray-700 text-gray-300 hover:bg-yellow-600/30 hover:text-yellow-400'
                     }`}
-                    aria-label="Lasso Selection Tool - Convert handwriting to text"
-                    title="Select handwriting area to convert to text (Hebrew priority)"
+                    aria-label={hasLassoSelection ? "Convert selection to text" : "Lasso Selection Tool - Convert handwriting to text"}
+                    title={hasLassoSelection ? "Tap to convert selected handwriting to text" : "Draw lasso around handwriting to select"}
                 >
-                    ✍️ EXTRACT
+                    {hasLassoSelection && tool === 'lasso' ? '📝' : '◯'}
                 </button>
 
                 {/* Divider */}
@@ -461,11 +613,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%' }}
                         onMouseDown={startDrawing}
                         onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
+                        onMouseUp={(e) => stopDrawing(e)}
+                        onMouseLeave={() => stopDrawing()}
                         onTouchStart={startDrawing}
                         onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
+                        onTouchEnd={(e) => stopDrawing(e)}
                         aria-label="Drawing canvas for lecture notes"
                     />
                 </div>
