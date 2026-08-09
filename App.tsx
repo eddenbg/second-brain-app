@@ -18,6 +18,7 @@ import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret }
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
 import { getStoredDriveToken } from './services/googleDriveService';
 import { callRecordingService } from './services/callRecordingService';
+import { updateService } from './services/updateService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
@@ -322,6 +323,15 @@ function App() {
       callRecordingService.stopMonitoring();
     };
   }, [user]);
+
+  // Initialize live update service for instant web app updates
+  useEffect(() => {
+    // Update service auto-starts monitoring in constructor
+    // Clean up on unmount
+    return () => {
+      updateService.stopMonitoring();
+    };
+  }, []);
 
   const allCalendarEvents = useMemo(() => {
     const seen = new Set<string>();
