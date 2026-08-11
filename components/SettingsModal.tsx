@@ -425,6 +425,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                         )}
                     </div>
 
+                    {/* Android App (APK) */}
+                    <div className="p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 bg-green-900/20 border-green-700">
+                        <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center shrink-0">
+                                <span className="text-white font-black text-lg">📱</span>
+                            </div>
+                            <p className="text-base sm:text-lg font-black text-white uppercase">Android App (APK)</p>
+                            <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Available</div>
+                        </div>
+                        <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                            Native Android app with automatic updates. Once installed, new features are delivered seamlessly without rebuilding the APK.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <a
+                                href="https://github.com/eddenbg/second-brain-app/releases/download/latest/SecondBrain.apk"
+                                download="SecondBrain.apk"
+                                className="flex-1 py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-green-600 text-white hover:bg-green-500"
+                            >
+                                📥 Download APK
+                            </a>
+                        </div>
+                        <div className="mt-4 bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-3">
+                            <p className="text-yellow-400 font-black text-xs uppercase tracking-widest">Installation Steps</p>
+                            <ol className="text-gray-300 text-xs space-y-2 list-decimal list-inside leading-relaxed">
+                                <li>Tap <strong className="text-white">Download APK</strong> above</li>
+                                <li>Open file manager and find <strong className="text-white">SecondBrain.apk</strong></li>
+                                <li>Tap to open and select <strong className="text-white">Install</strong></li>
+                                <li>If prompted, enable <strong className="text-white">"Install from unknown sources"</strong> in Settings</li>
+                                <li>App will install to your home screen</li>
+                            </ol>
+                        </div>
+                    </div>
+
                     <div className="space-y-4 sm:space-y-6">
                         <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>
 

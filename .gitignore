@@ -17,3 +17,11 @@ dist/
 # Logs
 *.log
 npm-debug.log*
+
+# Android build artifacts
+android/app/build/
+android/app/.gradle/
+android/.gradle/
+android/local.properties
+android/gradlew.bat
+android/gradlew
