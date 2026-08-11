@@ -63,6 +63,9 @@ jobs:
           }
           EOF
 
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
       - name: Build Android APK
         run: |
           cd android
