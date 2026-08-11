@@ -33,10 +33,10 @@ jobs:
       - name: Build web app
         run: npm run build
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL || 'https://eddenbg-second-brain.netlify.app/.netlify/functions' }}
-          VITE_FIREBASE_CONFIG: ${{ secrets.VITE_FIREBASE_CONFIG || '{"apiKey":"AIzaSyCAi-NJDKLnLKlq_jFVlLmfRqFGBLvXYAI","authDomain":"second-brain-ai-d0c1c.firebaseapp.com","projectId":"second-brain-ai-d0c1c","storageBucket":"second-brain-ai-d0c1c.appspot.com","messagingSenderId":"1090408525657","appId":"1:1090408525657:web:e5c7d5b2c4f3a1b9d2e0f1","databaseURL":"https://second-brain-ai-d0c1c-default-rtdb.firebaseio.com"}' }}
-          API_KEY: ${{ secrets.API_KEY || '' }}
-          NOTION_CLIENT_ID: ${{ secrets.NOTION_CLIENT_ID || '' }}
+          VITE_API_URL: https://eddenbg-second-brain.netlify.app/.netlify/functions
+          VITE_FIREBASE_CONFIG: '{"apiKey":"AIzaSyCAi-NJDKLnLKlq_jFVlLmfRqFGBLvXYAI","authDomain":"second-brain-ai-d0c1c.firebaseapp.com","projectId":"second-brain-ai-d0c1c","storageBucket":"second-brain-ai-d0c1c.appspot.com","messagingSenderId":"1090408525657","appId":"1:1090408525657:web:e5c7d5b2c4f3a1b9d2e0f1","databaseURL":"https://second-brain-ai-d0c1c-default-rtdb.firebaseio.com"}'
+          API_KEY: ${{ secrets.API_KEY }}
+          NOTION_CLIENT_ID: ${{ secrets.NOTION_CLIENT_ID }}
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
