@@ -477,7 +477,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#001F3F] overflow-hidden">
+        <div className="flex flex-col h-full bg-[#000000] overflow-hidden">
             {/* Top Toolbar - Samsung Notes Style */}
             <div className="flex items-center gap-2 p-3 bg-black/60 backdrop-blur border-b border-white/10 shrink-0">
                 {/* Drawing Tools */}
