@@ -191,28 +191,23 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
     ): { timestamp: number; x: number; y: number } | null => {
         if (!notebook.strokes) return null;
 
-        let closestHit: { timestamp: number; x: number; y: number; distance: number } | null = null;
+        type Candidate = { timestamp: number; x: number; y: number; distance: number };
 
-        notebook.strokes.forEach(stroke => {
-            stroke.points.forEach(point => {
-                const distance = Math.sqrt(
-                    Math.pow(canvasX - point.x, 2) + Math.pow(canvasY - point.y, 2)
-                );
+        const candidates: Candidate[] = [];
 
+        for (const stroke of notebook.strokes) {
+            for (const point of stroke.points) {
+                const distance = Math.hypot(canvasX - point.x, canvasY - point.y);
                 if (distance < hitDistance) {
-                    if (!closestHit || distance < closestHit.distance) {
-                        closestHit = {
-                            timestamp: point.t,
-                            x: point.x,
-                            y: point.y,
-                            distance,
-                        };
-                    }
+                    candidates.push({ timestamp: point.t, x: point.x, y: point.y, distance });
                 }
-            });
-        });
+            }
+        }
 
-        return closestHit ? { timestamp: closestHit.timestamp, x: closestHit.x, y: closestHit.y } : null;
+        if (candidates.length === 0) return null;
+
+        const closest = candidates.reduce((best, c) => (c.distance < best.distance ? c : best));
+        return { timestamp: closest.timestamp, x: closest.x, y: closest.y };
     };
 
     // Handle canvas click to jump to audio timestamp
@@ -229,7 +224,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
 
         const hit = detectHitStroke(canvasX, canvasY);
 
-        if (hit !== null) {
+        if (hit) {
             // Convert milliseconds to seconds for audio element
             const timeInSeconds = hit.timestamp / 1000;
             setCurrentTime(timeInSeconds);

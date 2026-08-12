@@ -198,6 +198,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 <TopicsBrowserModal
                     memories={memories}
                     onSaveMemory={onSaveMemory}
+                    onUpdateMemory={onUpdateMemory}
                     onClose={() => {
                         if (window.history.state?.personalModal === 'topics') window.history.back();
                         setShowTopics(false);

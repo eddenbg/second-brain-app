@@ -15,6 +15,9 @@ interface RecorderProps {
   saveButtonText: string;
   enableDiarization?: boolean;
   audioOnly?: boolean;
+  /** College lectures: open a full-screen Samsung-Notes-style notebook while recording.
+   *  Personal voice notes leave this off — they are audio + camera only. */
+  notebookMode?: boolean;
 }
 
 const FRAME_RATE = 1;
@@ -33,7 +36,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 };
 
 
-const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText, audioOnly = false }) => {
+const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText, audioOnly = false, notebookMode = false }) => {
     const [title, setTitle] = useState(titlePlaceholder);
     const [transcript, setTranscript] = useState('');
     const [structuredTranscript, setStructuredTranscript] = useState<{text: string, timestamp: number}[]>([]);
@@ -396,10 +399,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
     };
     
-    // Full-screen recording mode with notebook (transcription happens silently in background)
-    if (isRecording && !audioOnly && captureMode !== 'remote') {
+    // Full-screen notebook while recording a lecture.
+    // Audio is transcribed silently in the background — the transcript only appears after Stop.
+    if (isRecording && notebookMode) {
         return (
-            <div className="fixed inset-0 bg-black z-[100] flex flex-col">
+            <div className="fixed inset-0 bg-black z-[200] flex flex-col overscroll-none">
                 {/* Privacy screen overlay */}
                 {privacyMode && (
                     <div
@@ -414,57 +418,43 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     </div>
                 )}
 
-                {/* Top toolbar with controls */}
-                <div className="bg-black/60 backdrop-blur border-b-2 border-white/10 px-4 py-3 flex items-center justify-between z-10">
-                    {/* Recording timer (blinking red) */}
+                {/* Slim status strip — recording dot + timer + square stop, all top-right */}
+                <div className="shrink-0 flex items-center gap-3 px-3 h-12 bg-black border-b border-white/10">
                     <button
                         onClick={() => setPrivacyMode(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-full font-black text-sm animate-pulse"
                         aria-label="Hide screen"
+                        className="p-2 rounded-lg text-white/50 active:text-white"
                     >
-                        <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                        {formatTime(recordingTime)}
+                        <EyeOffIcon className="w-5 h-5" />
                     </button>
 
-                    {/* Listening indicator in center */}
-                    <div className="flex-1 flex justify-center">
-                        <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
-                            🎙️ Recording (Transcribing in background)
-                        </div>
+                    <div className="flex-1" />
+
+                    {/* Blinking red dot + elapsed time */}
+                    <div className="flex items-center gap-2" role="status" aria-live="off">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-white font-black text-base tabular-nums tracking-wide">
+                            {formatTime(recordingTime)}
+                        </span>
                     </div>
 
-                    {/* Control buttons at top right */}
-                    <div className="flex gap-2">
-                        <button
-                            onClick={stopRecording}
-                            aria-label="Stop recording"
-                            className="px-6 py-2 bg-red-600 hover:bg-red-500 text-white rounded-full font-black text-sm uppercase transition-all"
-                        >
-                            Stop
-                        </button>
-                        <button
-                            onClick={handleSave}
-                            disabled={isProcessing}
-                            aria-label="Save recording"
-                            className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-full font-black text-sm uppercase transition-all disabled:bg-gray-600"
-                        >
-                            {isProcessing ? 'Saving...' : 'Save'}
-                        </button>
-                    </div>
+                    {/* Square stop button */}
+                    <button
+                        onClick={stopRecording}
+                        aria-label="Stop recording"
+                        className="w-10 h-10 rounded-lg bg-red-600 active:bg-red-500 flex items-center justify-center transition-colors"
+                    >
+                        <span className="block w-4 h-4 bg-white rounded-[2px]" />
+                    </button>
                 </div>
 
-                {/* Full-screen drawing canvas (transcription happens silently in background) */}
-                <div className="flex-1 overflow-hidden">
+                {/* Black notebook page filling every remaining pixel */}
+                <div className="flex-1 min-h-0 overflow-hidden">
                     <LectureNotebook
                         onUpdate={setNotebookData}
                         startTime={startTimeRef.current}
                         isRecording={isRecording}
                     />
-                </div>
-
-                {/* Bottom tip bar */}
-                <div className="bg-black/40 border-t border-white/10 px-4 py-2 text-xs text-gray-400 text-center">
-                    ✍️ Draw/write notes freely • Use ✍️ EXTRACT to convert handwriting to text • Full transcript appears after you stop
                 </div>
             </div>
         );
@@ -529,7 +519,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 </div>
             )}
 
-            {(audioOnly || captureMode === 'remote') && (
+            {(audioOnly || captureMode === 'remote') && !(notebookMode && !isRecording && !transcript) && (
                 <div className="w-full h-40 bg-black/40 rounded-[2rem] flex flex-col items-center justify-center border-2 border-white/10">
                     <MicIcon className={`w-20 h-20 ${isRecording ? 'text-red-400 animate-pulse' : 'text-white/40'}`} />
                     <p className="mt-3 font-black uppercase text-sm text-white/50 tracking-widest">
@@ -538,6 +528,17 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 </div>
             )}
 
+            {/* Lecture mode start screen: exactly one button — tap it and the notebook opens full-screen */}
+            {notebookMode && !isRecording && !transcript ? (
+                <button
+                    onClick={startRecording}
+                    aria-label="Start recording lecture"
+                    className="w-full py-12 bg-yellow-500 text-[#001f3f] rounded-[2rem] font-black text-3xl uppercase tracking-wide shadow-xl active:scale-95 transition-transform flex flex-col items-center justify-center gap-4"
+                >
+                    <MicIcon className="w-24 h-24" />
+                    <span>Record Lecture</span>
+                </button>
+            ) : (
             <div className="flex justify-center gap-6">
                  <button
                     onClick={onCancel}
@@ -565,7 +566,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     <span>{isProcessing ? 'Saving...' : 'Save'}</span>
                 </button>
             </div>
-             
+            )}
+
             {/* Privacy / background recording controls — only during active recording */}
             {isRecording && (
                 <div className="flex gap-3">
@@ -585,19 +587,6 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             )}
 
              {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl">{error}</p>}
-
-             {/* Full-screen Drawing Canvas during recording */}
-             {isRecording && (
-                <div className="flex-1 flex flex-col min-h-0">
-                    <div className="flex-1 border-2 border-white/10 rounded-[2rem] overflow-hidden bg-black/40">
-                        <LectureNotebook
-                            onUpdate={setNotebookData}
-                            startTime={startTimeRef.current}
-                            isRecording={isRecording}
-                        />
-                    </div>
-                </div>
-             )}
 
              {/* Transcript appears only after stopping */}
              {!isRecording && transcript && (
