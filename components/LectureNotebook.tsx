@@ -477,9 +477,9 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#001F3F] overflow-hidden">
+        <div className="flex flex-col h-full bg-black overflow-hidden">
             {/* Top Toolbar - Samsung Notes Style */}
-            <div className="flex items-center gap-2 p-3 bg-black/60 backdrop-blur border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-2 px-3 py-2 bg-black border-b border-white/10 shrink-0 overflow-x-auto no-scrollbar">
                 {/* Drawing Tools */}
                 <button
                     onClick={() => { setTool('pen'); setHasLassoSelection(false); }}
