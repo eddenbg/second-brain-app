@@ -8,8 +8,14 @@ import { retryWithExponentialBackoff } from '../utils/retryWithExponentialBackof
  */
 
 export const loginWithCredentials = async (username: string, password: string): Promise<string> => {
-    const url = `/api/moodleProxy?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const res = await fetchWithTimeout(url, { timeout: 45000 });
+    // Credentials go in the POST body, never the query string — query strings are
+    // recorded verbatim in Netlify's access logs and any proxy in between.
+    const res = await fetchWithTimeout('/api/moodleProxy?action=login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+        timeout: 45000,
+    });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || 'Login failed');
     if (!data.token) throw new Error('No token returned. Check your username/password.');

@@ -121,7 +121,9 @@ function App() {
   // Moodle sync
   useEffect(() => {
     const syncMoodle = async () => {
-      if (!moodleToken || memories.length === 0) return;
+      // Only the token gates this. A brand-new account has no memories yet, and
+      // requiring one here meant the very users who need the import never got it.
+      if (!moodleToken) return;
       try {
         setIsSyncingMoodle(true);
         const moodleCourses = await fetchMoodleCourses(moodleToken);
@@ -288,14 +290,19 @@ function App() {
       setConfirmDialog({ eventId });
   };
 
-  // Load Google Calendar events
+  // Load Google Calendar events.
+  // Re-runs when the signed-in user changes: the token is written to localStorage
+  // during sign-in, which is not reactive on its own, so mounting-only meant events
+  // did not appear until the next full reload.
   useEffect(() => {
     const token = getStoredToken();
     if (!token) return;
+    let cancelled = false;
     fetchGoogleCalendarEvents(token)
-      .then(events => setGoogleEvents(events))
-      .catch(() => setGoogleEvents([]));
-  }, []);
+      .then(events => { if (!cancelled) setGoogleEvents(events); })
+      .catch(() => { if (!cancelled) setGoogleEvents([]); });
+    return () => { cancelled = true; };
+  }, [user]);
 
   // Notify user when Google token expires so they know to reconnect
   useEffect(() => {

@@ -18,14 +18,28 @@ export default async (req: Request, context: Context) => {
 
   // ── Login with credentials to obtain a token ─────────────────────────
   if (url.searchParams.get("action") === 'login') {
-    const username = url.searchParams.get("username") ?? '';
-    const password = url.searchParams.get("password") ?? '';
+    // Credentials arrive in the POST body so they stay out of access logs.
+    let username = '';
+    let password = '';
+    try {
+      const body = await req.json() as { username?: string; password?: string };
+      username = body.username ?? '';
+      password = body.password ?? '';
+    } catch {
+      return new Response(JSON.stringify({ error: "Expected a JSON body with username and password" }), { status: 400, headers });
+    }
+
     if (!username || !password) {
       return new Response(JSON.stringify({ error: "username and password required" }), { status: 400, headers });
     }
     try {
-      const loginUrl = `https://online.dyellin.ac.il/login/token.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&service=moodle_mobile_app`;
-      const res = await fetch(loginUrl);
+      // Moodle's token endpoint accepts form-encoded POST, keeping the
+      // credentials out of the upstream request line too.
+      const res = await fetch('https://online.dyellin.ac.il/login/token.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ username, password, service: 'moodle_mobile_app' }).toString(),
+      });
       const data = await res.json();
       if (data.error) {
         return new Response(JSON.stringify({ error: data.error }), { status: 401, headers });

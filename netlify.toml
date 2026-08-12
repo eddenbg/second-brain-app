@@ -40,6 +40,18 @@ to = "/.netlify/functions/:splat"
 status = 200
 force = true
 
+# Firebase auth handler, served from our own origin.
+# signInWithRedirect stores pending-auth state on the authDomain. When that is
+# firebaseapp.com and the app is on netlify.app, browsers partition the two and
+# the state is gone by the time we come back — getRedirectResult resolves null
+# and the user is still anonymous. Proxying the handler here keeps it all on one
+# origin. Must stay in front of the SPA fallback.
+[[redirects]]
+  from = "/__/auth/*"
+  to = "https://my-second-brain-app-10dfe.firebaseapp.com/__/auth/:splat"
+  status = 200
+  force = true
+
 # SPA fallback — only applies when no real file matches
 [[redirects]]
   from = "/*"

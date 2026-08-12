@@ -47,8 +47,29 @@ export const clearFirebaseConfig = () => {
     window.location.reload();
 };
 
-const firebaseConfig = (DEFAULT_CONFIG.apiKey) 
-    ? DEFAULT_CONFIG 
+/**
+ * Serve the auth handler from whatever origin the app is actually running on.
+ *
+ * signInWithRedirect parks its pending-auth state on the authDomain. If that is
+ * a different origin from the app (firebaseapp.com vs netlify.app), browsers
+ * partition storage between the two and the state is lost on the way back —
+ * getRedirectResult resolves null and the user silently stays signed out. The
+ * PWA forces the redirect path, so this is exactly where it bites.
+ *
+ * Only safe where a /__/auth/* proxy actually sits in front of us (netlify.toml).
+ * Local dev and the Capacitor WebView (https://localhost) have no such proxy, so
+ * they keep pointing at the Firebase-hosted handler.
+ */
+const resolveAuthDomain = (fallback: string): string => {
+    if (typeof window === 'undefined') return fallback;
+    const { hostname, protocol } = window.location;
+    if (protocol !== 'https:') return fallback;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return fallback;
+    return hostname;
+};
+
+const firebaseConfig = (DEFAULT_CONFIG.apiKey)
+    ? { ...DEFAULT_CONFIG, authDomain: resolveAuthDomain(DEFAULT_CONFIG.authDomain) }
     : (getEnv('VITE_FIREBASE_API_KEY') ? {
         apiKey: getEnv('VITE_FIREBASE_API_KEY'),
         authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN'),
