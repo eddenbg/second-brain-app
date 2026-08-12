@@ -12,6 +12,8 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const animationFrameRef = useRef<number | null>(null);
+    const [highlightedPoint, setHighlightedPoint] = useState<{ x: number; y: number; alpha: number } | null>(null);
+    const highlightFadeRef = useRef<number | null>(null);
 
     // Calculate max time from notebook strokes
     useEffect(() => {
@@ -43,10 +45,12 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
             img.onload = () => {
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                 drawStrokesUpToTime(upToTime);
+                drawHighlight();
             };
             img.src = notebook.backgroundImageUrl;
         } else {
             drawStrokesUpToTime(upToTime);
+            drawHighlight();
         }
 
         function drawStrokesUpToTime(time: number) {
@@ -71,7 +75,32 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
                 ctx!.stroke();
             });
         }
-    }, [notebook.backgroundImageUrl, notebook.strokes]);
+
+        function drawHighlight() {
+            if (!highlightedPoint) return;
+
+            const radius = 8;
+            const dpr = window.devicePixelRatio || 1;
+
+            // Draw outer glow circle with fade
+            ctx!.fillStyle = `rgba(76, 175, 80, ${highlightedPoint.alpha * 0.3})`;
+            ctx!.beginPath();
+            ctx!.arc(highlightedPoint.x, highlightedPoint.y, radius * 1.8, 0, Math.PI * 2);
+            ctx!.fill();
+
+            // Draw inner highlight circle
+            ctx!.fillStyle = `rgba(76, 175, 80, ${highlightedPoint.alpha * 0.8})`;
+            ctx!.beginPath();
+            ctx!.arc(highlightedPoint.x, highlightedPoint.y, radius, 0, Math.PI * 2);
+            ctx!.fill();
+
+            // Draw white center
+            ctx!.fillStyle = '#ffffff';
+            ctx!.beginPath();
+            ctx!.arc(highlightedPoint.x, highlightedPoint.y, radius * 0.5, 0, Math.PI * 2);
+            ctx!.fill();
+        }
+    }, [notebook.backgroundImageUrl, notebook.strokes, highlightedPoint]);
 
     // Initialize canvas
     useEffect(() => {
@@ -154,6 +183,101 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // Hit detection: Find if click is near any stroke point
+    const detectHitStroke = (
+        canvasX: number,
+        canvasY: number,
+        hitDistance: number = 12
+    ): { timestamp: number; x: number; y: number } | null => {
+        if (!notebook.strokes) return null;
+
+        let closestHit: { timestamp: number; x: number; y: number; distance: number } | null = null;
+
+        notebook.strokes.forEach(stroke => {
+            stroke.points.forEach(point => {
+                const distance = Math.sqrt(
+                    Math.pow(canvasX - point.x, 2) + Math.pow(canvasY - point.y, 2)
+                );
+
+                if (distance < hitDistance) {
+                    if (!closestHit || distance < closestHit.distance) {
+                        closestHit = {
+                            timestamp: point.t,
+                            x: point.x,
+                            y: point.y,
+                            distance,
+                        };
+                    }
+                }
+            });
+        });
+
+        return closestHit ? { timestamp: closestHit.timestamp, x: closestHit.x, y: closestHit.y } : null;
+    };
+
+    // Handle canvas click to jump to audio timestamp
+    const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!audioElement || !canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+
+        // Calculate click position relative to canvas, accounting for device pixel ratio
+        const canvasX = (e.clientX - rect.left) * dpr;
+        const canvasY = (e.clientY - rect.top) * dpr;
+
+        const hit = detectHitStroke(canvasX, canvasY);
+
+        if (hit) {
+            // Convert milliseconds to seconds for audio element
+            const timeInSeconds = hit.timestamp / 1000;
+            setCurrentTime(timeInSeconds);
+            audioElement.currentTime = timeInSeconds;
+            redrawStrokes(timeInSeconds);
+
+            // Show visual feedback: highlight the clicked point
+            setHighlightedPoint({ x: hit.x, y: hit.y, alpha: 1 });
+
+            // Clear any existing fade animation
+            if (highlightFadeRef.current) {
+                cancelAnimationFrame(highlightFadeRef.current);
+            }
+
+            // Fade out the highlight over 300ms
+            const startTime = Date.now();
+            const fadeOut = () => {
+                const elapsed = Date.now() - startTime;
+                const alpha = Math.max(0, 1 - elapsed / 300);
+
+                if (alpha > 0) {
+                    setHighlightedPoint(prev => prev ? { ...prev, alpha } : null);
+                    highlightFadeRef.current = requestAnimationFrame(fadeOut);
+                } else {
+                    setHighlightedPoint(null);
+                    highlightFadeRef.current = null;
+                }
+            };
+
+            highlightFadeRef.current = requestAnimationFrame(fadeOut);
+        }
+    };
+
+    // Handle canvas mouse move for cursor feedback
+    const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (!canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+
+        const canvasX = (e.clientX - rect.left) * dpr;
+        const canvasY = (e.clientY - rect.top) * dpr;
+
+        const hit = detectHitStroke(canvasX, canvasY);
+        canvas.style.cursor = hit ? 'pointer' : 'default';
+    };
+
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
     return (
@@ -162,6 +286,8 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
                 <canvas
                     ref={canvasRef}
                     className="notebook-canvas"
+                    onClick={handleCanvasClick}
+                    onMouseMove={handleCanvasMouseMove}
                 />
 
                 {audioElement && (
