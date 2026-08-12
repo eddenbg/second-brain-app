@@ -229,7 +229,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
 
         const hit = detectHitStroke(canvasX, canvasY);
 
-        if (hit) {
+        if (hit !== null) {
             // Convert milliseconds to seconds for audio element
             const timeInSeconds = hit.timestamp / 1000;
             setCurrentTime(timeInSeconds);

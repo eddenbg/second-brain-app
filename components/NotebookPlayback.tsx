@@ -98,7 +98,7 @@ const NotebookPlayback: React.FC<NotebookPlaybackProps> = ({ memory, audioElemen
     }
 
     function drawStrokesUpToTime(time: number) {
-      if (!notebook.strokes) return;
+      if (!ctx || !notebook.strokes) return;
 
       notebook.strokes.forEach(stroke => {
         const pointsUpToTime = stroke.points.filter(p => p.t <= time);
