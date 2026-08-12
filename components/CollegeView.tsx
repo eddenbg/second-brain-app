@@ -12,6 +12,7 @@ import AddDocumentModal from './AddDocumentModal';
 import ConfirmationModal from './ConfirmationModal';
 import MoodlePickerModal from './MoodlePickerModal';
 import NotebookViewer from './NotebookViewer';
+import NotebookPlayback from './NotebookPlayback';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
