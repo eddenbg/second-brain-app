@@ -439,11 +439,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <a
-                                href="https://github.com/eddenbg/second-brain-app/releases/download/latest/SecondBrain.apk"
+                                href="https://github.com/eddenbg/second-brain-app/releases/download/latest-build/app-debug.apk"
                                 download="SecondBrain.apk"
                                 className="flex-1 py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-green-600 text-white hover:bg-green-500"
                             >
-                                📥 Download APK
+                                📥 Download & Install APK
                             </a>
                         </div>
                         <div className="mt-4 bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-3">
