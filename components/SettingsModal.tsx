@@ -82,6 +82,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
     const [isSigningIn, setIsSigningIn] = useState(false);
+    const [lastAuthError, setLastAuthError] = useState<string | null>(
+        () => localStorage.getItem('last_auth_error')
+    );
     const [signInError, setSignInError] = useState<string | null>(null);
     const [moodleUsername, setMoodleUsername] = useState('');
     const [moodlePassword, setMoodlePassword] = useState('');
@@ -360,6 +363,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     {isSigningIn ? 'Signing in…' : 'Sign in with Google'}
                                 </button>
                                 {signInError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{signInError}</p>}
+
+                                {/* Whatever went wrong on the way back from Google.
+                                    Recorded during startup, so it survives the redirect. */}
+                                {lastAuthError && (
+                                    <div className="mt-4 bg-red-900/30 border-2 border-red-700 rounded-2xl p-4 flex flex-col gap-3">
+                                        <p className="text-red-300 font-black text-xs uppercase tracking-widest">
+                                            Last sign-in attempt failed
+                                        </p>
+                                        <p className="text-red-200 text-xs font-bold leading-relaxed break-words">
+                                            {lastAuthError}
+                                        </p>
+                                        <button
+                                            onClick={() => {
+                                                localStorage.removeItem('last_auth_error');
+                                                setLastAuthError(null);
+                                            }}
+                                            className="w-full py-2 bg-white/10 text-white rounded-xl font-black text-xs uppercase"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>
@@ -438,9 +463,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                             Native Android app with automatic updates. Once installed, new features are delivered seamlessly without rebuilding the APK.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
+                            {/* releases/latest/download always resolves to the newest
+                                release asset, so this URL survives future builds.
+                                The repo is public, so no GitHub sign-in is needed. */}
                             <a
-                                href="https://github.com/eddenbg/second-brain-app/releases/download/latest-build/app-debug.apk"
+                                href="https://github.com/eddenbg/second-brain-app/releases/latest/download/app-debug.apk"
                                 download="SecondBrain.apk"
+                                rel="noopener"
                                 className="flex-1 py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-green-600 text-white hover:bg-green-500"
                             >
                                 📥 Download & Install APK

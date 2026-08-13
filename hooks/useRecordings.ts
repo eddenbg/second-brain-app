@@ -67,22 +67,42 @@ export const useRecordings = () => {
         const init = async () => {
             // Await redirect result FIRST so the Google token is stored before
             // onAuthStateChanged fires and the UI reads from localStorage.
+            //
+            // Every outcome here is recorded to localStorage so Settings can show
+            // what happened. Previously failures were swallowed, so a broken
+            // redirect looked identical to never having tapped the button.
+            const redirectWasPending = localStorage.getItem('auth_redirect_pending');
             try {
                 const result = await getRedirectResult(auth);
                 if (result) {
+                    localStorage.removeItem('auth_redirect_pending');
+                    localStorage.removeItem('last_auth_error');
                     const credential = GoogleAuthProvider.credentialFromResult(result);
                     const token = credential?.accessToken;
                     if (token) {
                         saveGoogleToken(token);
                         saveDriveToken(token);
                     }
+                } else if (redirectWasPending) {
+                    // Came back from Google but Firebase had no result waiting —
+                    // the classic partitioned-storage / authDomain mismatch.
+                    localStorage.removeItem('auth_redirect_pending');
+                    localStorage.setItem(
+                        'last_auth_error',
+                        'Returned from Google but no sign-in result was found (auth/no-redirect-result). ' +
+                        `authDomain=${(auth as any)?.config?.authDomain ?? 'unknown'}`
+                    );
                 }
             } catch (e: any) {
+                localStorage.removeItem('auth_redirect_pending');
+                localStorage.setItem('last_auth_error', `${e?.code || 'unknown'}: ${e?.message || e}`);
                 if (e.code === 'auth/credential-already-in-use') {
                     // Google account already linked to another Firebase UID — sign into that account directly
                     const credential = GoogleAuthProvider.credentialFromError(e);
                     if (credential) {
-                        signInWithCredential(auth, credential).catch(console.error);
+                        signInWithCredential(auth, credential)
+                            .then(() => localStorage.removeItem('last_auth_error'))
+                            .catch(console.error);
                     }
                 }
             }
@@ -354,10 +374,19 @@ export const useRecordings = () => {
         };
 
         const tryRedirect = async () => {
-            if (auth.currentUser?.isAnonymous) {
-                await linkWithRedirect(auth.currentUser, googleProvider);
-            } else {
-                await signInWithRedirect(auth, googleProvider);
+            // Breadcrumb so that, on the way back, we can tell "user never tried"
+            // apart from "redirect came back empty".
+            localStorage.setItem('auth_redirect_pending', String(Date.now()));
+            try {
+                if (auth.currentUser?.isAnonymous) {
+                    await linkWithRedirect(auth.currentUser, googleProvider);
+                } else {
+                    await signInWithRedirect(auth, googleProvider);
+                }
+            } catch (e: any) {
+                localStorage.removeItem('auth_redirect_pending');
+                localStorage.setItem('last_auth_error', `${e?.code || 'unknown'}: ${e?.message || e}`);
+                throw e;
             }
         };
 

@@ -10,6 +10,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # Required to publish the release below. Without it the release step gets
+    # "403 Resource not accessible by integration" — which is what broke the
+    # download link: no release was ever created, so the URL 404'd.
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -78,22 +84,20 @@ jobs:
           name: app-debug.apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      # Publish the APK to a stable public release so it can be downloaded
+      # without signing in to GitHub. Artifacts (above) always require a login;
+      # release assets on a public repo do not.
+      - name: Publish APK to "latest-build" release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: latest-build
+          name: Latest Build
+          body: |
+            Latest automatic build of the Second Brain Android app.
 
-      - name: Upload as GitHub Release (latest)
-        uses: ncipollo/release-action@v1
-        if: github.ref == 'refs/heads/claude/second-brain-app-build-v1zKV'
-        with:
-          artifacts: "android/app/build/outputs/apk/debug/app-debug.apk"
-          tag: "latest-build"
-          name: "Latest Build"
-          bodyFile: ".github/RELEASE_NOTES.md"
-          allowUpdates: true
-          replacesArtifacts: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+            **Download `app-debug.apk` below** — no GitHub account needed.
+
+            Built from commit ${{ github.sha }}.
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: true

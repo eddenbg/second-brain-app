@@ -17,9 +17,27 @@ const TopicsBrowserModal: React.FC<TopicsBrowserModalProps> = ({ memories, onSav
   const [showCreateTopic, setShowCreateTopic] = useState(false);
   const [newTopicInput, setNewTopicInput] = useState('');
   const [isCreatingTopic, setIsCreatingTopic] = useState(false);
+  const [createStatus, setCreateStatus] = useState<string | null>(null);
+  // Topics the user made by hand. Kept separately because the topic list is
+  // otherwise derived purely from memories — so a topic that matched nothing
+  // would vanish the moment it was created.
+  const [customTopics, setCustomTopics] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('custom_topics') || '[]'); } catch { return []; }
+  });
+
+  const rememberCustomTopic = (topic: string) => {
+    setCustomTopics(prev => {
+      if (prev.includes(topic)) return prev;
+      const next = [...prev, topic];
+      try { localStorage.setItem('custom_topics', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
 
   const topicMap = useMemo(() => {
     const map = new Map<string, AnyMemory[]>();
+    // Seed with hand-made topics so they show up even before anything matches.
+    for (const topic of customTopics) map.set(topic, []);
     for (const mem of memories) {
       if (!mem.topics?.length) continue;
       for (const topic of mem.topics) {
@@ -28,7 +46,7 @@ const TopicsBrowserModal: React.FC<TopicsBrowserModalProps> = ({ memories, onSav
       }
     }
     return map;
-  }, [memories]);
+  }, [memories, customTopics]);
 
   const sortedTopics = useMemo(() =>
     [...topicMap.entries()].sort((a, b) => b[1].length - a[1].length),
@@ -37,42 +55,91 @@ const TopicsBrowserModal: React.FC<TopicsBrowserModalProps> = ({ memories, onSav
 
   const filteredMemories = selectedTopic ? (topicMap.get(selectedTopic) ?? []) : [];
 
+  /** Pull the first JSON array out of a model reply, tolerating ``` fences and prose. */
+  const parseIndexList = (reply: string): number[] => {
+    const match = reply.match(/\[[\s\S]*?\]/);
+    if (!match) return [];
+    try {
+      const parsed = JSON.parse(match[0]);
+      return Array.isArray(parsed) ? parsed.filter((n: unknown) => typeof n === 'number') : [];
+    } catch {
+      return [];
+    }
+  };
+
   const createNewTopic = async () => {
-    if (!newTopicInput.trim() || !onUpdateMemory) return;
+    const topicName = newTopicInput.trim();
+    if (!topicName || isCreatingTopic) return;
 
     setIsCreatingTopic(true);
-    const topicName = newTopicInput.trim();
-    let updatedCount = 0;
+    setCreateStatus(null);
+
+    // Register it up front so the topic exists no matter how matching goes.
+    rememberCustomTopic(topicName);
 
     try {
-      for (const memory of memories) {
-        const memoryText = (memory as any).transcript || (memory as any).summary || (memory as any).content || memory.title || '';
+      if (!onUpdateMemory) {
+        setCreateStatus(`Created "${topicName}". Memories can't be tagged from here.`);
+        return;
+      }
 
-        if (!memoryText) continue;
+      const candidates = memories
+        .map(mem => ({
+          mem,
+          text: ((mem as any).transcript || (mem as any).summary || (mem as any).content || '') as string,
+        }))
+        .filter(c => (c.mem.title || c.text) && !c.mem.topics?.includes(topicName));
 
-        const question = `Is this memory related to the topic "${topicName}"? Consider the title, content, and context.
+      if (candidates.length === 0) {
+        setCreateStatus(`Created "${topicName}". No memories to scan yet.`);
+        return;
+      }
 
-Memory: ${memoryText.slice(0, 500)}
+      // One request per batch instead of one per memory. The old version fired a
+      // sequential call for every single memory, which was slow enough to look
+      // like a hang and fell over well before it finished.
+      const BATCH = 25;
+      let tagged = 0;
+      let failedBatches = 0;
 
-Answer with only "yes" or "no".`;
+      for (let start = 0; start < candidates.length; start += BATCH) {
+        const batch = candidates.slice(start, start + BATCH);
+        const listing = batch
+          .map((c, i) => `${i}. ${c.mem.title || 'Untitled'} — ${c.text.slice(0, 200).replace(/\s+/g, ' ')}`)
+          .join('\n');
+
+        const question =
+          `Which of these items relate to the topic "${topicName}"?\n\n` +
+          `${listing}\n\n` +
+          `Reply with ONLY a JSON array of the matching numbers, e.g. [0,3,7]. ` +
+          `Reply with [] if none match. No other text.`;
 
         try {
-          const response = await askQuestion(question, '');
-
-          if (response.toLowerCase().includes('yes')) {
-            const existingTopics = memory.topics || [];
-            if (!existingTopics.includes(topicName)) {
-              onUpdateMemory(memory.id, { topics: [...existingTopics, topicName] });
-              updatedCount++;
-            }
+          const reply = await askQuestion(question, '');
+          for (const idx of parseIndexList(reply)) {
+            const hit = batch[idx];
+            if (!hit) continue;
+            onUpdateMemory(hit.mem.id, { topics: [...(hit.mem.topics || []), topicName] });
+            tagged++;
           }
         } catch (err) {
-          console.error('Error categorizing memory:', err);
+          console.error('Topic categorization batch failed', err);
+          failedBatches++;
         }
       }
 
+      if (failedBatches > 0 && tagged === 0) {
+        setCreateStatus(`Created "${topicName}", but auto-tagging failed — check your Gemini API key in Settings.`);
+      } else {
+        setCreateStatus(
+          `Created "${topicName}" and tagged ${tagged} ${tagged === 1 ? 'memory' : 'memories'}.` +
+          (failedBatches > 0 ? ' Some memories could not be scanned.' : '')
+        );
+      }
       setNewTopicInput('');
-      setShowCreateTopic(false);
+    } catch (err) {
+      console.error('Topic creation failed', err);
+      setCreateStatus(`Created "${topicName}", but something went wrong while scanning.`);
     } finally {
       setIsCreatingTopic(false);
     }
@@ -140,6 +207,20 @@ Answer with only "yes" or "no".`;
                   'Create Topic'
                 )}
               </button>
+
+              {/* Result stays on screen instead of silently bouncing back to the
+                  list, which made a successful run look like nothing happened. */}
+              {createStatus && (
+                <div className="flex flex-col gap-3" role="status" aria-live="polite">
+                  <p className="text-sm font-bold text-green-300 leading-relaxed">{createStatus}</p>
+                  <button
+                    onClick={() => { setCreateStatus(null); setShowCreateTopic(false); }}
+                    className="w-full py-3 bg-white/10 text-white rounded-xl font-black uppercase"
+                  >
+                    Back to Topics
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
