@@ -460,7 +460,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                             <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Available</div>
                         </div>
                         <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                            Native Android app with automatic updates. Once installed, new features are delivered seamlessly without rebuilding the APK.
+                            Native Android app. Needed only for features Android won't allow on the web, like importing call recordings.
+                            <br /><br />
+                            <strong className="text-white">This does not update itself.</strong> Each new version means downloading and
+                            installing the APK again. The web app you added to your home screen updates on its own — so for everyday use
+                            and for testing new features, stay on that.
                         </p>
                         <div className="flex flex-col sm:flex-row gap-3">
                             {/* releases/latest/download always resolves to the newest
