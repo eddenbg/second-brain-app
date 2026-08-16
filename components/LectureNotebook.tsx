@@ -5,6 +5,173 @@ import { PenToolIcon, EraserIcon, FilePlusIcon, TrashIcon, XIcon, CheckIcon, Loa
 import ConfirmationModal from './ConfirmationModal';
 import { extractHandwritingFromImage } from '../services/geminiService';
 
+/** A dashed lasso loop with a hanging rope end. The circle tool renders '⭕',
+ *  so the lasso must not read as "a round outline" at a glance. */
+const LassoGlyph: React.FC = () => (
+    <svg
+        width="20"
+        height="20"
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        aria-hidden="true"
+        focusable="false"
+    >
+        <ellipse cx="10" cy="7.5" rx="7" ry="5" strokeDasharray="3 2.5" />
+        <path d="M6.5 12.2 L6.5 16" />
+        <circle cx="6.5" cy="17.2" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+);
+
+type Point2D = { x: number; y: number };
+
+const HOLD_SNAP_MS = 600;
+const HOLD_MOVE_TOLERANCE = 5; // CSS px the pen may drift and still count as "held"
+
+/** extractHandwritingFromImage resolves with a sentinel string instead of
+ *  throwing, so a failure has to be recognised from the returned text. */
+const EXTRACTION_FAILURE_PREFIXES = [
+    'No text found',
+    'Error extracting',
+    'AI features are currently unavailable',
+];
+
+const pathLength = (points: Point2D[]): number => {
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+        total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    }
+    return total;
+};
+
+const perpendicularDistance = (p: Point2D, a: Point2D, b: Point2D): number => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+    return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len;
+};
+
+// Ramer-Douglas-Peucker: reduces a traced outline to its corners.
+const simplifyPath = (points: Point2D[], epsilon: number): Point2D[] => {
+    if (points.length < 3) return [...points];
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    let maxDistance = 0;
+    let index = 0;
+    for (let i = 1; i < points.length - 1; i++) {
+        const distance = perpendicularDistance(points[i], first, last);
+        if (distance > maxDistance) {
+            maxDistance = distance;
+            index = i;
+        }
+    }
+
+    if (maxDistance <= epsilon) return [first, last];
+
+    const left = simplifyPath(points.slice(0, index + 1), epsilon);
+    const right = simplifyPath(points.slice(index), epsilon);
+    return [...left.slice(0, -1), ...right];
+};
+
+const ellipseOutline = (cx: number, cy: number, rx: number, ry: number): Point2D[] => {
+    const points: Point2D[] = [];
+    for (let angle = 0; angle <= 360; angle += 10) {
+        const radians = (angle * Math.PI) / 180;
+        points.push({ x: cx + rx * Math.cos(radians), y: cy + ry * Math.sin(radians) });
+    }
+    return points;
+};
+
+/**
+ * Recognise a rough freehand stroke as a clean primitive, or return null.
+ *
+ * Every test is deliberately strict: snapping the wrong thing destroys notes
+ * the user cannot easily redraw, so an unrecognised stroke is left untouched.
+ */
+const recognizeShape = (points: Point2D[]): Point2D[] | null => {
+    if (points.length < 8) return null;
+
+    const xs = points.map(p => p.x);
+    const ys = points.map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const width = maxX - minX;
+    const height = maxY - minY;
+    const diagonal = Math.hypot(width, height);
+    if (diagonal < 40) return null; // too small to be a deliberate shape
+
+    const first = points[0];
+    const last = points[points.length - 1];
+    const gap = Math.hypot(last.x - first.x, last.y - first.y);
+    const traced = pathLength(points);
+
+    if (gap > diagonal * 0.25) {
+        // Open stroke: only a straight line qualifies, and it must not wander
+        // off its own chord or double back on itself.
+        const deviation = points.reduce((worst, p) => Math.max(worst, perpendicularDistance(p, first, last)), 0);
+        if (gap > 30 && deviation < Math.max(4, gap * 0.06) && traced < gap * 1.15) {
+            return [{ x: first.x, y: first.y }, { x: last.x, y: last.y }];
+        }
+        return null;
+    }
+
+    if (width < 25 || height < 25) return null;
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const rx = width / 2;
+    const ry = height / 2;
+
+    // Circle / ellipse: every point sits at the same normalised radius.
+    const radii = points.map(p => Math.hypot((p.x - cx) / rx, (p.y - cy) / ry));
+    const meanRadius = radii.reduce((sum, r) => sum + r, 0) / radii.length;
+    const spread = Math.sqrt(radii.reduce((sum, r) => sum + (r - meanRadius) ** 2, 0) / radii.length);
+    if (meanRadius > 0.85 && meanRadius < 1.15 && spread < 0.12) {
+        return ellipseOutline(cx, cy, rx, ry);
+    }
+
+    // Rectangle: nearly every point lies on the bounding box outline.
+    const edgeTolerance = Math.max(6, Math.min(width, height) * 0.12);
+    const onEdge = points.filter(p =>
+        Math.min(Math.abs(p.x - minX), Math.abs(p.x - maxX)) <= edgeTolerance ||
+        Math.min(Math.abs(p.y - minY), Math.abs(p.y - maxY)) <= edgeTolerance
+    ).length;
+    if (onEdge / points.length > 0.9) {
+        return [
+            { x: minX, y: minY },
+            { x: maxX, y: minY },
+            { x: maxX, y: maxY },
+            { x: minX, y: maxY },
+            { x: minX, y: minY },
+        ];
+    }
+
+    // Triangle: the closed outline reduces to exactly three corners.
+    let corners = simplifyPath([...points, first], diagonal * 0.06).slice(0, -1);
+    if (corners.length === 4) {
+        // Strokes usually start mid-edge, which leaves an extra "corner" that is
+        // collinear with the two real ones on either side of it.
+        if (perpendicularDistance(corners[0], corners[3], corners[1]) < diagonal * 0.08) {
+            corners = corners.slice(1);
+        }
+    }
+    if (corners.length === 3) {
+        const [a, b, c] = corners;
+        const area = Math.abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) / 2;
+        if (area > width * height * 0.3) {
+            return [a, b, c, a].map(p => ({ x: p.x, y: p.y }));
+        }
+    }
+
+    return null;
+};
+
 interface LectureNotebookProps {
     onUpdate: (data: NotebookData) => void;
     initialData?: NotebookData;
@@ -36,6 +203,8 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
     const eraserPositionsRef = useRef<{ x: number; y: number }[]>([]);
     const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+    const holdTimerRef = useRef<number | null>(null);
+    const holdAnchorRef = useRef<{ x: number; y: number } | null>(null);
     const dprRef = useRef(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
     const cssSizeRef = useRef({ width: 0, height: 0 });
     // Lets the resize handler repaint without depending on state it cannot see.
@@ -179,6 +348,60 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         };
     };
 
+    const clearHoldSnap = () => {
+        if (holdTimerRef.current !== null) {
+            window.clearTimeout(holdTimerRef.current);
+            holdTimerRef.current = null;
+        }
+        holdAnchorRef.current = null;
+    };
+
+    /** Fires when the pen has been held still: if the stroke drawn so far looks
+     *  like a primitive, replace it with a clean one and finish the stroke. */
+    const snapHeldStroke = () => {
+        holdTimerRef.current = null;
+        holdAnchorRef.current = null;
+
+        const stroke = currentStrokeRef.current;
+        if (!isDrawingRef.current || !stroke || stroke.points.length < 2) return;
+
+        const snapped = recognizeShape(stroke.points);
+        if (!snapped) return;
+
+        // Playback seeks on `t`, so the replacement has to span the same window:
+        // keep the original first and last stamps and spread the rest evenly.
+        const firstT = stroke.points[0].t;
+        const lastT = stroke.points[stroke.points.length - 1].t;
+        const points: StrokePoint[] = snapped.map((p, i) => ({
+            x: p.x,
+            y: p.y,
+            t: i === 0
+                ? firstT
+                : i === snapped.length - 1
+                    ? lastT
+                    : Math.round(firstT + ((lastT - firstT) * i) / (snapped.length - 1)),
+        }));
+
+        const snappedStroke: DrawingStroke = { color: stroke.color, width: stroke.width, points };
+
+        isDrawingRef.current = false;
+        currentStrokeRef.current = null;
+
+        setStrokes(prev => {
+            setRedoStack([]);
+            setUndoStack(undoStack => [...undoStack, prev]);
+            return [...prev, snappedStroke];
+        });
+    };
+
+    const armHoldSnap = (pos: { x: number; y: number }) => {
+        if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+        holdAnchorRef.current = pos;
+        holdTimerRef.current = window.setTimeout(snapHeldStroke, HOLD_SNAP_MS);
+    };
+
+    useEffect(() => clearHoldSnap, []);
+
     const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
         if (!canvasRef.current) return;
 
@@ -208,6 +431,8 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 ctx.strokeStyle = currentStrokeRef.current.color;
                 ctx.lineWidth = currentStrokeRef.current.width;
             }
+
+            armHoldSnap(pos);
         }
     };
 
@@ -292,10 +517,18 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 ctx.lineTo(pos.x, pos.y);
                 ctx.stroke();
             }
+
+            // Restart the hold timer only once the pen has actually moved away,
+            // so small jitter while resting still counts as holding still.
+            const anchor = holdAnchorRef.current;
+            if (!anchor || Math.hypot(pos.x - anchor.x, pos.y - anchor.y) > HOLD_MOVE_TOLERANCE) {
+                armHoldSnap(pos);
+            }
         }
     };
 
     const stopDrawing = (e?: React.MouseEvent | React.TouchEvent) => {
+        clearHoldSnap();
         if (!isDrawingRef.current) return;
         isDrawingRef.current = false;
 
@@ -421,16 +654,23 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             const maxX = Math.max(...xs);
             const maxY = Math.max(...ys);
 
-            // Crop around the stroke
+            // Crop around the stroke. Bounds are CSS pixels; the backing store is
+            // device pixels, so the source rectangle has to be scaled by dpr.
+            const dpr = dprRef.current;
+            const cropWidth = Math.max(maxX - minX + 20, 100);
+            const cropHeight = Math.max(maxY - minY + 20, 50);
+
             const cropCanvas = document.createElement('canvas');
-            cropCanvas.width = Math.max(maxX - minX + 20, 100);
-            cropCanvas.height = Math.max(maxY - minY + 20, 50);
+            cropCanvas.width = Math.round(cropWidth * dpr);
+            cropCanvas.height = Math.round(cropHeight * dpr);
             const cropCtx = cropCanvas.getContext('2d');
             if (!cropCtx) return;
 
+            cropCtx.fillStyle = '#000000';
+            cropCtx.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
             cropCtx.drawImage(
                 canvas,
-                Math.max(minX - 10, 0), Math.max(minY - 10, 0),
+                Math.round(Math.max(minX - 10, 0) * dpr), Math.round(Math.max(minY - 10, 0) * dpr),
                 cropCanvas.width, cropCanvas.height,
                 0, 0, cropCanvas.width, cropCanvas.height
             );
@@ -454,40 +694,84 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     };
 
     const convertLassoAreaToText = async () => {
-        if (!lastLassoSelection) return;
+        const canvas = canvasRef.current;
+        if (!lastLassoSelection || !canvas) {
+            alert("Nothing is selected. Draw a lasso around your handwriting first.");
+            return;
+        }
+
+        // The lasso bounds are padded outwards, so clamp them back onto the
+        // surface before they are used as a source rectangle.
+        const { width: cssWidth, height: cssHeight } = cssSizeRef.current;
+        const minX = Math.max(0, Math.min(lastLassoSelection.minX, cssWidth));
+        const minY = Math.max(0, Math.min(lastLassoSelection.minY, cssHeight));
+        const maxX = Math.max(minX, Math.min(lastLassoSelection.maxX, cssWidth));
+        const maxY = Math.max(minY, Math.min(lastLassoSelection.maxY, cssHeight));
+
+        const containsInk = strokes.some(stroke =>
+            stroke.points.some(p => p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY)
+        );
+        if (!containsInk || maxX - minX < 4 || maxY - minY < 4) {
+            alert("That selection is empty. Draw the lasso around the handwriting you want to convert.");
+            setHasLassoSelection(false);
+            setLastLassoSelection(null);
+            return;
+        }
 
         setIsExtracting(true);
         try {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
+            // The dashed lasso preview is still painted on the canvas; repaint so
+            // only the handwriting is sent to the model.
+            redrawAllRef.current?.();
 
-            const { minX, minY, maxX, maxY } = lastLassoSelection;
+            // Selection bounds are CSS pixels, but drawImage reads the backing
+            // store, which is device pixels because the context is scaled by dpr.
+            // Without this scaling the crop lands on the wrong region entirely.
+            const dpr = dprRef.current;
+            const srcX = Math.round(minX * dpr);
+            const srcY = Math.round(minY * dpr);
+            const srcWidth = Math.max(1, Math.round((maxX - minX) * dpr));
+            const srcHeight = Math.max(1, Math.round((maxY - minY) * dpr));
 
-            // Crop to lasso area and convert
             const cropCanvas = document.createElement('canvas');
-            cropCanvas.width = maxX - minX;
-            cropCanvas.height = maxY - minY;
+            cropCanvas.width = srcWidth;
+            cropCanvas.height = srcHeight;
             const cropCtx = cropCanvas.getContext('2d');
-            if (cropCtx) {
-                cropCtx.drawImage(canvas, minX, minY, cropCanvas.width, cropCanvas.height, 0, 0, cropCanvas.width, cropCanvas.height);
-                const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
-                const text = await extractHandwritingFromImage(base64);
-
-                // Add text annotation at the selected area (replace handwriting)
-                setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
-                    text: text.trim(),
-                    x: minX,
-                    y: minY + (cropCanvas.height / 2),
-                    id: Date.now().toString()
-                }]);
-
-                // Clear the selected area and reset selection
-                setHasLassoSelection(false);
-                setLastLassoSelection(null);
+            if (!cropCtx) {
+                alert("This device could not prepare the image for conversion.");
+                return;
             }
+
+            // Notes are white ink on a transparent canvas over a black page; a
+            // transparent PNG decodes as blank, so flatten onto the same black.
+            cropCtx.fillStyle = '#000000';
+            cropCtx.fillRect(0, 0, srcWidth, srcHeight);
+            cropCtx.drawImage(canvas, srcX, srcY, srcWidth, srcHeight, 0, 0, srcWidth, srcHeight);
+
+            const base64 = cropCanvas.toDataURL('image/png').split(',')[1];
+            const text = (await extractHandwritingFromImage(base64)).trim();
+
+            if (!text || EXTRACTION_FAILURE_PREFIXES.some(prefix => text.startsWith(prefix))) {
+                alert(text
+                    ? `Could not convert that selection: ${text}`
+                    : "The AI returned no text for that selection. Try selecting a tighter area.");
+                return;
+            }
+
+            // Add text annotation at the selected area (replace handwriting)
+            setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
+                text,
+                x: minX,
+                y: minY + (maxY - minY) / 2,
+                id: Date.now().toString()
+            }]);
+
+            // Clear the selected area and reset selection
+            setHasLassoSelection(false);
+            setLastLassoSelection(null);
         } catch (error) {
             console.error('Lasso conversion error:', error);
-            alert("Error converting handwriting to text.");
+            alert(`Could not convert that selection: ${error instanceof Error ? error.message : 'unexpected error'}`);
         } finally {
             setIsExtracting(false);
         }
@@ -598,7 +882,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     aria-label={hasLassoSelection ? "Convert selection to text" : "Lasso Selection Tool - Convert handwriting to text"}
                     title={hasLassoSelection ? "Tap to convert selected handwriting to text" : "Draw lasso around handwriting to select"}
                 >
-                    {hasLassoSelection && tool === 'lasso' ? '📝' : '◯'}
+                    {hasLassoSelection && tool === 'lasso' ? '📝' : <LassoGlyph />}
                 </button>
 
                 {/* Divider */}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { User } from 'firebase/auth';
 import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon, PlusCircleIcon
@@ -14,7 +14,7 @@ import {
     getStoredDriveToken
 } from '../services/googleDriveService';
 import {
-    getStoredNotionToken, saveNotionToken, clearNotionToken,
+    getStoredNotionToken, saveNotionToken, clearNotionToken, buildNotionAuthUrl,
     getStoredNotionClientId, saveNotionClientId,
     getStoredNotionClientSecret, saveNotionClientSecret,
 } from '../services/notionService';
@@ -109,6 +109,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
     const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
+    const [isWaitingForNotion, setIsWaitingForNotion] = useState(false);
+    const [notionError, setNotionError] = useState<string | null>(null);
     const [showManualNotion, setShowManualNotion] = useState(false);
     const [notionInput, setNotionInput] = useState('');
     const [showNotionSetup, setShowNotionSetup] = useState(false);
@@ -133,6 +135,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
             }
         });
         return () => unsubscribe?.();
+    }, []);
+
+    // The Google access token Firebase hands back lasts about an hour and there is
+    // no refresh token, so a modal left open drifts into claiming a connection that
+    // has already lapsed — and the Notion token can be written by the OAuth
+    // callback in another window. Re-read all three from storage periodically and
+    // whenever the app returns to the foreground, so the copy below stays true.
+    useEffect(() => {
+        const syncFromStorage = () => {
+            setIsGoogleConnected(!!getStoredToken());
+            setIsDriveConnected(!!getStoredDriveToken());
+            setNotionToken(getStoredNotionToken() || '');
+        };
+        const interval = window.setInterval(syncFromStorage, 30000);
+        document.addEventListener('visibilitychange', syncFromStorage);
+        return () => {
+            window.clearInterval(interval);
+            document.removeEventListener('visibilitychange', syncFromStorage);
+        };
     }, []);
 
     // Was Google already connected when this modal opened? Only a connection that
@@ -208,6 +229,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         clearNotionToken();
         setNotionToken('');
         setNotionInput('');
+        setNotionError(null);
     };
 
     const handleSignIn = async () => {
@@ -238,6 +260,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
+    // Signing in with Google also grants the Calendar/Drive access token, but that
+    // token expires about an hour later while the account itself stays signed in
+    // (Firebase gives us no refresh token). Collapsing both facts into one value
+    // per service keeps the sections below from claiming the account is signed out
+    // when all that lapsed is the Calendar or Drive permission.
+    type GoogleServiceState = 'connected' | 'needs-refresh' | 'signed-out';
+    const isSignedIn = user?.isAnonymous === false;
+    const calendarState: GoogleServiceState =
+        isGoogleConnected ? 'connected' : isSignedIn ? 'needs-refresh' : 'signed-out';
+    const driveState: GoogleServiceState =
+        isDriveConnected ? 'connected' : isSignedIn ? 'needs-refresh' : 'signed-out';
+
     // Recomputed when credentials are saved (notionCredsSaved), since the stored
     // value lives in localStorage and would not otherwise trigger a re-render.
     const effectiveNotionClientId = useMemo(
@@ -245,32 +279,99 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         [notionCredsSaved]
     );
 
-    const handleSignInWithNotion = () => {
-        if (!effectiveNotionClientId) return;
-        const redirectUri = `${window.location.origin}/`;
-        const url = `https://api.notion.com/v1/oauth/authorize?client_id=${effectiveNotionClientId}&response_type=code&owner=user&redirect_uri=${encodeURIComponent(redirectUri)}&state=notion_oauth`;
+    // Torn down when the popup finishes, gives up, or this modal unmounts.
+    const notionWatchCleanup = useRef<(() => void) | null>(null);
+    useEffect(() => () => notionWatchCleanup.current?.(), []);
 
-        // Try popup so the user never leaves the app
-        const popup = window.open(url, 'notion-oauth', 'width=520,height=700,scrollbars=yes,resizable=yes');
-        if (!popup) {
-            // Popup blocked (e.g. in strict standalone PWA mode) — fall back to redirect
-            window.location.href = url;
+    const finishNotionSignIn = useCallback((token: string) => {
+        saveNotionToken(token);
+        setNotionToken(token);
+        setIsWaitingForNotion(false);
+        setNotionError(null);
+    }, []);
+
+    const watchNotionPopup = (popup: Window) => {
+        notionWatchCleanup.current?.();
+
+        const onMessage = (event: MessageEvent) => {
+            if (event.origin !== window.location.origin) return;
+            if (event.data?.type !== 'NOTION_TOKEN') return;
+            const token = event.data.token as string;
+            if (token) {
+                cleanup();
+                finishNotionSignIn(token);
+            }
+        };
+
+        // The callback stores the token before it tries to post it back, and in
+        // some browsers — an installed app above all — the window it opened has no
+        // handle on this one, so that message never arrives and the sign-in looks
+        // like it did nothing. Reading storage covers those cases; watching for a
+        // closed window covers a sign-in the user abandoned.
+        const poll = window.setInterval(() => {
+            const stored = getStoredNotionToken();
+            if (stored) {
+                cleanup();
+                finishNotionSignIn(stored);
+                return;
+            }
+            if (popup.closed) {
+                cleanup();
+                setIsWaitingForNotion(false);
+                setNotionError('The Notion window closed before it finished. Tap "Sign in with Notion" to try again, or use "Connect with API token instead" below.');
+            }
+        }, 500);
+
+        const timeout = window.setTimeout(() => {
+            cleanup();
+            setIsWaitingForNotion(false);
+            setNotionError(`Notion did not send anything back. Check that your integration's redirect URI is exactly ${window.location.origin}/ and try again.`);
+        }, 3 * 60 * 1000);
+
+        const cleanup = () => {
+            window.removeEventListener('message', onMessage);
+            window.clearInterval(poll);
+            window.clearTimeout(timeout);
+            notionWatchCleanup.current = null;
+        };
+
+        window.addEventListener('message', onMessage);
+        notionWatchCleanup.current = cleanup;
+    };
+
+    const handleSignInWithNotion = () => {
+        if (!effectiveNotionClientId) {
+            setNotionError('No Notion client ID is saved on this device. Use "Set up Notion sign-in" to add your client ID and secret first.');
+            return;
+        }
+        setNotionError(null);
+
+        const url = buildNotionAuthUrl(effectiveNotionClientId);
+
+        // In an installed app, a popup lands in a separate browser window with no
+        // opener to hand the token back to, so the tap appears to do nothing.
+        // Navigate this window instead: Notion returns to ?code=…&state=notion_oauth
+        // and App.tsx completes the exchange right here.
+        if (isStandalone) {
+            window.location.assign(url);
             return;
         }
 
-        // Listen for the token that the popup posts back after the OAuth exchange
-        const handler = (event: MessageEvent) => {
-            if (event.origin !== window.location.origin) return;
-            if (event.data?.type === 'NOTION_TOKEN') {
-                const token = event.data.token as string;
-                if (token) {
-                    saveNotionToken(token);
-                    setNotionToken(token);
-                }
-                window.removeEventListener('message', handler);
-            }
-        };
-        window.addEventListener('message', handler);
+        let popup: Window | null = null;
+        try {
+            popup = window.open(url, 'notion-oauth', 'width=520,height=700,scrollbars=yes,resizable=yes');
+        } catch {
+            popup = null;
+        }
+
+        // A blocked popup is either null or a window that is already closed.
+        if (!popup || popup.closed) {
+            window.location.assign(url);
+            return;
+        }
+
+        setIsWaitingForNotion(true);
+        watchNotionPopup(popup);
     };
 
     const mcpConfigSnippet = `{
@@ -561,66 +662,88 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                         <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>
 
                         {/* Google Calendar */}
-                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${isGoogleConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${calendarState === 'connected' ? 'bg-green-900/20 border-green-700' : calendarState === 'needs-refresh' ? 'bg-yellow-900/20 border-yellow-700' : 'bg-gray-900 border-gray-700'}`}>
                             <div className="flex items-center gap-3 sm:gap-4 mb-3">
-                                <Calendar className={`w-7 h-7 sm:w-8 sm:h-8 ${isGoogleConnected ? 'text-green-400' : 'text-gray-500'}`} />
+                                <Calendar className={`w-7 h-7 sm:w-8 sm:h-8 ${calendarState === 'connected' ? 'text-green-400' : calendarState === 'needs-refresh' ? 'text-yellow-400' : 'text-gray-500'}`} />
                                 <p className="text-base sm:text-lg font-black text-white uppercase">Google Calendar</p>
-                                {isGoogleConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                                {calendarState === 'connected' && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Connected</div>}
+                                {calendarState === 'needs-refresh' && <div className="ml-auto bg-yellow-600 text-black px-3 py-1 rounded-full text-[9px] font-black uppercase">Needs refresh</div>}
                             </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connects automatically when you sign in with Google. Your calendar events appear in the monthly view.</p>
-                            {isGoogleConnected ? (
-                                <button
-                                    onClick={handleDisconnectGoogle}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
-                                >
-                                    Disconnect
-                                </button>
-                            ) : user?.isAnonymous === false ? (
+                            {calendarState === 'connected' ? (
                                 <>
-                                    <p className="text-yellow-400 font-bold text-xs mb-3">Token expired. Sign in again to refresh the connection.</p>
+                                    <p className="text-gray-300 font-bold text-xs mb-4 leading-relaxed">
+                                        Connected. Your calendar events appear in the monthly view.
+                                    </p>
+                                    <button
+                                        onClick={handleDisconnectGoogle}
+                                        aria-label="Disconnect Google Calendar. Your Google account stays signed in."
+                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                    >
+                                        Disconnect Calendar
+                                    </button>
+                                </>
+                            ) : calendarState === 'needs-refresh' ? (
+                                <>
+                                    <p className="text-gray-300 font-bold text-xs mb-4 leading-relaxed">
+                                        You are still signed in{user?.email ? ` as ${user.email}` : ''}. Only the Calendar permission has run out — it lasts about an hour. Refreshing it does not sign you out.
+                                    </p>
                                     <button
                                         onClick={handleSignIn}
                                         disabled={isSigningIn}
+                                        aria-label="Refresh Google Calendar access. You stay signed in."
                                         className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
                                     >
                                         {isSigningIn ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
-                                        {isSigningIn ? 'Reconnecting…' : 'Reconnect Calendar'}
+                                        {isSigningIn ? 'Refreshing Calendar access…' : 'Refresh Calendar access'}
                                     </button>
                                 </>
                             ) : (
-                                <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Calendar automatically.</p>
+                                <p className="text-gray-400 font-bold text-xs leading-relaxed">
+                                    Not connected, because you are not signed in. Use "Sign in with Google" in the Account and Sync section near the top of this page — Calendar connects at the same time.
+                                </p>
                             )}
                         </div>
 
                         {/* Google Drive */}
-                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${isDriveConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${driveState === 'connected' ? 'bg-green-900/20 border-green-700' : driveState === 'needs-refresh' ? 'bg-yellow-900/20 border-yellow-700' : 'bg-gray-900 border-gray-700'}`}>
                             <div className="flex items-center gap-3 sm:gap-4 mb-3">
                                 {DRIVE_LOGO}
                                 <p className="text-base sm:text-lg font-black text-white uppercase">Google Drive</p>
-                                {isDriveConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                                {driveState === 'connected' && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Connected</div>}
+                                {driveState === 'needs-refresh' && <div className="ml-auto bg-yellow-600 text-black px-3 py-1 rounded-full text-[9px] font-black uppercase">Needs refresh</div>}
                             </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connects automatically when you sign in with Google. Browse and import files from Drive into the Files Vault.</p>
-                            {isDriveConnected ? (
-                                <button
-                                    onClick={handleDisconnectDrive}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
-                                >
-                                    Disconnect Drive
-                                </button>
-                            ) : user?.isAnonymous === false ? (
+                            {driveState === 'connected' ? (
                                 <>
-                                    <p className="text-yellow-400 font-bold text-xs mb-3">Token expired. Sign in again to refresh the connection.</p>
+                                    <p className="text-gray-300 font-bold text-xs mb-4 leading-relaxed">
+                                        Connected. You can browse and import files from Drive into the Files Vault.
+                                    </p>
+                                    <button
+                                        onClick={handleDisconnectDrive}
+                                        aria-label="Disconnect Google Drive. Your Google account stays signed in."
+                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                    >
+                                        Disconnect Drive
+                                    </button>
+                                </>
+                            ) : driveState === 'needs-refresh' ? (
+                                <>
+                                    <p className="text-gray-300 font-bold text-xs mb-4 leading-relaxed">
+                                        You are still signed in{user?.email ? ` as ${user.email}` : ''}. Only the Drive permission has run out — it lasts about an hour. Refreshing it does not sign you out.
+                                    </p>
                                     <button
                                         onClick={handleSignIn}
                                         disabled={isSigningIn}
+                                        aria-label="Refresh Google Drive access. You stay signed in."
                                         className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
                                     >
                                         {isSigningIn ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
-                                        {isSigningIn ? 'Reconnecting…' : 'Reconnect Drive'}
+                                        {isSigningIn ? 'Refreshing Drive access…' : 'Refresh Drive access'}
                                     </button>
                                 </>
                             ) : (
-                                <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Drive automatically.</p>
+                                <p className="text-gray-400 font-bold text-xs leading-relaxed">
+                                    Not connected, because you are not signed in. Use "Sign in with Google" in the Account and Sync section near the top of this page — Drive connects at the same time.
+                                </p>
                             )}
                         </div>
 
@@ -647,13 +770,29 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 <>
                                     <button
                                         onClick={handleSignInWithNotion}
-                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20"
+                                        disabled={isWaitingForNotion}
+                                        aria-label="Sign in with Notion to connect your workspace"
+                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20 disabled:opacity-60"
                                     >
-                                        <div className="w-5 h-5 bg-white rounded flex items-center justify-center shrink-0">
-                                            <span className="text-black font-black text-sm leading-none">N</span>
-                                        </div>
-                                        Sign in with Notion
+                                        {isWaitingForNotion ? (
+                                            <Loader2Icon className="w-5 h-5 animate-spin" />
+                                        ) : (
+                                            <div className="w-5 h-5 bg-white rounded flex items-center justify-center shrink-0">
+                                                <span className="text-black font-black text-sm leading-none">N</span>
+                                            </div>
+                                        )}
+                                        {isWaitingForNotion ? 'Waiting for Notion…' : 'Sign in with Notion'}
                                     </button>
+                                    {isWaitingForNotion && (
+                                        <p className="text-gray-300 font-bold text-xs mt-3 leading-relaxed" role="status">
+                                            A Notion window has opened. Finish signing in there, then come back here — this page updates on its own.
+                                        </p>
+                                    )}
+                                    {notionError && (
+                                        <p className="text-red-300 font-bold text-xs mt-3 leading-relaxed" role="alert">
+                                            {notionError}
+                                        </p>
+                                    )}
                                 </>
                             ) : (
                                 <>

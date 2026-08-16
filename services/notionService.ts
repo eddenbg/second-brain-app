@@ -19,6 +19,22 @@ export const clearNotionCredentials = () => {
     localStorage.removeItem(NOTION_CLIENT_SECRET_KEY);
 };
 
+// Notion compares redirect_uri against the registered one character for
+// character, and the token exchange in App.tsx sends the same string again, so
+// both sides must build it the same way: origin plus a single trailing slash.
+export const getNotionRedirectUri = (): string => `${window.location.origin}/`;
+
+export const buildNotionAuthUrl = (clientId: string): string => {
+    const params = new URLSearchParams({
+        client_id: clientId,
+        response_type: 'code',
+        owner: 'user',
+        redirect_uri: getNotionRedirectUri(),
+        state: 'notion_oauth',
+    });
+    return `https://api.notion.com/v1/oauth/authorize?${params.toString()}`;
+};
+
 export interface NotionPage {
     id: string;
     title: string;

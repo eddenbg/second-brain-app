@@ -1,5 +1,8 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { NotebookData } from '../types';
+
+/** Fraction of the canvas kept clear on each side so nothing touches the edge. */
+const FIT_MARGIN = 0.04;
 
 interface NotebookViewerProps {
     notebook: NotebookData;
@@ -21,6 +24,8 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
     const animationFrameRef = useRef<number | null>(null);
     const [highlightedPoint, setHighlightedPoint] = useState<{ x: number; y: number; alpha: number } | null>(null);
     const highlightFadeRef = useRef<number | null>(null);
+    const currentTimeRef = useRef(0);
+    const repaintRef = useRef<() => void>(() => {});
 
     // Calculate max time from notebook strokes
     useEffect(() => {
@@ -48,20 +53,57 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
     }, [audioElement]);
 
     /**
+     * Extent of the ink itself, in the coordinates the strokes were captured in.
+     * Used as the source rect for notebooks saved before the capture size was
+     * recorded: scaling those 1:1 pushed right-to-left handwriting, which starts
+     * near the right edge of a full-screen surface, clean off this small canvas.
+     */
+    const strokeBounds = useMemo(() => {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (const stroke of notebook.strokes || []) {
+            for (const point of stroke.points) {
+                if (point.x < minX) minX = point.x;
+                if (point.y < minY) minY = point.y;
+                if (point.x > maxX) maxX = point.x;
+                if (point.y > maxY) maxY = point.y;
+            }
+        }
+
+        if (!Number.isFinite(minX)) return null;
+        // A dot or a perfectly straight line has no extent on one axis; keep a
+        // floor so the scale stays finite.
+        return { x: minX, y: minY, width: Math.max(maxX - minX, 1), height: Math.max(maxY - minY, 1) };
+    }, [notebook.strokes]);
+
+    /**
      * Maps the recorded drawing surface onto this canvas, preserving aspect ratio
-     * and centring the result. Falls back to 1:1 for notebooks saved before the
-     * capture size was recorded.
+     * and centring the result with a small margin. Everything is in CSS pixels —
+     * the context carries the device-pixel-ratio transform.
      */
     const fitScale = useCallback(() => {
         const canvas = canvasRef.current;
         const cw = canvas?.offsetWidth || 0;
         const ch = canvas?.offsetHeight || 0;
-        const sw = notebook.canvasWidth || cw;
-        const sh = notebook.canvasHeight || ch;
-        if (!cw || !ch || !sw || !sh) return { k: 1, dx: 0, dy: 0 };
-        const k = Math.min(cw / sw, ch / sh);
-        return { k, dx: (cw - sw * k) / 2, dy: (ch - sh * k) / 2 };
-    }, [notebook.canvasWidth, notebook.canvasHeight]);
+        const src = notebook.canvasWidth && notebook.canvasHeight
+            ? { x: 0, y: 0, width: notebook.canvasWidth, height: notebook.canvasHeight }
+            : strokeBounds;
+
+        if (!cw || !ch || !src) return { k: 1, dx: 0, dy: 0, sx: 0, sy: 0, sw: cw, sh: ch };
+
+        const k = Math.min((cw * (1 - FIT_MARGIN * 2)) / src.width, (ch * (1 - FIT_MARGIN * 2)) / src.height);
+        // Folding the source origin into the offset keeps the mapping a plain
+        // `x * k + dx`, so the hit test can invert it with `(x - dx) / k`.
+        return {
+            k,
+            dx: (cw - src.width * k) / 2 - src.x * k,
+            dy: (ch - src.height * k) / 2 - src.y * k,
+            sx: src.x,
+            sy: src.y,
+            sw: src.width,
+            sh: src.height,
+        };
+    }, [notebook.canvasWidth, notebook.canvasHeight, strokeBounds]);
 
     /** upToTime is in SECONDS (audio clock); stroke timestamps are milliseconds. */
     const redrawStrokes = useCallback((upToTime: number) => {
@@ -71,16 +113,24 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        // Everything below is in CSS pixels because the context carries the dpr
+        // transform; canvas.width/height are device pixels and would over-fill.
+        const cssWidth = canvas.offsetWidth;
+        const cssHeight = canvas.offsetHeight;
+
         // Match the notebook's black page. The pen draws in white, so a white
         // canvas here rendered every stroke invisible — the notes looked blank.
         ctx.fillStyle = '#000000';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, cssWidth, cssHeight);
 
         // Draw background image if exists
         if (notebook.backgroundImageUrl) {
             const img = new Image();
             img.onload = () => {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                // The page image shares the strokes' coordinate space, so it gets
+                // the same fit transform — otherwise the two drift apart.
+                const s = fitScale();
+                ctx.drawImage(img, s.sx * s.k + s.dx, s.sy * s.k + s.dy, s.sw * s.k, s.sh * s.k);
                 drawStrokesUpToTime(upToTime);
                 drawHighlight();
             };
@@ -150,22 +200,60 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
         }
     }, [notebook.backgroundImageUrl, notebook.strokes, highlightedPoint, fitScale]);
 
-    // Initialize canvas
+    // Repaint at the playhead rather than at 0: a tap seeks and then changes the
+    // highlight, and rewinding to 0 on that re-render wiped the notes off screen.
+    const repaint = useCallback(() => redrawStrokes(currentTimeRef.current), [redrawStrokes]);
+
+    useEffect(() => {
+        currentTimeRef.current = currentTime;
+    }, [currentTime]);
+
+    // Keeps the resize handler on the latest paint function without re-subscribing.
+    useEffect(() => {
+        repaintRef.current = repaint;
+        repaint();
+    }, [notebook, repaint]);
+
+    // Size the backing store to the element, and keep doing it. The panel is laid
+    // out with flex and percentage heights and grows a controls row once the audio
+    // metadata loads, so a single measurement at mount left the backing store
+    // stretched over a box of a different size while fitScale kept using the live
+    // one — which magnified the strokes about the top-left corner and pushed
+    // right-to-left handwriting off the right edge, out of tap range.
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = canvas.offsetWidth * dpr;
-        canvas.height = canvas.offsetHeight * dpr;
+        const resizeCanvas = () => {
+            const width = canvas.offsetWidth;
+            const height = canvas.offsetHeight;
+            if (!width || !height) return;
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.scale(dpr, dpr);
-        }
+            const dpr = window.devicePixelRatio || 1;
+            const backingWidth = Math.round(width * dpr);
+            const backingHeight = Math.round(height * dpr);
+            if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+                canvas.width = backingWidth;
+                canvas.height = backingHeight;
+            }
 
-        redrawStrokes(0);
-    }, [notebook, redrawStrokes]);
+            // Assigning width/height resets the transform, and the ratio itself can
+            // change (moving between screens), so re-apply it on every pass.
+            canvas.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0);
+            repaintRef.current();
+        };
+
+        resizeCanvas();
+
+        const observer = new ResizeObserver(resizeCanvas);
+        observer.observe(canvas);
+        window.addEventListener('orientationchange', resizeCanvas);
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('orientationchange', resizeCanvas);
+        };
+    }, []);
 
     const handlePlay = useCallback(() => {
         if (!audioElement) return;
