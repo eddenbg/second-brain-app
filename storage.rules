@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Lecture and voice recordings live here rather than in Firestore, whose
+// documents are capped at 1MB — base64 audio exceeds that after roughly half a
+// minute. Each signed-in user owns everything under their own uid.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

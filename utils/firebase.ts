@@ -3,6 +3,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider } from 'firebase/auth';
 import { initializeFirestore, CACHE_SIZE_UNLIMITED, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 /**
  * AUTOMATIC SYNC SETUP:
@@ -107,6 +108,11 @@ try {
 
 export const auth = authExport;
 export const db = dbExport;
+// Recordings are far too large for Firestore's 1MB document limit, so the audio
+// itself lives in Storage and the document only keeps a URL.
+export const storage = (() => {
+    try { return app ? getStorage(app) : null; } catch { return null; }
+})();
 export const isConfigured = !isMock;
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');

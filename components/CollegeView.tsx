@@ -124,6 +124,56 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [showMoodlePicker, setShowMoodlePicker] = useState(false);
     const [importedMoodleUrls, setImportedMoodleUrls] = useState<Set<string>>(new Set());
 
+    // ── Auto-start a lecture the moment the recording view opens ────────────────
+    // Tapping "Record Lecture" on the course dashboard used to land on a screen
+    // whose only job was to show a second "Record Lecture" button. Recorder owns
+    // its own recording state and exposes no autostart prop, so we press its
+    // existing start button (stable aria-label "Start recording lecture") once,
+    // on the first frame after the view mounts. The tap that opened the view is
+    // still within the browser's transient user-activation window, so
+    // getUserMedia is allowed. The X in the header remains the way to back out.
+    const recordingViewRef = useRef<HTMLDivElement | null>(null);
+    const autoStartDoneRef = useRef(false);
+
+    useEffect(() => {
+        // Re-arm only when we are away from the recording view, so a single entry
+        // can never trigger more than one start (including after a recording ends
+        // and the review screen is shown, which stays inside this same view).
+        if (view !== 'recording') {
+            autoStartDoneRef.current = false;
+            return;
+        }
+        if (autoStartDoneRef.current) return;
+
+        let cancelled = false;
+        let frame = 0;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 30; // ≈half a second of frames, then give up for good
+
+        const tryStart = () => {
+            if (cancelled || autoStartDoneRef.current) return;
+            const startButton = recordingViewRef.current?.querySelector<HTMLButtonElement>(
+                'button[aria-label="Start recording lecture"]'
+            );
+            if (startButton && !startButton.disabled) {
+                // Latch before clicking: the click re-renders synchronously and the
+                // button must never be pressed a second time — not on a retry, and
+                // not if the microphone is denied and Recorder re-shows the button.
+                autoStartDoneRef.current = true;
+                startButton.click();
+                return;
+            }
+            if (++attempts >= MAX_ATTEMPTS) {
+                autoStartDoneRef.current = true; // element absent — stop, never loop
+                return;
+            }
+            frame = requestAnimationFrame(tryStart);
+        };
+
+        frame = requestAnimationFrame(tryStart);
+        return () => { cancelled = true; cancelAnimationFrame(frame); };
+    }, [view]);
+
     // Study Session
     const [showStudyPrompt, setShowStudyPrompt] = useState(false);
     const [isGeneratingStudy, setIsGeneratingStudy] = useState(false);
@@ -516,7 +566,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         // ── Record Lecture ──────────────────────────────────────────────────────
         if (view === 'recording') {
             return (
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6" ref={recordingViewRef}>
                     <header className="flex justify-between items-center">
                         <h2 className="text-2xl font-black uppercase">Record Lecture</h2>
                         <button onClick={handleBack} aria-label="Cancel" className="btn-outline w-20 h-14">
@@ -530,7 +580,9 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             // Only leave the screen once the write has succeeded,
                             // otherwise a failed save looks identical to a good one.
                             const result = await onSave({ ...mem, course: selectedCourse!, category: 'college' });
-                            if (result && result.ok === false) return result;
+                            // Stay put on failure, and also on a partial save, so the
+                            // Recorder can explain what did not make it.
+                            if (result && (result.ok === false || result.reason)) return result;
                             window.history.back();
                             return result;
                         }}

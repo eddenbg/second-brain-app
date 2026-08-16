@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AnyMemory, WebMemory, Task } from '../types';
-import { db, auth } from '../utils/firebase';
+import { db, auth, storage } from '../utils/firebase';
 import { 
     collection, 
     doc, 
@@ -40,6 +40,60 @@ const stripUndefined = (value: any): any => {
         return out;
     }
     return value;
+};
+
+
+/** Roughly a Firestore document's limit; stay well under it. */
+const INLINE_MEDIA_LIMIT = 700_000;
+
+/**
+ * Move oversized recordings out of the document and into Storage.
+ *
+ * A Firestore document cannot exceed 1MB, and base64 audio blows past that after
+ * about half a minute — saving a real lecture failed outright with "the value of
+ * property audioDataUrl is longer than 1048487 bytes". Upload anything large and
+ * keep only the download URL in the document.
+ *
+ * If the upload cannot happen (Storage not enabled, rules denying writes, offline)
+ * we drop the media rather than fail the save: losing the audio is bad, losing the
+ * transcript and handwriting with it is far worse. The caller is told what happened.
+ */
+const externalizeMedia = async (
+    memory: any,
+    uid: string,
+): Promise<{ memory: any; warning?: string }> => {
+    const fields = ['audioDataUrl', 'videoDataUrl'] as const;
+    const oversized = fields.filter(f => typeof memory[f] === 'string'
+        && memory[f].startsWith('data:')
+        && memory[f].length > INLINE_MEDIA_LIMIT);
+
+    if (oversized.length === 0) return { memory };
+
+    if (!storage) {
+        for (const f of oversized) delete memory[f];
+        return { memory, warning: 'Saved without the recording — file storage is not available.' };
+    }
+
+    try {
+        const { ref, uploadString, getDownloadURL } = await import('firebase/storage');
+        for (const f of oversized) {
+            const dataUrl: string = memory[f];
+            const ext = f === 'audioDataUrl' ? 'webm' : 'webm';
+            const path = `users/${uid}/media/${memory.id}-${f}.${ext}`;
+            const fileRef = ref(storage, path);
+            await uploadString(fileRef, dataUrl, 'data_url');
+            memory[f] = await getDownloadURL(fileRef);
+        }
+        return { memory };
+    } catch (e: any) {
+        console.error('Media upload failed', e);
+        for (const f of oversized) delete memory[f];
+        return {
+            memory,
+            warning: 'Saved your transcript and notes, but the audio could not be uploaded '
+                + `(${e?.code || e?.message || 'storage error'}). Playback will not be available for this one.`,
+        };
+    }
 };
 
 export const useRecordings = () => {
@@ -282,9 +336,11 @@ export const useRecordings = () => {
             id: Date.now().toString(),
             date: new Date().toISOString(),
         }) as AnyMemory;
+        const { memory: storedMemory, warning } = await externalizeMedia(newMemory, user.uid);
+
         const { setDoc } = await import('firebase/firestore');
         try {
-            await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
+            await setDoc(doc(db, 'users', user.uid, 'memories', storedMemory.id), storedMemory);
         } catch (e: any) {
             console.error('addMemory failed', e);
             const denied = e?.code === 'permission-denied' || /insufficient permissions/i.test(e?.message || '');
@@ -310,7 +366,7 @@ export const useRecordings = () => {
             } catch { /* topic generation is best-effort */ }
         })();
 
-        return { ok: true };
+        return warning ? { ok: true, reason: warning } : { ok: true };
     }, [user]);
 
     const deleteMemory = useCallback(async (id: string) => {

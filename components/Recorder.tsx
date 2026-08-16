@@ -409,6 +409,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             const result = await onSave(newMemory);
             if (result && result.ok === false) {
                 setError(result.reason || 'Could not save this recording.');
+            } else if (result && result.reason) {
+                // Saved, but not completely — e.g. the audio was too large for the
+                // document and could not be uploaded. Say so rather than letting it
+                // look like a clean success.
+                setError(result.reason);
             }
         } catch(e: any) {
             console.error("Save failed", e);
