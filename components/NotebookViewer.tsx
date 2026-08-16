@@ -35,8 +35,9 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Clear canvas with white background
-        ctx.fillStyle = '#ffffff';
+        // Match the notebook's black page. The pen draws in white, so a white
+        // canvas here rendered every stroke invisible — the notes looked blank.
+        ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         // Draw background image if exists
@@ -318,18 +319,20 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
                 .notebook-viewer {
                     display: flex;
                     flex-direction: column;
-                    gap: 16px;
-                    padding: 16px;
-                    background: linear-gradient(135deg, #f0f4f8 0%, #e9eef5 100%);
+                    gap: 12px;
+                    padding: 12px;
+                    height: 100%;
+                    background: transparent;
                     border-radius: 12px;
-                    border: 1px solid #d1d8e0;
+                    border: 1px solid rgba(255,255,255,0.12);
                 }
 
                 .notebook-canvas-wrapper {
                     position: relative;
                     width: 100%;
-                    height: 300px;
-                    background: white;
+                    height: 100%;
+                    min-height: 240px;
+                    background: #000;
                     border-radius: 8px;
                     overflow: hidden;
                     border: 1px solid #ddd;

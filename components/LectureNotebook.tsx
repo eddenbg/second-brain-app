@@ -56,7 +56,9 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
 
     // Sync notebook data with parent
     useEffect(() => {
-        onUpdate({ strokes, backgroundImageUrl: bgImage });
+        // Omit the key entirely when there is no background: Firestore rejects a
+        // document containing undefined and fails the whole save.
+        onUpdate(bgImage ? { strokes, backgroundImageUrl: bgImage } : { strokes });
     }, [strokes, bgImage, onUpdate]);
 
     // Handle canvas resize to match container size

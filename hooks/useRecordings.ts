@@ -23,6 +23,25 @@ export interface StoredData {
 
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
 
+/**
+ * Firestore rejects any document containing an undefined value, failing the whole
+ * write. Several fields are built as `x || undefined` (videoDataUrl, summary,
+ * notebook.backgroundImageUrl when no background was set), so a perfectly ordinary
+ * lecture could not be saved at all. Drop those keys instead of sending them.
+ */
+const stripUndefined = (value: any): any => {
+    if (Array.isArray(value)) return value.map(stripUndefined);
+    if (value && typeof value === 'object' && !(value instanceof Date)) {
+        const out: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) {
+            if (v === undefined) continue;
+            out[k] = stripUndefined(v);
+        }
+        return out;
+    }
+    return value;
+};
+
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -258,11 +277,11 @@ export const useRecordings = () => {
         if (!user) {
             return { ok: false, reason: 'Not signed in yet, so there is nowhere to save. Open Settings and sign in with Google.' };
         }
-        const newMemory = {
+        const newMemory = stripUndefined({
             ...memoryData,
             id: Date.now().toString(),
             date: new Date().toISOString(),
-        } as AnyMemory;
+        }) as AnyMemory;
         const { setDoc } = await import('firebase/firestore');
         try {
             await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
