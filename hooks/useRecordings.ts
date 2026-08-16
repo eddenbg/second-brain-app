@@ -404,6 +404,47 @@ export const useRecordings = () => {
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
 
+        // Inside the Android app, go through the native Google SDK.
+        //
+        // Google blocks its sign-in page in embedded WebViews, so neither the popup
+        // nor the redirect can ever succeed there. The native plugin uses Play
+        // Services instead and hands back a credential we exchange for a Firebase
+        // session. Loaded lazily so the web bundle never pulls it in.
+        const isNativeApp = typeof window !== 'undefined'
+            && (window as any).Capacitor?.isNativePlatform?.() === true;
+
+        if (isNativeApp) {
+            try {
+                const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
+                const result = await FirebaseAuthentication.signInWithGoogle({
+                    scopes: [
+                        'https://www.googleapis.com/auth/calendar.readonly',
+                        'https://www.googleapis.com/auth/drive.readonly',
+                        'https://www.googleapis.com/auth/drive.file',
+                    ],
+                });
+
+                const idToken = result.credential?.idToken;
+                const accessToken = result.credential?.accessToken;
+                if (!idToken) throw new Error('Google returned no ID token');
+
+                // Mirror the native session into the JS SDK, which is what the rest
+                // of the app (Firestore reads and writes) authenticates with.
+                const credential = GoogleAuthProvider.credential(idToken, accessToken);
+                await signInWithCredential(auth, credential);
+
+                if (accessToken) {
+                    saveGoogleToken(accessToken);
+                    saveDriveToken(accessToken);
+                }
+                localStorage.removeItem('last_auth_error');
+                return;
+            } catch (e: any) {
+                localStorage.setItem('last_auth_error', `native: ${e?.code || 'unknown'}: ${e?.message || e}`);
+                throw e;
+            }
+        }
+
         const storeGoogleTokenFromResult = (result: UserCredential) => {
             const credential = GoogleAuthProvider.credentialFromResult(result);
             const token = credential?.accessToken;

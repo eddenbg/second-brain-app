@@ -1,4 +1,8 @@
 apply plugin: 'com.android.application'
+// Reads android/app/google-services.json. The classpath was already declared in
+// the root build.gradle, but without applying the plugin here the config file was
+// simply ignored and native Google sign-in could never have worked.
+apply plugin: 'com.google.gms.google-services'
 
 android {
     namespace = "com.eddenbg.secondbrain"
