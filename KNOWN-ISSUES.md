@@ -58,22 +58,28 @@ Now network-first with a cache fallback, verified by A/B in a browser.
 
 ---
 
-## 3. Notion OAuth — blocked on configuration
+## 3. Notion OAuth — unblocked 2026-08-16
 
-**Status:** code complete on both ends, feature switched off.
+**Status:** configurable from Settings. No Netlify variables or redeploy needed.
 
-The full flow exists: authorize URL and popup in `SettingsModal.tsx`, callback in
-`App.tsx`, token exchange in `netlify/functions/notionOAuth.ts`. The button never
-renders because it is gated on `NOTION_CLIENT_ID`, which was never set.
+The flow was complete on both ends — authorize URL and popup in
+`SettingsModal.tsx`, callback in `App.tsx`, token exchange in
+`netlify/functions/notionOAuth.ts` — but the button was gated on a build-time
+`NOTION_CLIENT_ID` that was never set.
 
-**Cannot be done from a coding session.** Requires:
+The function already accepted `client_id` and `client_secret` in the request
+body and preferred them over its env vars, and `App.tsx` already forwarded the
+stored values. Only the input fields were missing, so they were added under
+Settings → Notion → **Set up Notion sign-in**.
 
-1. A public Notion integration, with redirect URI `https://eddenbg-second-brain.netlify.app/`
-2. `NOTION_CLIENT_ID` and `NOTION_CLIENT_SECRET` set in Netlify
-3. A **cache-cleared** redeploy — `NOTION_CLIENT_ID` is inlined at build time, so
-   setting it is not enough on its own
+Remaining manual step, which only needs a Notion account:
 
-Until then the paste-an-API-token fallback is the only path.
+1. Create a **public** integration at notion.so/profile/integrations
+2. Set its redirect URI to `https://eddenbg-second-brain.netlify.app/`
+3. Paste the client ID and secret into Settings
+
+Credentials are stored on the device only. Setting the Netlify env vars still
+works and would apply to every device, but is no longer required.
 
 ---
 
