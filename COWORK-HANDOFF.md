@@ -16,39 +16,34 @@ Context: repo `eddenbg/second-brain-app`, deployed at
 Firebase project id: `my-second-brain-app-10dfe`
 Android package name: `com.eddenbg.secondbrain`
 
-## Task 1 — URGENT: the database is rejecting every write
+## Task 1 — URGENT: turn on Storage and publish its rules
 
-The app shows **"Missing or insufficient permissions"** and nothing can be
-saved: no new courses, no lectures, no voice notes. Existing items still appear
-only because they are cached on the device.
-
-This is the signature of expired Firestore rules. Firebase's starter rules
-contain a hard expiry date, and once it passes every read and write is denied.
+Lecture audio is too large for Firestore, whose documents are capped at 1MB, so
+recordings now go to Firebase Storage. Until this is done, every lecture saves
+its transcript and handwriting but reports that the audio could not be uploaded,
+and playback will not work.
 
 1. Go to https://console.firebase.google.com and open `my-second-brain-app-10dfe`
-2. Open **Firestore Database → Rules**
-3. **Tell me what the current rules say** before changing anything — I want to
-   confirm the diagnosis. Look for a line resembling
-   `allow read, write: if request.time < timestamp.date(...)`.
-4. Replace the entire contents with the rules below, then click **Publish**.
-
-   These are also committed in the repo as `firestore.rules`.
+2. Open **Storage** in the left sidebar. If it has never been set up, click
+   **Get started** and accept the default bucket and location.
+3. Go to the **Rules** tab, replace the entire contents with the rules below,
+   and click **Publish**. These are also committed in the repo as `storage.rules`.
 
    ```
    rules_version = '2';
 
-   service cloud.firestore {
-     match /databases/{database}/documents {
-       match /users/{userId}/{document=**} {
+   service firebase.storage {
+     match /b/{bucket}/o {
+       match /users/{userId}/{allPaths=**} {
          allow read, write: if request.auth != null && request.auth.uid == userId;
        }
      }
    }
    ```
 
-5. Tell me once it is published. Then I will ask the user to retry saving.
+4. Tell me once it is published, and whether Storage had to be enabled first.
 
-This grants each signed-in user access to their own data only, with no expiry.
+Note: the Firestore rules task from the previous handoff is DONE — do not redo it.
 
 ## Task 2 — Confirm the Netlify domain is authorized in Firebase
 
