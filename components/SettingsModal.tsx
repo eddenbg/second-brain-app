@@ -135,16 +135,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         return () => unsubscribe?.();
     }, []);
 
-    // Auto-close modal when user returns from OAuth redirect
-    useEffect(() => {
-        if (isSigningIn) return; // Don't close while actively signing in
+    // Was Google already connected when this modal opened? Only a connection that
+    // happens *while* it is open means a sign-in just completed.
+    const wasConnectedOnOpen = React.useRef(!!getStoredToken());
 
-        const token = getStoredToken();
-        if (token && isGoogleConnected) {
-            // Token exists and was recently set, close the modal
-            const timer = setTimeout(() => onClose(), 300);
-            return () => clearTimeout(timer);
-        }
+    // Auto-close after a sign-in completes.
+    //
+    // This used to close whenever a token existed at all. Since isGoogleConnected
+    // is seeded from the stored token, that meant every subsequent open of
+    // Settings scheduled its own dismissal 300ms later — once signed in, the
+    // modal became impossible to keep on screen. Close only on the transition
+    // into connected.
+    useEffect(() => {
+        if (isSigningIn) return;
+        if (wasConnectedOnOpen.current) return;
+        if (!isGoogleConnected || !getStoredToken()) return;
+
+        const timer = setTimeout(() => onClose(), 300);
+        return () => clearTimeout(timer);
     }, [isGoogleConnected, isSigningIn, onClose]);
 
     const handleMoodleLogin = async () => {
