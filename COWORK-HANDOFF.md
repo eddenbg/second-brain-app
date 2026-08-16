@@ -1,82 +1,80 @@
-# Cowork handoff — dashboard setup for Second Brain
+# Cowork handoff
 
-Paste everything below the line into the Cowork tab on my PC.
+Paste everything below the line into the Cowork tab on the laptop.
 
-The person you are helping is legally blind. Do not ask them to read a screen,
-find a button, or copy a value. Drive the browser yourself, describe each step in
-plain language as you go, and read back any value you are asked to confirm.
+Only one task now genuinely needs a browser session someone is signed in to.
+Notion no longer does — it moved into the app's own Settings screen, and the
+Netlify environment variables are no longer required.
 
 ---
 
-You have screen control on my computer. I am visually impaired and cannot do
-these steps by hand, so please perform them yourself and tell me what you see.
+You have screen control on my computer. I am legally blind, so please do these
+steps yourself rather than asking me to find buttons or read values back.
+Describe what you are doing as you go, and tell me the result of each step.
 
-Context: my app is a React + Vite PWA, repo `eddenbg/second-brain-app`,
-deployed on Netlify at `https://eddenbg-second-brain.netlify.app`.
+Context: React + Vite PWA, repo `eddenbg/second-brain-app`, deployed on Netlify
+at `https://eddenbg-second-brain.netlify.app`.
 Firebase project id: `my-second-brain-app-10dfe`.
+Android package name: `com.eddenbg.secondbrain`.
 
-The code for all of this is already written and deployed. Only dashboard
-configuration is missing. Please do these four tasks in order.
+## Task 1 — Confirm the Netlify domain is authorized in Firebase
 
-## Task 1 — Firebase: authorize the Netlify domain
+Google sign-in on the web now appears to work, so this is very likely already
+correct. Confirming it rules the setting out for good.
 
-I just changed the app so Firebase's auth handler is served from my own domain
-instead of `firebaseapp.com` (a `/__/auth/*` proxy in `netlify.toml`). For this
-to work, my Netlify domain must be listed as an authorized domain.
-
-1. Go to https://console.firebase.google.com and open project
-   `my-second-brain-app-10dfe`.
-2. Go to **Authentication → Settings → Authorized domains**.
-3. Confirm `eddenbg-second-brain.netlify.app` is in the list. If it is not,
+1. Go to https://console.firebase.google.com and open `my-second-brain-app-10dfe`
+2. Authentication → Settings → Authorized domains
+3. Tell me every domain listed. If `eddenbg-second-brain.netlify.app` is missing,
    add it.
-4. Tell me every domain currently in that list.
 
-## Task 2 — Notion: create the OAuth integration
+## Task 2 — Register the Android app so sign-in can work inside the APK
 
-My app has a fully built "Sign in with Notion" flow that is invisible because
-two environment variables were never set. I need the integration's credentials.
+This is the real blocker. Google refuses to show its sign-in page inside an
+embedded WebView, so the packaged Android app needs native credentials. That
+starts with registering the app and downloading a config file.
 
-1. Go to https://www.notion.so/profile/integrations and sign in as me.
-2. Look for an existing integration for this app. If none exists, create a new
-   **public** integration named `Second Brain`.
-3. In its settings, set the **Redirect URI** to exactly:
-   `https://eddenbg-second-brain.netlify.app/`
-   (with the trailing slash)
-4. Copy the **OAuth client ID** and **OAuth client secret**. Keep the secret
-   private — do not read it aloud or paste it into a chat. You will enter it
-   directly into Netlify in the next task.
+1. In the same Firebase project, open Project settings (gear icon) → General
+2. Under "Your apps", check whether an **Android** app already exists with
+   package name `com.eddenbg.secondbrain`
+   - If it exists, skip to step 4
+3. If not, click Add app → Android and register it:
+   - Package name: `com.eddenbg.secondbrain`
+   - Nickname: `Second Brain Android`
+   - **Debug signing certificate SHA-1:** see step 5 for how to get this
+4. Download **`google-services.json`**
+5. To get the SHA-1 fingerprint, open a terminal and run:
 
-## Task 3 — Netlify: set the environment variables
+   ```
+   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+   ```
 
-1. Go to https://app.netlify.com and open the site
-   `eddenbg-second-brain`.
-2. Go to **Site configuration → Environment variables**.
-3. Add these two variables, scoped to **all deploy contexts**:
-   - `NOTION_CLIENT_ID` = the client ID from Task 2
-   - `NOTION_CLIENT_SECRET` = the client secret from Task 2
-4. **Important:** `NOTION_CLIENT_ID` is baked into the bundle at build time, so
-   the running site will not pick it up until it is rebuilt. Go to
-   **Deploys → Trigger deploy → Clear cache and deploy site** and wait for it
-   to finish.
-5. Tell me when the deploy is green.
+   Copy the line labelled `SHA1:` and add it in Firebase under the Android app →
+   "Add fingerprint". This must be done or sign-in will fail inside the APK even
+   with the config file present.
 
-## Task 4 — Verify, and report back
+   If `keytool` is not found, it ships with the JDK — try
+   `/usr/lib/jvm/*/bin/keytool` on Linux, or
+   `/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool` on a Mac.
 
-Open `https://eddenbg-second-brain.netlify.app` in a normal browser window and
-check each of these, telling me the result of each in plain language:
+6. Put `google-services.json` into the repo at `android/app/google-services.json`,
+   then commit and push it to the `main` branch:
 
-1. Open **Settings** (gear icon, top right) → **Account & Sync** →
-   tap **Sign in with Google**. Does a Google account chooser appear, and after
-   choosing my account, does it return to the app showing me as signed in
-   rather than back at the start? This is the one I most need confirmed.
-2. Still in Settings, scroll to the **Notion** section. Is there now a
-   **Sign in with Notion** button (rather than only a box asking for an API
-   token)? If so, tap it and complete the Notion authorization, and tell me
-   whether it returns to the app connected.
-3. In Settings, find the **Moodle** section, enter my college credentials, and
-   tap the connect button. Tell me whether it reports success.
-4. Go to the **College Hub** tab. After a minute, does a list of my courses
-   appear on its own?
+   ```
+   cd <repo>
+   git checkout main && git pull
+   cp ~/Downloads/google-services.json android/app/google-services.json
+   git add android/app/google-services.json
+   git commit -m "Add Firebase Android config for native Google sign-in"
+   git push origin main
+   ```
 
-If any step fails, please capture the exact error text and the browser console
-output, and tell me what it said — do not try to fix the app's code yourself.
+7. Tell me when it is pushed, and paste back the SHA-1 you registered.
+
+Once that file is in the repo I can do the rest — the Capacitor plugin and the
+native sign-in wiring — without any further help.
+
+## Please do not
+
+- Change anything in Netlify. The app's environment there is correct.
+- Change `authDomain` or any Firebase config value in the code.
+- Add `NOTION_CLIENT_ID` or `NOTION_CLIENT_SECRET` — no longer needed.
