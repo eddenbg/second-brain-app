@@ -1,6 +1,7 @@
-// Bumped so the fixed fetch handler replaces the installed one and the stale
-// cache (which holds the index.html that was shadowing /__/auth/) is dropped.
-const CACHE_NAME = 'second-brain-v45';
+// Bumped to evict the stale app shell one last time. From here on the shell is
+// fetched network-first, so a deploy no longer depends on this string changing
+// to actually reach an installed device.
+const CACHE_NAME = 'second-brain-v46';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -60,11 +61,28 @@ self.addEventListener('fetch', (event) => {
   // responses go stale.
   if (url.pathname.startsWith('/api/')) return;
 
-  // Navigation requests (page loads, share target activations) — serve index.html
-  // so query params (title, url, text) are preserved for the React app to read.
+  // Navigation requests (page loads, share target activations) — network first.
+  //
+  // This used to answer from the cache unconditionally. Because index.html names
+  // the content-hashed JS bundle, a cached shell pinned the app to whichever
+  // build was current when that cache was written, and every later deploy was
+  // invisible until CACHE_NAME happened to change. Shipping a fix was therefore
+  // not enough for it to reach an installed device.
+  //
+  // Going to the network first means an online launch always gets the newest
+  // build; the cache is refreshed behind it and still answers when offline, so
+  // the share target keeps working with no connection.
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      caches.match('./index.html').then((cached) => cached || fetch(event.request))
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
