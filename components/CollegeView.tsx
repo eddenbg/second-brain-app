@@ -24,7 +24,7 @@ interface CollegeViewProps {
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDelete: (ids: string[]) => void;
     courses: string[];
-    addCourse: (courseName: string) => void;
+    addCourse: (courseName: string) => void | Promise<{ ok: boolean; reason?: string }>;
     deleteCourse: (courseName: string) => void;
     tasks: Task[];
     addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
@@ -95,6 +95,20 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
     const [newCourseName, setNewCourseName] = useState('');
+    const [addCourseError, setAddCourseError] = useState<string | null>(null);
+
+    const handleAddCourse = async () => {
+        const name = newCourseName.trim();
+        if (!name) return;
+        setAddCourseError(null);
+        const result = await addCourse(name);
+        // Older callers return void; only a definite failure should surface here.
+        if (result && result.ok === false) {
+            setAddCourseError(result.reason || 'Could not create the course.');
+            return;
+        }
+        setNewCourseName('');
+    };
     const [courseViewMode, setCourseViewMode] = useState<'list' | 'grid'>(() =>
         (localStorage.getItem('college_view_mode') as 'list' | 'grid') || 'list'
     );
@@ -282,28 +296,23 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             value={newCourseName}
                             onChange={(e) => setNewCourseName(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && newCourseName.trim()) {
-                                    addCourse(newCourseName.trim());
-                                    setNewCourseName('');
-                                }
+                                if (e.key === 'Enter' && newCourseName.trim()) handleAddCourse();
                             }}
                             placeholder="New Course Name…"
                             className="flex-grow"
                             aria-label="Enter new course name"
                         />
                         <button
-                            onClick={() => {
-                                if (newCourseName.trim()) {
-                                    addCourse(newCourseName.trim());
-                                    setNewCourseName('');
-                                }
-                            }}
+                            onClick={handleAddCourse}
                             aria-label="Add course"
                             className="btn-primary w-20"
                         >
                             <Plus size={36} strokeWidth={3} />
                         </button>
                     </div>
+                    {addCourseError && (
+                        <p role="alert" className="text-red-400 font-bold text-sm">{addCourseError}</p>
+                    )}
 
                     {/* View & sort controls */}
                     {courses.length > 0 && (

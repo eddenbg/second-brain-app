@@ -322,11 +322,25 @@ export const useRecordings = () => {
         await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
     }, [user]);
 
-    const addCourse = useCallback(async (courseName: string) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const updated = [...new Set([...savedCourses, courseName])];
-        const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken }, { merge: true });
+    // Returns why it failed rather than silently doing nothing: without this the
+    // Add Course button looked broken when the user simply was not signed in yet.
+    // Callers that do not care can ignore the result.
+    const addCourse = useCallback(async (courseName: string): Promise<{ ok: boolean; reason?: string }> => {
+        if (!db || (db as any).type === 'mock') {
+            return { ok: false, reason: 'Storage is unavailable. Check your connection and try again.' };
+        }
+        if (!user) {
+            return { ok: false, reason: 'Waiting for sign-in. Give it a moment, then try again.' };
+        }
+        try {
+            const updated = [...new Set([...savedCourses, courseName])];
+            const { setDoc } = await import('firebase/firestore');
+            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken }, { merge: true });
+            return { ok: true };
+        } catch (e: any) {
+            console.error('addCourse failed', e);
+            return { ok: false, reason: e?.message || 'Could not save the course.' };
+        }
     }, [user, savedCourses, moodleToken]);
 
     const deleteCourse = useCallback(async (courseName: string) => {
