@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Each signed-in user owns everything under their own uid and nothing else.
+//
+// The project is currently rejecting every write with "Missing or insufficient
+// permissions", which is what a expired test-mode rule looks like: Firebase's
+// default starter rules carry a hard date, and once it passes they deny all
+// access. Reads keep appearing to work because Firestore serves them from the
+// local cache, which is why existing courses and lectures are still visible
+// while nothing new can be saved.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Anything not matched above is denied.
+  }
+}
