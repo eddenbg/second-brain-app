@@ -48,28 +48,22 @@ export const clearFirebaseConfig = () => {
 };
 
 /**
- * Serve the auth handler from whatever origin the app is actually running on.
+ * authDomain stays on the Firebase-hosted handler.
  *
- * signInWithRedirect parks its pending-auth state on the authDomain. If that is
- * a different origin from the app (firebaseapp.com vs netlify.app), browsers
- * partition storage between the two and the state is lost on the way back —
- * getRedirectResult resolves null and the user silently stays signed out. The
- * PWA forces the redirect path, so this is exactly where it bites.
+ * It was briefly switched to the app's own hostname to dodge cross-origin
+ * storage partitioning on signInWithRedirect. That made Firebase send Google a
+ * redirect_uri of https://<our-host>/__/auth/handler, which is not registered on
+ * the OAuth client — Google rejected every attempt with Error 400
+ * redirect_uri_mismatch. Only the firebaseapp.com handler is registered, so
+ * pointing anywhere else needs a Google Cloud Console change first.
  *
- * Only safe where a /__/auth/* proxy actually sits in front of us (netlify.toml).
- * Local dev and the Capacitor WebView (https://localhost) have no such proxy, so
- * they keep pointing at the Firebase-hosted handler.
+ * The partitioning theory was also the wrong diagnosis: the real cause was the
+ * service worker answering /__/auth/ navigations (including Firebase's hidden
+ * iframe) with a cached index.html. That is fixed in public/sw.js, and the guard
+ * there matches on pathname, so it covers this cross-origin handler too.
  */
-const resolveAuthDomain = (fallback: string): string => {
-    if (typeof window === 'undefined') return fallback;
-    const { hostname, protocol } = window.location;
-    if (protocol !== 'https:') return fallback;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') return fallback;
-    return hostname;
-};
-
 const firebaseConfig = (DEFAULT_CONFIG.apiKey)
-    ? { ...DEFAULT_CONFIG, authDomain: resolveAuthDomain(DEFAULT_CONFIG.authDomain) }
+    ? DEFAULT_CONFIG
     : (getEnv('VITE_FIREBASE_API_KEY') ? {
         apiKey: getEnv('VITE_FIREBASE_API_KEY'),
         authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN'),

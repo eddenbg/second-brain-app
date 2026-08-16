@@ -85,6 +85,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [lastAuthError, setLastAuthError] = useState<string | null>(
         () => localStorage.getItem('last_auth_error')
     );
+
+    // Sign-in leaves for Google in a Custom Tab, so this component keeps running
+    // underneath. If the user backs out instead of completing it, nothing ever
+    // resolved the promise and the button sat on "Signing in…" forever. Reset it
+    // whenever we come back to the foreground, and surface any error recorded
+    // while we were away.
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState !== 'visible') return;
+            setIsSigningIn(false);
+            setLastAuthError(localStorage.getItem('last_auth_error'));
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, []);
     const [signInError, setSignInError] = useState<string | null>(null);
     const [moodleUsername, setMoodleUsername] = useState('');
     const [moodlePassword, setMoodlePassword] = useState('');
