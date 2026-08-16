@@ -248,15 +248,34 @@ export const useRecordings = () => {
         }
     }, [user, memories, tasks, savedCourses, moodleToken]);
 
-    const addMemory = useCallback(async (memoryData: Omit<AnyMemory, 'id' | 'date'>) => {
-        if (!user || !db || (db as any).type === 'mock') return;
+    // Reports failure instead of throwing into a promise nobody awaits. A rejected
+    // write here used to disappear entirely, so a recording that was never stored
+    // looked saved: the screen simply returned to the list without it.
+    const addMemory = useCallback(async (memoryData: Omit<AnyMemory, 'id' | 'date'>): Promise<{ ok: boolean; reason?: string }> => {
+        if (!db || (db as any).type === 'mock') {
+            return { ok: false, reason: 'Storage is unavailable. Check your connection and try again.' };
+        }
+        if (!user) {
+            return { ok: false, reason: 'Not signed in yet, so there is nowhere to save. Open Settings and sign in with Google.' };
+        }
         const newMemory = {
             ...memoryData,
             id: Date.now().toString(),
             date: new Date().toISOString(),
         } as AnyMemory;
         const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
+        try {
+            await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
+        } catch (e: any) {
+            console.error('addMemory failed', e);
+            const denied = e?.code === 'permission-denied' || /insufficient permissions/i.test(e?.message || '');
+            return {
+                ok: false,
+                reason: denied
+                    ? 'The database rejected the save (missing or insufficient permissions). The Firestore security rules for this project need updating — nothing can be saved until then.'
+                    : (e?.message || 'Could not save.'),
+            };
+        }
         // Fire-and-forget: generate AI topic tags and patch the document
         (async () => {
             try {
@@ -271,6 +290,8 @@ export const useRecordings = () => {
                 }
             } catch { /* topic generation is best-effort */ }
         })();
+
+        return { ok: true };
     }, [user]);
 
     const deleteMemory = useCallback(async (id: string) => {

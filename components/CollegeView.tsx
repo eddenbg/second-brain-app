@@ -19,7 +19,7 @@ import { decode, decodeAudioData } from '../utils/audio';
 
 interface CollegeViewProps {
     lectures: AnyMemory[];
-    onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
+    onSave: (memory: Omit<AnyMemory, 'id'|'date'>) => void | Promise<{ ok: boolean; reason?: string } | void>;
     onDelete: (id: string) => void;
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDelete: (ids: string[]) => void;
@@ -526,9 +526,13 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     <Recorder
                         audioOnly
                         notebookMode
-                        onSave={(mem) => {
-                            onSave({ ...mem, course: selectedCourse!, category: 'college' });
+                        onSave={async (mem) => {
+                            // Only leave the screen once the write has succeeded,
+                            // otherwise a failed save looks identical to a good one.
+                            const result = await onSave({ ...mem, course: selectedCourse!, category: 'college' });
+                            if (result && result.ok === false) return result;
                             window.history.back();
+                            return result;
                         }}
                         onCancel={handleBack}
                         titlePlaceholder={`Lecture – ${selectedCourse} – ${new Date().toLocaleDateString()}`}

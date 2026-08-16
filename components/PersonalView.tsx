@@ -28,7 +28,7 @@ import TopicsBrowserModal from './TopicsBrowserModal';
 interface PersonalViewProps {
     memories: AnyMemory[];
     tasks: Task[];
-    onSaveMemory: (memory: Omit<AnyMemory, 'id'|'date'>) => void;
+    onSaveMemory: (memory: Omit<AnyMemory, 'id'|'date'>) => void | Promise<{ ok: boolean; reason?: string } | void>;
     onDeleteMemory: (id: string) => void;
     onUpdateMemory: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDeleteMemories: (ids: string[]) => void;
@@ -179,9 +179,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         } as Omit<WebMemory, 'id' | 'date'>);
     };
 
-    const handleSaveVoiceNote = (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
-        onSaveMemory({ ...mem, category: 'personal' });
+    const handleSaveVoiceNote = async (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
+        // Stay put if the write failed, so the Recorder can show why instead of
+        // silently returning to a list that does not contain the note.
+        const result = await onSaveMemory({ ...mem, category: 'personal' });
+        if (result && result.ok === false) return result;
         navigateTo('voiceNotes');
+        return result;
     };
 
     const openDetail = (item: AnyMemory) => {

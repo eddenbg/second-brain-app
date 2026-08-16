@@ -3,13 +3,14 @@ import { Session, Modality } from '@google/genai';
 import { MicIcon, StopCircleIcon, SaveIcon, XIcon, Loader2Icon, CheckIcon, PlayIcon, VideoIcon, GlobeIcon, EyeOffIcon, EyeIcon } from './Icons';
 import type { VoiceMemory, NotebookData } from '../types';
 import LectureNotebook from './LectureNotebook';
+import NotebookViewer from './NotebookViewer';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
 import { analyzeVoiceNote, summarizeLectureTranscript } from '../services/geminiService';
 import { encode, downsampleTo16k } from '../utils/audio';
 
 interface RecorderProps {
-  onSave: (recording: Omit<VoiceMemory, 'id' | 'date' | 'category'>) => void;
+  onSave: (recording: Omit<VoiceMemory, 'id' | 'date' | 'category'>) => void | Promise<{ ok: boolean; reason?: string } | void>;
   onCancel: () => void;
   titlePlaceholder: string;
   saveButtonText: string;
@@ -389,16 +390,86 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 ...(location && { location }),
                 ...(notebookData && { notebook: notebookData }),
             };
-            onSave(newMemory);
-        } catch(e) {
+            // Wait for the write to actually land. This used to fire and forget,
+            // so a rejected save was invisible and the screen returned to the list
+            // as though the recording had been stored.
+            const result = await onSave(newMemory);
+            if (result && result.ok === false) {
+                setError(result.reason || 'Could not save this recording.');
+            }
+        } catch(e: any) {
             console.error("Save failed", e);
-            setError("Failed to analyze note. Saved with basic info.");
-             onSave({ type: 'voice', title, transcript, videoDataUrl: videoDataUrl || undefined });
+            setError(e?.message || 'Could not save this recording. Nothing was stored.');
         } finally {
             setIsProcessing(false);
         }
     };
     
+    // Landscape review, shown once a lecture recording has stopped.
+    //
+    // The default layout stacks the transcript under the controls, which on a
+    // tablet held in landscape meant scrolling past a full screen of buttons to
+    // read anything. Here the transcript and the notes sit side by side and each
+    // column scrolls on its own, so the page itself never scrolls.
+    if (notebookMode && !isRecording && transcript && !showSummarize) {
+        return (
+            <div className="fixed inset-0 bg-black z-[200] flex flex-col overscroll-none">
+                <div className="shrink-0 flex items-center gap-3 px-3 h-14 bg-black border-b border-white/10">
+                    <button
+                        onClick={onCancel}
+                        aria-label="Discard and close"
+                        className="px-4 py-2 rounded-xl bg-white/10 text-white font-black text-xs uppercase"
+                    >
+                        Close
+                    </button>
+                    <div className="flex-1 text-center text-xs font-black text-gray-400 uppercase tracking-widest">
+                        Lecture finished · {transcript.split(/\s+/).filter(Boolean).length} words
+                    </div>
+                    <button
+                        onClick={() => { setShowSummarize(true); setSummaryText(''); handleSummarize(); }}
+                        disabled={isProcessing}
+                        className="px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-xs uppercase disabled:bg-gray-600"
+                    >
+                        Summarize
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={isProcessing}
+                        aria-label="Save lecture"
+                        className="px-6 py-2 rounded-xl bg-green-600 text-white font-black text-xs uppercase disabled:bg-gray-600"
+                    >
+                        {isProcessing ? 'Saving…' : 'Save'}
+                    </button>
+                </div>
+
+                {error && (
+                    <p role="alert" className="shrink-0 bg-red-900/40 border-b-2 border-red-700 text-red-200 font-bold text-sm px-4 py-3">
+                        {error}
+                    </p>
+                )}
+
+                <div className="flex-1 min-h-0 flex flex-row">
+                    {/* Transcript */}
+                    <div className="w-1/2 min-w-0 overflow-y-auto p-5 border-r border-white/10">
+                        <h4 className="text-sm font-black text-yellow-400 uppercase tracking-widest mb-3">Transcript</h4>
+                        <p className="text-white text-base leading-relaxed whitespace-pre-wrap">{transcript}</p>
+                    </div>
+                    {/* Notes exactly as drawn */}
+                    <div className="w-1/2 min-w-0 overflow-hidden flex flex-col">
+                        <h4 className="shrink-0 text-sm font-black text-green-400 uppercase tracking-widest px-5 pt-5 pb-2">Your notes</h4>
+                        <div className="flex-1 min-h-0">
+                            {notebookData && notebookData.strokes && notebookData.strokes.length > 0 ? (
+                                <NotebookViewer notebook={notebookData} />
+                            ) : (
+                                <p className="text-white/40 text-sm font-bold px-5">Nothing was drawn during this lecture.</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     // Full-screen notebook while recording a lecture.
     // Audio is transcribed silently in the background — the transcript only appears after Stop.
     if (isRecording && notebookMode) {

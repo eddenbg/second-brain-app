@@ -36,6 +36,10 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
     const eraserPositionsRef = useRef<{ x: number; y: number }[]>([]);
     const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
+    const dprRef = useRef(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+    const cssSizeRef = useRef({ width: 0, height: 0 });
+    // Lets the resize handler repaint without depending on state it cannot see.
+    const redrawAllRef = useRef<(() => void) | null>(null);
     const SNAP_GRID = 10; // Snap to 10px grid
 
     // Fixed white color for better contrast against blue background
@@ -65,30 +69,57 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             if (!parent) return;
 
             const rect = parent.getBoundingClientRect();
-            const dpr = window.devicePixelRatio || 1;
+            if (rect.width === 0 || rect.height === 0) return;
 
-            // Set canvas resolution to match display size
+            const dpr = window.devicePixelRatio || 1;
+            dprRef.current = dpr;
+            cssSizeRef.current = { width: rect.width, height: rect.height };
+
+            // Backing store in device pixels for sharpness; everything we draw is
+            // then expressed in CSS pixels via the transform below. Assigning
+            // width/height resets the transform, so it must be set afterwards.
             canvas.width = Math.floor(rect.width * dpr);
             canvas.height = Math.floor(rect.height * dpr);
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
 
-            // Scale context to account for device pixel ratio
             const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.scale(dpr, dpr);
-            }
+            if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            redrawAllRef.current?.();
         };
 
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
-        return () => window.removeEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', resizeCanvas);
+
+        // The notebook opens inside a container that is still being laid out, so
+        // the first measurement can be wrong. Watch the element instead of
+        // measuring once.
+        const observer = typeof ResizeObserver !== 'undefined'
+            ? new ResizeObserver(() => resizeCanvas())
+            : null;
+        if (observer && canvas.parentElement) observer.observe(canvas.parentElement);
+
+        return () => {
+            window.removeEventListener('resize', resizeCanvas);
+            window.removeEventListener('orientationchange', resizeCanvas);
+            observer?.disconnect();
+        };
     }, []);
 
     // Redraw canvas when strokes or text annotations change
     useEffect(() => {
+        const redrawAll = () => {
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (ctx && canvas) {
+            // Clear in device space, then work in CSS pixels again. Clearing with
+            // the CSS-pixel transform still applied would leave the bottom-right
+            // of the backing store untouched on a high-DPI screen.
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const dpr = dprRef.current;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
             // Draw strokes
             strokes.forEach(stroke => {
@@ -114,21 +145,31 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 ctx.fillText(annotation.text, annotation.x, annotation.y);
             });
         }
+        };
+
+        redrawAllRef.current = redrawAll;
+        redrawAll();
     }, [strokes, textAnnotations]);
 
+    /**
+     * Pointer position in CSS pixels — the same space the canvas transform uses.
+     *
+     * This used to multiply by canvas.width / rect.width, which is exactly the
+     * device pixel ratio, on top of a context already scaled by that ratio. Every
+     * coordinate was therefore scaled twice: on a 2x tablet a stroke landed four
+     * times away from the pen, which is why drawing did not follow the stylus.
+     */
     const getPos = (e: React.MouseEvent | React.TouchEvent) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
+        const touch = 'touches' in e ? (e.touches[0] ?? (e as any).changedTouches?.[0]) : null;
+        const clientX = touch ? touch.clientX : (e as React.MouseEvent).clientX;
+        const clientY = touch ? touch.clientY : (e as React.MouseEvent).clientY;
 
         return {
-            x: (clientX - rect.left) * scaleX,
-            y: (clientY - rect.top) * scaleY
+            x: clientX - rect.left,
+            y: clientY - rect.top,
         };
     };
 
@@ -171,8 +212,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // Redraw everything first
+        // Redraw everything first. Clear in device space so the whole backing
+        // store is wiped, then return to the CSS-pixel transform used for drawing.
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
         strokes.forEach(stroke => {
             ctx.beginPath();
             ctx.strokeStyle = stroke.color;
@@ -454,7 +498,9 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         const canvas = canvasRef.current;
         const ctx = canvas?.getContext('2d');
         if (ctx && canvas) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
         }
         setShowClearConfirm(false);
     };
