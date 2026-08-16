@@ -41,6 +41,11 @@ export interface DrawingStroke {
 
 export interface NotebookData {
     strokes: DrawingStroke[];
+    /** Size of the drawing surface when these strokes were captured, in CSS pixels.
+     *  Replay happens on a differently sized canvas, so without this the strokes
+     *  cannot be scaled and simply fall outside the visible area. */
+    canvasWidth?: number;
+    canvasHeight?: number;
     backgroundImageUrl?: string;
     textNotes?: { text: string; x: number; y: number; t: number }[];
 }

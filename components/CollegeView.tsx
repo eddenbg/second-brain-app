@@ -609,13 +609,12 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                 {(selectedItem as VoiceMemory).notebook && (
                                     <div>
                                         <h3 className="font-black text-purple-400 uppercase text-sm tracking-widest mb-3">My Lecture Notes</h3>
+                                        {/* Hand the viewer the recording itself. It used to be
+                                            given whatever <audio> happened to be first in the
+                                            document, which was never the right element. */}
                                         <NotebookViewer
                                             notebook={(selectedItem as VoiceMemory).notebook!}
-                                            audioElement={
-                                                (selectedItem as VoiceMemory).audioDataUrl
-                                                    ? (document.querySelector('audio') as HTMLAudioElement)
-                                                    : undefined
-                                            }
+                                            audioSrc={(selectedItem as VoiceMemory).audioDataUrl}
                                         />
                                     </div>
                                 )}

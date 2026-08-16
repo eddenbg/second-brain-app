@@ -3,11 +3,18 @@ import type { NotebookData } from '../types';
 
 interface NotebookViewerProps {
     notebook: NotebookData;
+    /** Recorded audio for this notebook. Given this, the viewer renders its own
+     *  player and replays the strokes in sync. */
+    audioSrc?: string;
     audioElement?: HTMLAudioElement | null;
 }
 
-const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement }) => {
+const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, audioElement: externalAudio }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const ownAudioRef = useRef<HTMLAudioElement>(null);
+    const [ownAudioReady, setOwnAudioReady] = useState(false);
+    // Prefer our own element; fall back to one passed in by a caller.
+    const audioElement = audioSrc ? (ownAudioReady ? ownAudioRef.current : null) : externalAudio;
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -17,17 +24,46 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
 
     // Calculate max time from notebook strokes
     useEffect(() => {
+        // Seconds, to match the audio clock. Stroke timestamps are milliseconds, so
+        // using them raw made the progress bar and seeking wildly out of scale.
         if (notebook.strokes && notebook.strokes.length > 0) {
-            const maxTime = Math.max(
+            const maxMs = Math.max(
                 ...notebook.strokes.map(stroke =>
                     Math.max(...stroke.points.map(p => p.t), 0)
                 ),
                 0
             );
-            setDuration(maxTime);
+            setDuration(maxMs / 1000);
         }
     }, [notebook.strokes]);
 
+    // Once the recording loads, its real length wins.
+    useEffect(() => {
+        const el = audioElement;
+        if (!el) return;
+        const onMeta = () => { if (Number.isFinite(el.duration)) setDuration(el.duration); };
+        if (Number.isFinite(el.duration) && el.duration > 0) onMeta();
+        el.addEventListener('loadedmetadata', onMeta);
+        return () => el.removeEventListener('loadedmetadata', onMeta);
+    }, [audioElement]);
+
+    /**
+     * Maps the recorded drawing surface onto this canvas, preserving aspect ratio
+     * and centring the result. Falls back to 1:1 for notebooks saved before the
+     * capture size was recorded.
+     */
+    const fitScale = useCallback(() => {
+        const canvas = canvasRef.current;
+        const cw = canvas?.offsetWidth || 0;
+        const ch = canvas?.offsetHeight || 0;
+        const sw = notebook.canvasWidth || cw;
+        const sh = notebook.canvasHeight || ch;
+        if (!cw || !ch || !sw || !sh) return { k: 1, dx: 0, dy: 0 };
+        const k = Math.min(cw / sw, ch / sh);
+        return { k, dx: (cw - sw * k) / 2, dy: (ch - sh * k) / 2 };
+    }, [notebook.canvasWidth, notebook.canvasHeight]);
+
+    /** upToTime is in SECONDS (audio clock); stroke timestamps are milliseconds. */
     const redrawStrokes = useCallback((upToTime: number) => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -57,20 +93,29 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
         function drawStrokesUpToTime(time: number) {
             if (!notebook.strokes) return;
 
+            // Strokes were captured on the full-screen notebook. Replaying them
+            // 1:1 on this much smaller canvas put most of the drawing outside the
+            // visible area, which read as "my notes are missing". Fit them instead,
+            // preserving aspect ratio so handwriting is not distorted.
+            const s = fitScale();
+
             notebook.strokes.forEach(stroke => {
-                const pointsUpToTime = stroke.points.filter(p => p.t <= time);
+                // Stroke timestamps are milliseconds since recording started, while
+                // the audio clock is in seconds. Comparing them directly meant
+                // virtually nothing was drawn until the very end of playback.
+                const pointsUpToTime = stroke.points.filter(p => p.t <= time * 1000);
                 if (pointsUpToTime.length === 0) return;
 
                 ctx!.strokeStyle = stroke.color;
-                ctx!.lineWidth = stroke.width;
+                ctx!.lineWidth = Math.max(1, stroke.width * s.k);
                 ctx!.lineCap = 'round';
                 ctx!.lineJoin = 'round';
 
                 ctx!.beginPath();
-                ctx!.moveTo(pointsUpToTime[0].x, pointsUpToTime[0].y);
+                ctx!.moveTo(pointsUpToTime[0].x * s.k + s.dx, pointsUpToTime[0].y * s.k + s.dy);
 
                 for (let i = 1; i < pointsUpToTime.length; i++) {
-                    ctx!.lineTo(pointsUpToTime[i].x, pointsUpToTime[i].y);
+                    ctx!.lineTo(pointsUpToTime[i].x * s.k + s.dx, pointsUpToTime[i].y * s.k + s.dy);
                 }
 
                 ctx!.stroke();
@@ -81,27 +126,29 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
             if (!highlightedPoint) return;
 
             const radius = 8;
-            const dpr = window.devicePixelRatio || 1;
+            const s = fitScale();
+            const hx = highlightedPoint.x * s.k + s.dx;
+            const hy = highlightedPoint.y * s.k + s.dy;
 
             // Draw outer glow circle with fade
             ctx!.fillStyle = `rgba(76, 175, 80, ${highlightedPoint.alpha * 0.3})`;
             ctx!.beginPath();
-            ctx!.arc(highlightedPoint.x, highlightedPoint.y, radius * 1.8, 0, Math.PI * 2);
+            ctx!.arc(hx, hy, radius * 1.8, 0, Math.PI * 2);
             ctx!.fill();
 
             // Draw inner highlight circle
             ctx!.fillStyle = `rgba(76, 175, 80, ${highlightedPoint.alpha * 0.8})`;
             ctx!.beginPath();
-            ctx!.arc(highlightedPoint.x, highlightedPoint.y, radius, 0, Math.PI * 2);
+            ctx!.arc(hx, hy, radius, 0, Math.PI * 2);
             ctx!.fill();
 
             // Draw white center
             ctx!.fillStyle = '#ffffff';
             ctx!.beginPath();
-            ctx!.arc(highlightedPoint.x, highlightedPoint.y, radius * 0.5, 0, Math.PI * 2);
+            ctx!.arc(hx, hy, radius * 0.5, 0, Math.PI * 2);
             ctx!.fill();
         }
-    }, [notebook.backgroundImageUrl, notebook.strokes, highlightedPoint]);
+    }, [notebook.backgroundImageUrl, notebook.strokes, highlightedPoint, fitScale]);
 
     // Initialize canvas
     useEffect(() => {
@@ -217,13 +264,15 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
 
-        // Calculate click position relative to canvas, accounting for device pixel ratio
-        const canvasX = (e.clientX - rect.left) * dpr;
-        const canvasY = (e.clientY - rect.top) * dpr;
+        // Drawing happens in CSS pixels, so multiplying by the device pixel ratio
+        // here put the hit test in a different space from the strokes. Convert the
+        // tap back through the same fit transform used to render them.
+        const s = fitScale();
+        const canvasX = ((e.clientX - rect.left) - s.dx) / s.k;
+        const canvasY = ((e.clientY - rect.top) - s.dy) / s.k;
 
-        const hit = detectHitStroke(canvasX, canvasY);
+        const hit = detectHitStroke(canvasX, canvasY, 12 / (s.k || 1));
 
         if (hit) {
             // Convert milliseconds to seconds for audio element
@@ -265,12 +314,12 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
-        const dpr = window.devicePixelRatio || 1;
 
-        const canvasX = (e.clientX - rect.left) * dpr;
-        const canvasY = (e.clientY - rect.top) * dpr;
+        const s = fitScale();
+        const canvasX = ((e.clientX - rect.left) - s.dx) / s.k;
+        const canvasY = ((e.clientY - rect.top) - s.dy) / s.k;
 
-        const hit = detectHitStroke(canvasX, canvasY);
+        const hit = detectHitStroke(canvasX, canvasY, 12 / (s.k || 1));
         canvas.style.cursor = hit ? 'pointer' : 'default';
     };
 
@@ -278,6 +327,16 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement 
 
     return (
         <div className="notebook-viewer">
+            {audioSrc && (
+                <audio
+                    ref={ownAudioRef}
+                    src={audioSrc}
+                    preload="metadata"
+                    onLoadedMetadata={() => setOwnAudioReady(true)}
+                    onCanPlay={() => setOwnAudioReady(true)}
+                    style={{ display: 'none' }}
+                />
+            )}
             <div className="notebook-canvas-wrapper">
                 <canvas
                     ref={canvasRef}

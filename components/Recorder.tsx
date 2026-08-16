@@ -44,6 +44,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
+    const [audioDataUrl, setAudioDataUrl] = useState<string | null>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [captureMode, setCaptureMode] = useState<'physical' | 'remote'>('physical');
@@ -80,6 +81,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         setStructuredTranscript([]);
         setError(null);
         setNotebookData(null);
+        setAudioDataUrl(null);
         startTimeRef.current = Date.now();
 
         const ai = getGeminiInstance();
@@ -131,13 +133,23 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             setIsRecording(true);
 
             const chunks: Blob[] = [];
-            mediaRecorderRef.current = new MediaRecorder(mediaStream, { mimeType: captureMode === 'remote' ? 'audio/webm' : 'video/webm' });
+            // An audio-only stream must be recorded as audio/webm; asking for
+            // video/webm here can be rejected outright since there is no video track.
+            const recorderMime = (audioOnly || captureMode === 'remote') ? 'audio/webm' : 'video/webm';
+            mediaRecorderRef.current = new MediaRecorder(mediaStream, { mimeType: recorderMime });
             mediaRecorderRef.current.ondataavailable = (event) => chunks.push(event.data);
             mediaRecorderRef.current.onstop = () => {
-                if (captureMode === 'remote') return;
-                const blob = new Blob(chunks, { type: 'video/webm' });
+                // Lectures capture audio only, so keep the result as audioDataUrl.
+                // Playback reads that field; storing it as videoDataUrl meant there
+                // was never an audio source and synced playback could not run at all.
+                const isAudioOnlyCapture = audioOnly || captureMode === 'remote';
+                const blob = new Blob(chunks, { type: isAudioOnlyCapture ? 'audio/webm' : 'video/webm' });
                 const reader = new FileReader();
-                reader.onloadend = () => setVideoDataUrl(reader.result as string);
+                reader.onloadend = () => {
+                    const dataUrl = reader.result as string;
+                    if (isAudioOnlyCapture) setAudioDataUrl(dataUrl);
+                    else setVideoDataUrl(dataUrl);
+                };
                 reader.readAsDataURL(blob);
             };
             mediaRecorderRef.current.start();
@@ -385,6 +397,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 transcript,
                 structuredTranscript,
                 videoDataUrl: videoDataUrl || undefined,
+                audioDataUrl: audioDataUrl || undefined,
                 summary: summary || undefined,
                 actionItems: lectureActionItems.length > 0 ? lectureActionItems : analysis.actionItems.map(text => ({ text, done: false })),
                 ...(location && { location }),
@@ -459,7 +472,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         <h4 className="shrink-0 text-sm font-black text-green-400 uppercase tracking-widest px-5 pt-5 pb-2">Your notes</h4>
                         <div className="flex-1 min-h-0">
                             {notebookData && notebookData.strokes && notebookData.strokes.length > 0 ? (
-                                <NotebookViewer notebook={notebookData} />
+                                <NotebookViewer
+                                    notebook={notebookData}
+                                    audioSrc={audioDataUrl || undefined}
+                                />
                             ) : (
                                 <p className="text-white/40 text-sm font-bold px-5">Nothing was drawn during this lecture.</p>
                             )}
