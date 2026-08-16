@@ -389,6 +389,27 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                         <p className="text-red-200 text-xs font-bold leading-relaxed break-words">
                                             {lastAuthError}
                                         </p>
+                                        {/* An installed PWA shares its storage with the
+                                            browser for this same origin, so completing
+                                            sign-in in a normal tab carries the session
+                                            back here. Useful when the in-app handoff to
+                                            Google keeps failing. */}
+                                        {isStandalone && (
+                                            <a
+                                                href={window.location.origin}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="w-full py-3 bg-white text-gray-800 rounded-xl font-black text-xs uppercase text-center block"
+                                            >
+                                                Sign in using the browser instead
+                                            </a>
+                                        )}
+                                        {isStandalone && (
+                                            <p className="text-red-200/70 text-[11px] font-bold leading-relaxed">
+                                                Opens this app in a normal browser tab. Sign in with Google there,
+                                                then come back here and reopen the app — you should be signed in.
+                                            </p>
+                                        )}
                                         <button
                                             onClick={() => {
                                                 localStorage.removeItem('last_auth_error');

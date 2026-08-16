@@ -350,10 +350,6 @@ export const useRecordings = () => {
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
 
-        const isStandalone = typeof window !== 'undefined' &&
-            (window.matchMedia('(display-mode: standalone)').matches ||
-             (window.navigator as any).standalone === true);
-
         const storeGoogleTokenFromResult = (result: UserCredential) => {
             const credential = GoogleAuthProvider.credentialFromResult(result);
             const token = credential?.accessToken;
@@ -390,28 +386,48 @@ export const useRecordings = () => {
             }
         };
 
-        // In PWA standalone mode skip the popup entirely — it's unreliable and
-        // just causes a blocked-popup error before the redirect fallback anyway.
-        if (isStandalone) {
-            await tryRedirect();
-            return;
-        }
-
+        // Try the popup FIRST, in every mode including the installed PWA.
+        //
+        // The redirect flow hands the browser off to a cross-origin handler on
+        // firebaseapp.com and depends on state surviving that round trip, which is
+        // exactly what has been failing here. The popup keeps the whole exchange in
+        // one context and sidesteps that entirely. Standalone used to skip straight
+        // to redirect on the assumption popups are always blocked; that assumption
+        // cost us the one flow that does not depend on third-party storage. If the
+        // popup really is blocked we still fall back, so this is never worse.
         try {
             await tryPopup();
+            localStorage.removeItem('last_auth_error');
+            return;
         } catch (e: any) {
-            if (
-                e.code === 'auth/popup-blocked' ||
-                e.code === 'auth/popup-cancelled' ||
-                e.code === 'auth/cancelled-popup-request'
-            ) {
-                await tryRedirect();
-            } else if (e.code === 'auth/credential-already-in-use') {
+            const code = e?.code || '';
+
+            if (code === 'auth/credential-already-in-use') {
+                // Google account already attached to a previous anonymous user.
                 const credential = GoogleAuthProvider.credentialFromError(e);
-                if (credential) await signInWithCredential(auth, credential);
-            } else {
+                if (credential) {
+                    await signInWithCredential(auth, credential);
+                    localStorage.removeItem('last_auth_error');
+                    return;
+                }
+            }
+
+            const popupUnavailable =
+                code === 'auth/popup-blocked' ||
+                code === 'auth/popup-closed-by-user' ||
+                code === 'auth/cancelled-popup-request' ||
+                code === 'auth/popup-cancelled' ||
+                code === 'auth/operation-not-supported-in-this-environment';
+
+            if (!popupUnavailable) {
+                localStorage.setItem('last_auth_error', `${code || 'unknown'}: ${e?.message || e}`);
                 throw e;
             }
+
+            // Note why we fell back, so a later redirect failure is traceable to
+            // its cause rather than looking like the only thing that was tried.
+            localStorage.setItem('auth_popup_fallback_reason', code || 'unknown');
+            await tryRedirect();
         }
     }, []);
 
