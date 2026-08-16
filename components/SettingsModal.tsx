@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon, PlusCircleIcon
@@ -15,7 +15,8 @@ import {
 } from '../services/googleDriveService';
 import {
     getStoredNotionToken, saveNotionToken, clearNotionToken,
-    getStoredNotionClientId,
+    getStoredNotionClientId, saveNotionClientId,
+    getStoredNotionClientSecret, saveNotionClientSecret,
 } from '../services/notionService';
 import { auth } from '../utils/firebase';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
@@ -110,6 +111,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
     const [showManualNotion, setShowManualNotion] = useState(false);
     const [notionInput, setNotionInput] = useState('');
+    const [showNotionSetup, setShowNotionSetup] = useState(false);
+    const [notionClientIdInput, setNotionClientIdInput] = useState(() => getStoredNotionClientId());
+    const [notionClientSecretInput, setNotionClientSecretInput] = useState(() => getStoredNotionClientSecret());
+    const [notionCredsSaved, setNotionCredsSaved] = useState(0);
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
@@ -179,6 +184,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setShowManualNotion(false);
     };
 
+    const handleSaveNotionCredentials = () => {
+        const id = notionClientIdInput.trim();
+        const secret = notionClientSecretInput.trim();
+        if (!id || !secret) return;
+        saveNotionClientId(id);
+        saveNotionClientSecret(secret);
+        setShowNotionSetup(false);
+        // effectiveNotionClientId reads straight from localStorage, so nudge a
+        // re-render to swap the setup form for the "Sign in with Notion" button.
+        setNotionCredsSaved(n => n + 1);
+    };
+
     const handleClearNotionToken = () => {
         clearNotionToken();
         setNotionToken('');
@@ -213,7 +230,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
-    const effectiveNotionClientId = getStoredNotionClientId() || process.env.NOTION_CLIENT_ID || '';
+    // Recomputed when credentials are saved (notionCredsSaved), since the stored
+    // value lives in localStorage and would not otherwise trigger a re-render.
+    const effectiveNotionClientId = useMemo(
+        () => getStoredNotionClientId() || process.env.NOTION_CLIENT_ID || '',
+        [notionCredsSaved]
+    );
 
     const handleSignInWithNotion = () => {
         if (!effectiveNotionClientId) return;
@@ -627,6 +649,59 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </>
                             ) : (
                                 <>
+                                    {/* Set up the OAuth app here rather than only through
+                                        build-time env vars. The callback already forwards
+                                        these to the Netlify function, which prefers them
+                                        over its own env — so filling these in enables
+                                        "Sign in with Notion" without a redeploy. */}
+                                    {!showNotionSetup ? (
+                                        <button
+                                            onClick={() => setShowNotionSetup(true)}
+                                            className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20 mb-3"
+                                        >
+                                            <div className="w-5 h-5 bg-white rounded flex items-center justify-center shrink-0">
+                                                <span className="text-black font-black text-sm leading-none">N</span>
+                                            </div>
+                                            Set up Notion sign-in
+                                        </button>
+                                    ) : (
+                                        <div className="bg-gray-800 rounded-2xl p-4 mb-3 flex flex-col gap-3 border border-gray-600">
+                                            <p className="text-gray-300 text-[11px] font-bold leading-relaxed">
+                                                From your Notion integration at notion.so/profile/integrations.
+                                                Set its redirect URI to <span className="text-white font-mono break-all">{window.location.origin}/</span>
+                                            </p>
+                                            <input
+                                                type="text"
+                                                value={notionClientIdInput}
+                                                onChange={e => setNotionClientIdInput(e.target.value)}
+                                                placeholder="OAuth client ID"
+                                                aria-label="Notion OAuth client ID"
+                                                className="w-full bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                                style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                            />
+                                            <input
+                                                type="password"
+                                                value={notionClientSecretInput}
+                                                onChange={e => setNotionClientSecretInput(e.target.value)}
+                                                placeholder="OAuth client secret"
+                                                aria-label="Notion OAuth client secret"
+                                                className="w-full bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                                style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                            />
+                                            <button
+                                                onClick={handleSaveNotionCredentials}
+                                                disabled={!notionClientIdInput.trim() || !notionClientSecretInput.trim()}
+                                                className="w-full py-3 bg-purple-600 text-white rounded-xl font-black text-xs uppercase disabled:opacity-40 active:scale-95"
+                                                style={{ minHeight: 'unset' }}
+                                            >
+                                                Save and enable Notion sign-in
+                                            </button>
+                                            <p className="text-gray-500 text-[10px] font-bold leading-relaxed">
+                                                Stored on this device only.
+                                            </p>
+                                        </div>
+                                    )}
+
                                     {!showManualNotion ? (
                                         <button
                                             onClick={() => setShowManualNotion(true)}
