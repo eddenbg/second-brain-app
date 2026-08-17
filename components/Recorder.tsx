@@ -243,8 +243,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 },
                 config: {
                     responseModalities: [Modality.AUDIO],
-                    inputAudioTranscription: { language: 'he' },
-                    systemInstruction: `You are a real-time lecture assistant for a visually impaired student. Your primary job is to transcribe the lecture accurately in Hebrew first, then English if needed. 
+                    inputAudioTranscription: {},
+                    systemInstruction: `You are a real-time transcription assistant for a visually impaired student.
+
+                    LANGUAGE: The speaker mixes Hebrew and English freely, often switching mid-sentence and switching back. Transcribe every word in the language it was actually spoken in — never translate between them, and never force the whole transcript into one language. Keep English technical terms, product names and acronyms in Latin script exactly as spoken, even when the surrounding sentence is Hebrew. Write numbers as digits. Preserve the speaker's order of words so a mixed sentence reads the way it was said. 
                     IN ADDITION, you will receive video frames from the lecture. Analyze these frames for key visual information. 
                     When you see something important, like a math equation on a whiteboard, a diagram, code on a screen, or a specific action the professor is demonstrating, you MUST insert a descriptive note into the transcript. 
                     Prefix these notes with "VISUAL NOTE:". For example: "VISUAL NOTE: The professor just wrote the quadratic formula, x = [-b ± sqrt(b^2-4ac)]/2a, on the board." or "VISUAL NOTE: A diagram of a plant cell is now on the screen, showing the nucleus and chloroplasts."
@@ -631,11 +633,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     <span>Record Lecture</span>
                 </button>
             ) : (
-            <div className="flex justify-center gap-6">
+            <div className="flex flex-col sm:flex-row justify-center gap-3 sm:gap-6 w-full">
                  <button
                     onClick={onCancel}
                     aria-label="Cancel recording"
-                    className="px-10 py-5 bg-white/10 rounded-2xl text-white active:scale-95 transition-transform flex items-center gap-4 font-black text-2xl uppercase shadow-xl border-2 border-white/10"
+                    className="w-full sm:w-auto px-6 sm:px-10 py-4 sm:py-5 bg-white/10 rounded-2xl text-white active:scale-95 transition-transform flex items-center justify-center gap-3 sm:gap-4 font-black text-xl sm:text-2xl uppercase shadow-xl border-2 border-white/10"
                  >
                     <XIcon className="w-10 h-10"/>
                     <span>Cancel</span>
@@ -643,7 +645,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                  <button
                      onClick={isRecording ? stopRecording : startRecording}
                      aria-label={isRecording ? "Stop recording" : "Start recording"}
-                     className={`px-10 py-5 rounded-2xl font-black text-2xl uppercase shadow-xl transition-all flex items-center gap-4 ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-yellow-500 text-[#001f3f]'}`}
+                     className={`w-full sm:w-auto px-6 sm:px-10 py-4 sm:py-5 rounded-2xl font-black text-xl sm:text-2xl uppercase shadow-xl transition-all flex items-center justify-center gap-3 sm:gap-4 ${isRecording ? 'bg-red-600 text-white animate-pulse' : 'bg-yellow-500 text-[#001f3f]'}`}
                  >
                      {isRecording ? <StopCircleIcon className="w-10 h-10"/> : <MicIcon className="w-10 h-10"/>}
                      {isRecording ? 'STOP' : 'RECORD'}
@@ -652,7 +654,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     onClick={handleSave}
                     disabled={isRecording || isProcessing || !transcript}
                     aria-label={isProcessing ? "Saving recording" : "Save recording"}
-                    className="px-10 py-5 bg-yellow-500 rounded-2xl text-[#001f3f] disabled:bg-gray-700 disabled:text-gray-400 active:scale-95 transition-transform flex items-center gap-4 font-black text-2xl uppercase shadow-xl"
+                    className="w-full sm:w-auto px-6 sm:px-10 py-4 sm:py-5 bg-yellow-500 rounded-2xl text-[#001f3f] disabled:bg-gray-700 disabled:text-gray-400 active:scale-95 transition-transform flex items-center justify-center gap-3 sm:gap-4 font-black text-xl sm:text-2xl uppercase shadow-xl"
                 >
                     {isProcessing ? <Loader2Icon className="w-10 h-10 animate-spin"/> : <SaveIcon className="w-10 h-10"/>}
                     <span>{isProcessing ? 'Saving...' : 'Save'}</span>
@@ -684,7 +686,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
              {!isRecording && transcript && (
                 <div className="bg-black/40 p-6 rounded-[2rem] border-2 border-white/10 scroll-smooth">
                     <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-xl font-black text-yellow-400 uppercase tracking-tight">Lecture Transcript</h4>
+                        <h4 className="text-xl font-black text-yellow-400 uppercase tracking-tight">{notebookMode ? 'Lecture Transcript' : 'Transcript'}</h4>
                         <button
                             onClick={() => {
                                 setShowSummarize(true);
@@ -728,7 +730,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     <div className="bg-gray-800 rounded-[2rem] w-full max-w-2xl max-h-[80vh] flex flex-col border-4 border-gray-700 shadow-2xl">
                         {/* Header */}
                         <div className="px-6 py-4 border-b-2 border-gray-700 flex items-center justify-between shrink-0">
-                            <h3 className="text-2xl font-black text-white uppercase tracking-tighter">Lecture Summary</h3>
+                            <h3 className="text-2xl font-black text-white uppercase tracking-tighter">{notebookMode ? 'Lecture Summary' : 'Summary'}</h3>
                             <button
                                 onClick={() => setShowSummarize(false)}
                                 className="p-2 bg-gray-700 rounded-xl hover:bg-gray-600 transition-all"
@@ -775,7 +777,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                                 className="flex-1 py-3 bg-green-600 text-white rounded-2xl font-black uppercase hover:bg-green-500 disabled:bg-gray-600 transition-all flex items-center justify-center gap-3"
                             >
                                 {isProcessing ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <SaveIcon className="w-5 h-5" />}
-                                {isProcessing ? 'Saving...' : 'Save Lecture'}
+                                {isProcessing ? 'Saving...' : (notebookMode ? 'Save Lecture' : 'Save')}
                             </button>
                         </div>
                     </div>

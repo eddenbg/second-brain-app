@@ -113,11 +113,42 @@ export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]>
         if (data.exception) throw new Error(data.message);
 
         // This function returns an object with a 'courses' array
-        return data.courses || [];
+        const courses = data.courses || [];
+        if (courses.length > 0) return courses;
+
+        // Some Moodle installs do not expose the timeline function to the mobile
+        // service, or return nothing for it, while still answering the plain
+        // enrolment list. Settings can therefore report a healthy connection —
+        // it checks core_webservice_get_site_info — while courses never load.
+        return await fetchEnrolledCoursesFallback(token);
     } catch (e) {
         console.error("Moodle Course Fetch Error", e);
-        throw e;
+        try {
+            return await fetchEnrolledCoursesFallback(token);
+        } catch (fallbackError) {
+            console.error("Moodle fallback course fetch failed", fallbackError);
+            throw e;
+        }
     }
+};
+
+/** Per-user enrolment list, used when the timeline function yields nothing. */
+const fetchEnrolledCoursesFallback = async (token: string): Promise<MoodleCourse[]> => {
+    const infoUrl = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_webservice_get_site_info`;
+    const infoRes = await fetchWithTimeout(infoUrl, { timeout: 30000 });
+    if (!infoRes.ok) throw new Error(`Could not read Moodle site info (${infoRes.status})`);
+    const info = await infoRes.json();
+    if (info.exception) throw new Error(info.message || 'Moodle rejected the request');
+    const userId = info.userid;
+    if (!userId) throw new Error('Moodle did not return a user id');
+
+    const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_enrol_get_users_courses&userid=${encodeURIComponent(String(userId))}`;
+    const res = await fetchWithTimeout(url, { timeout: 45000 });
+    if (!res.ok) throw new Error(`Moodle returned ${res.status} for the course list`);
+    const data = await res.json();
+    if (data.exception) throw new Error(data.message || 'Moodle rejected the course request');
+    if (!Array.isArray(data)) return [];
+    return data as MoodleCourse[];
 };
 
 export const fetchCourseContents = async (token: string, courseId: number): Promise<MoodleContent[]> => {

@@ -301,18 +301,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <span className="text-sm opacity-75">{webClips.length} saved</span>
                     </button>
 
-                    {/* Call Recordings (only on native app) */}
-                    {typeof window !== 'undefined' && (window as any).Capacitor && (
-                        <button
-                            onClick={() => navigateTo('calls')}
-                            aria-label="Call Recordings – Auto-transcribed"
-                            className="h-36 bg-[#06B6D4] text-white rounded-3xl flex flex-col items-center justify-center gap-2"
-                        >
-                            <Phone className="w-12 h-12" strokeWidth={3} />
-                            <span className="text-lg font-black uppercase">Call Recordings</span>
-                            <span className="text-sm opacity-75">Auto-transcribed</span>
-                        </button>
-                    )}
                 </div>
 
                 {/* Scan Document – full width */}

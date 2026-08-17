@@ -483,7 +483,7 @@ function App() {
 
       {/* Main content */}
       <main className="flex-grow overflow-hidden relative">
-        <div className="max-w-4xl mx-auto h-full overflow-y-auto no-scrollbar p-4">{renderView()}</div>
+        <div className="max-w-4xl mx-auto h-full overflow-y-auto overflow-x-hidden no-scrollbar p-4">{renderView()}</div>
       </main>
 
       {/* Bottom nav */}

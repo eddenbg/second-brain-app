@@ -54,6 +54,7 @@ export default async (req: Request, context: Context) => {
   const wsfunction = url.searchParams.get("wsfunction");
   const courseid = url.searchParams.get("courseid");
   const classification = url.searchParams.get("classification");
+  const userid = url.searchParams.get("userid");
 
   if (!token || !wsfunction) {
     return new Response(JSON.stringify({ error: "Missing parameters: token and wsfunction are required" }), {
@@ -80,6 +81,9 @@ export default async (req: Request, context: Context) => {
     }
     if (classification) {
         finalUrl += `&classification=${classification}`;
+    }
+    if (userid) {
+        finalUrl += `&userid=${encodeURIComponent(userid)}`;
     }
 
     console.log(`Proxying Moodle Request: ${wsfunction}`);

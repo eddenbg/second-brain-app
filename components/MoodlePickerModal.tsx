@@ -23,7 +23,11 @@ const MoodlePickerModal: React.FC<MoodlePickerModalProps> = ({ token, onClose, o
         setError(null);
         fetchMoodleCourses(token)
             .then(setCourses)
-            .catch(() => setError('Could not load courses. Check your Moodle connection in Settings.'))
+            // Report what Moodle actually said. "Check your connection" was
+            // misleading when Settings simultaneously showed the connection active.
+            .catch((e) => setError(
+                `Could not load courses: ${e?.message || 'Moodle did not respond'}`
+            ))
             .finally(() => setIsLoading(false));
     }, [token]);
 
