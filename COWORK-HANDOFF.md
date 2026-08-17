@@ -2,93 +2,52 @@
 
 Paste everything below the line into the Cowork tab on the laptop.
 
-**Task 1 is urgent** — nothing in the app can be saved until it is done. Tasks 2
-and 3 only affect the Android APK and can wait.
+Only one task remains. Storage is no longer needed — recordings now go into the
+user's own Google Drive instead of Firebase Storage, so that task is done and
+removed from this list. Do not set up Firebase Storage or add a billing card;
+it is not required.
 
 ---
 
-You have screen control on my computer. I am legally blind, so please do these
-steps yourself rather than asking me to find buttons or read values back.
-Describe what you are doing as you go and tell me the result of each step.
+You have screen control on my computer. I am legally blind, so please perform
+every step yourself in the browser — do not ask me to find a button, read a
+value off the screen, or click anything. Describe what you're doing as you go
+and tell me the result of each step.
 
-Context: repo `eddenbg/second-brain-app`, deployed at
-`https://eddenbg-second-brain.netlify.app`
-Firebase project id: `my-second-brain-app-10dfe`
-Android package name: `com.eddenbg.secondbrain`
+Context:
+  Live app: https://eddenbg-second-brain.netlify.app
 
-## Task 1 — URGENT: turn on Storage and publish its rules
+========================================================================
+TASK — Share my Notion pages with the integration
+========================================================================
+My app connects to Notion successfully, but the page list is empty and says
+"No pages here — make sure you shared them with your integration." That is
+Notion behaving correctly: an integration can only see pages that have been
+explicitly shared with it. Please share them for me.
 
-Lecture audio is too large for Firestore, whose documents are capped at 1MB, so
-recordings now go to Firebase Storage. Until this is done, every lecture saves
-its transcript and handwriting but reports that the audio could not be uploaded,
-and playback will not work.
+1. Go to https://www.notion.so and sign in as me.
+2. Find my integration's name first: open
+   https://www.notion.so/profile/integrations and tell me what the integration
+   is called (it may be "Second Brain").
+3. Back in Notion, pick the top-level page or workspace section that contains
+   the notes I would want in the app. Open it.
+4. Click the "..." menu at the top right of that page -> "Connections"
+   (older Notion calls this "Add connections") -> choose my integration ->
+   confirm.
+5. Sharing a parent page also shares everything nested under it, so prefer a
+   high-level parent over sharing many individual pages.
+6. Tell me which pages or sections you shared, so I know what should now appear
+   in the app.
 
-1. Go to https://console.firebase.google.com and open `my-second-brain-app-10dfe`
-2. Open **Storage** in the left sidebar. If it has never been set up, click
-   **Get started** and accept the default bucket and location.
-3. Go to the **Rules** tab, replace the entire contents with the rules below,
-   and click **Publish**. These are also committed in the repo as `storage.rules`.
-
-   ```
-   rules_version = '2';
-
-   service firebase.storage {
-     match /b/{bucket}/o {
-       match /users/{userId}/{allPaths=**} {
-         allow read, write: if request.auth != null && request.auth.uid == userId;
-       }
-     }
-   }
-   ```
-
-4. Tell me once it is published, and whether Storage had to be enabled first.
-
-Note: the Firestore rules task from the previous handoff is DONE — do not redo it.
-
-## Task 2 — Confirm the Netlify domain is authorized in Firebase
-
-1. Same project → **Authentication → Settings → Authorized domains**
-2. Tell me every domain listed. If `eddenbg-second-brain.netlify.app` is
-   missing, add it.
-
-## Task 3 — Register the Android app (APK sign-in only)
-
-Google will not show its sign-in page inside an embedded WebView, so the
-packaged Android app needs native credentials. Not needed for the web app.
-
-1. Project settings (gear) → General → "Your apps"
-2. If there is no Android app with package name `com.eddenbg.secondbrain`,
-   add one:
-   - Package name: `com.eddenbg.secondbrain`
-   - Nickname: `Second Brain Android`
-3. Get the SHA-1 fingerprint:
-
-   ```
-   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
-   ```
-
-   Copy the `SHA1:` line and add it in Firebase under the Android app →
-   "Add fingerprint". Required, or sign-in fails in the APK even with the config
-   file present. If `keytool` is missing it ships with the JDK — try
-   `/usr/lib/jvm/*/bin/keytool` on Linux or
-   `/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/keytool` on a Mac.
-
-4. Download `google-services.json` and push it:
-
-   ```
-   cd <repo>
-   git checkout main && git pull
-   cp ~/Downloads/google-services.json android/app/google-services.json
-   git add android/app/google-services.json
-   git commit -m "Add Firebase Android config for native Google sign-in"
-   git push origin main
-   ```
-
-5. Tell me when it is pushed, and paste back the SHA-1 you registered.
-
-## Please do not
-
-- Change anything in Netlify — that environment is correct.
-- Change `authDomain` or any Firebase config value in the code.
-- Add `NOTION_CLIENT_ID` or `NOTION_CLIENT_SECRET` — no longer needed, Notion is
-  configured inside the app's own Settings screen.
+========================================================================
+ALREADY DONE — please do NOT redo any of these
+========================================================================
+- Firestore rules are published and working.
+- eddenbg-second-brain.netlify.app is already an authorized Firebase domain.
+- The Android app com.eddenbg.secondbrain is registered with its SHA-1, and
+  google-services.json is committed to the repo.
+- Recordings now use Google Drive, not Firebase Storage. Do NOT enable Firebase
+  Storage, do NOT upgrade the Firebase project to the Blaze plan, and do NOT
+  add a billing card anywhere.
+- Do not change anything in Netlify.
+- Do not change authDomain or any Firebase config value in the code.
