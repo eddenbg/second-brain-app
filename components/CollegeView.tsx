@@ -16,6 +16,45 @@ import NotebookPlayback from './NotebookPlayback';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import { getStoredDriveToken, getDriveFileObjectUrl } from '../services/googleDriveService';
+
+/**
+ * Recordings live in the user's Drive, which needs an Authorization header that
+ * an <audio src> cannot send. Fetch the bytes once and hand back a blob URL.
+ */
+const useDriveAudio = (fileId?: string, inlineAudio?: string): { src?: string; error?: string } => {
+    const [src, setSrc] = useState<string | undefined>(inlineAudio);
+    const [error, setError] = useState<string | undefined>();
+
+    useEffect(() => {
+        if (inlineAudio) { setSrc(inlineAudio); return; }
+        if (!fileId) { setSrc(undefined); return; }
+
+        const token = getStoredDriveToken();
+        if (!token) {
+            setError('Open Settings and refresh Google Drive access to play this recording.');
+            return;
+        }
+
+        let objectUrl: string | undefined;
+        let cancelled = false;
+        setError(undefined);
+        getDriveFileObjectUrl(token, fileId)
+            .then(url => {
+                if (cancelled) { URL.revokeObjectURL(url); return; }
+                objectUrl = url;
+                setSrc(url);
+            })
+            .catch(e => { if (!cancelled) setError(e?.message || 'Could not load the recording.'); });
+
+        return () => {
+            cancelled = true;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [fileId, inlineAudio]);
+
+    return { src, error };
+};
 
 interface CollegeViewProps {
     lectures: AnyMemory[];
@@ -82,6 +121,17 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
              <Volume2 className="w-7 h-7" />}
             {isPlaying ? 'Stop' : 'Read Aloud'}
         </button>
+    );
+};
+
+/** Resolves the recording (inline or from Drive) before rendering the notes. */
+const LectureNotesPlayer: React.FC<{ memory: VoiceMemory }> = ({ memory }) => {
+    const { src, error } = useDriveAudio(memory.audioDriveFileId, memory.audioDataUrl);
+    return (
+        <>
+            {error && <p className="text-yellow-400 font-bold text-xs mb-2">{error}</p>}
+            <NotebookViewer notebook={memory.notebook!} audioSrc={src} />
+        </>
     );
 };
 
@@ -664,10 +714,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                         {/* Hand the viewer the recording itself. It used to be
                                             given whatever <audio> happened to be first in the
                                             document, which was never the right element. */}
-                                        <NotebookViewer
-                                            notebook={(selectedItem as VoiceMemory).notebook!}
-                                            audioSrc={(selectedItem as VoiceMemory).audioDataUrl}
-                                        />
+                                        <LectureNotesPlayer memory={selectedItem as VoiceMemory} />
                                     </div>
                                 )}
                                 <div>

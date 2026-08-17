@@ -54,6 +54,10 @@ export interface VoiceMemory extends BaseMemory {
   type: 'voice';
   transcript: string;
   audioDataUrl?: string;
+  /** Recording held in the user's Drive, when it was too large to inline in the
+   *  Firestore document (which is capped at 1MB). */
+  audioDriveFileId?: string;
+  videoDriveFileId?: string;
   videoDataUrl?: string;
   summary?: string;
   structuredTranscript?: TranscriptSegment[];

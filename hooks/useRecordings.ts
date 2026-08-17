@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, linkWithPopup, signInWithPopup, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut, UserCredential } from 'firebase/auth';
 import { saveGoogleToken } from '../services/googleCalendarService';
-import { saveDriveToken } from '../services/googleDriveService';
+import { saveDriveToken, getStoredDriveToken, uploadAudioToDrive } from '../services/googleDriveService';
 import { googleProvider } from '../utils/firebase';
 
 export interface StoredData {
@@ -47,7 +47,7 @@ const stripUndefined = (value: any): any => {
 const INLINE_MEDIA_LIMIT = 700_000;
 
 /**
- * Move oversized recordings out of the document and into Storage.
+ * Move oversized recordings out of the document and into the user's Drive.
  *
  * A Firestore document cannot exceed 1MB, and base64 audio blows past that after
  * about half a minute — saving a real lecture failed outright with "the value of
@@ -69,29 +69,32 @@ const externalizeMedia = async (
 
     if (oversized.length === 0) return { memory };
 
-    if (!storage) {
-        for (const f of oversized) delete memory[f];
-        return { memory, warning: 'Saved without the recording — file storage is not available.' };
-    }
-
-    try {
-        const { ref, uploadString, getDownloadURL } = await import('firebase/storage');
-        for (const f of oversized) {
-            const dataUrl: string = memory[f];
-            const ext = f === 'audioDataUrl' ? 'webm' : 'webm';
-            const path = `users/${uid}/media/${memory.id}-${f}.${ext}`;
-            const fileRef = ref(storage, path);
-            await uploadString(fileRef, dataUrl, 'data_url');
-            memory[f] = await getDownloadURL(fileRef);
-        }
-        return { memory };
-    } catch (e: any) {
-        console.error('Media upload failed', e);
+    const driveToken = getStoredDriveToken();
+    if (!driveToken) {
         for (const f of oversized) delete memory[f];
         return {
             memory,
-            warning: 'Saved your transcript and notes, but the audio could not be uploaded '
-                + `(${e?.code || e?.message || 'storage error'}). Playback will not be available for this one.`,
+            warning: 'Saved your transcript and notes. The recording itself was not kept, because '
+                + 'Google Drive access has expired — open Settings and refresh it, then record again.',
+        };
+    }
+
+    try {
+        for (const f of oversized) {
+            const label = f === 'audioDataUrl' ? 'audio' : 'video';
+            const name = `second-brain-${memory.id}-${label}.webm`;
+            const fileId = await uploadAudioToDrive(driveToken, name, memory[f]);
+            delete memory[f];
+            if (f === 'audioDataUrl') memory.audioDriveFileId = fileId;
+            else memory.videoDriveFileId = fileId;
+        }
+        return { memory };
+    } catch (e: any) {
+        console.error('Drive upload failed', e);
+        for (const f of oversized) delete memory[f];
+        return {
+            memory,
+            warning: `Saved your transcript and notes, but the recording could not be uploaded to Drive (${e?.message || 'upload error'}).`,
         };
     }
 };

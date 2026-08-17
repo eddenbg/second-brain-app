@@ -191,3 +191,60 @@ export const uploadFileToDrive = async (token: string, filename: string, blob: B
     const data = await response.json();
     return data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`;
 };
+
+
+/**
+ * Upload a recording to the user's own Drive and return its file id.
+ *
+ * Firebase Storage would need the paid Blaze plan just to hold these, while the
+ * Drive permission is already granted at sign-in and costs nothing. The app is
+ * scoped to drive.file, so it can only ever see files it created here.
+ */
+export const uploadAudioToDrive = async (
+    token: string,
+    filename: string,
+    dataUrl: string,
+): Promise<string> => {
+    const blob = await (await fetch(dataUrl)).blob();
+    const mimeType = blob.type || 'audio/webm';
+
+    const metadata = JSON.stringify({ name: filename, mimeType });
+    const form = new FormData();
+    form.append('metadata', new Blob([metadata], { type: 'application/json' }));
+    form.append('file', blob, filename);
+
+    const response = await fetch(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form }
+    );
+
+    if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        if (response.status === 401) {
+            localStorage.removeItem(DRIVE_TOKEN_KEY);
+            localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+            throw new Error('Google permission expired. Open Settings and refresh Drive access.');
+        }
+        throw new Error(`Drive upload failed (${response.status}) ${detail.slice(0, 120)}`);
+    }
+
+    const data = await response.json();
+    if (!data.id) throw new Error('Drive did not return a file id');
+    return data.id as string;
+};
+
+/**
+ * Drive media needs an Authorization header, which an <audio src> cannot send,
+ * so fetch the bytes and hand back a blob URL the element can play. Callers must
+ * revoke the URL when they are finished with it.
+ */
+export const getDriveFileObjectUrl = async (token: string, fileId: string): Promise<string> => {
+    const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+        { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!response.ok) {
+        throw new Error(`Could not load the recording from Drive (${response.status})`);
+    }
+    return URL.createObjectURL(await response.blob());
+};
