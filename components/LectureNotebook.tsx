@@ -333,19 +333,38 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
      * device pixel ratio, on top of a context already scaled by that ratio. Every
      * coordinate was therefore scaled twice: on a 2x tablet a stroke landed four
      * times away from the pen, which is why drawing did not follow the stylus.
+     *
+     * Pointer Events unify mouse/touch/pen into a single clientX/clientY shape,
+     * so this stays position-only — pressure is read separately by the caller.
      */
-    const getPos = (e: React.MouseEvent | React.TouchEvent) => {
+    const getPos = (e: React.PointerEvent) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const touch = 'touches' in e ? (e.touches[0] ?? (e as any).changedTouches?.[0]) : null;
-        const clientX = touch ? touch.clientX : (e as React.MouseEvent).clientX;
-        const clientY = touch ? touch.clientY : (e as React.MouseEvent).clientY;
 
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top,
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
         };
+    };
+
+    /**
+     * Pen tool line width, scaled by S Pen pressure.
+     *
+     * Only real styluses (`pointerType === 'pen'`) report a meaningful 0-1
+     * pressure value — mouse reports 0 and touch reports a flat 0.5, neither of
+     * which reflects intentional force, so both fall back to the fixed width to
+     * keep mouse/touch drawing identical to before this feature existed.
+     *
+     * Chosen per-stroke (sampled once at pointerdown) rather than per-point:
+     * it reads naturally for handwriting-width variation without adding a new
+     * field to the shared StrokePoint type in types.ts, which this task must
+     * not touch while other agents are editing sibling components concurrently.
+     */
+    const getPenStrokeWidth = (pointerType: string, pressure: number): number => {
+        if (pointerType !== 'pen') return PEN_WIDTH;
+        const clampedPressure = Math.min(1, Math.max(0, pressure));
+        return PEN_WIDTH * (0.5 + clampedPressure);
     };
 
     const clearHoldSnap = () => {
@@ -402,7 +421,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
 
     useEffect(() => clearHoldSnap, []);
 
-    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    const startDrawing = (e: React.PointerEvent) => {
         if (!canvasRef.current) return;
 
         const pos = getPos(e);
@@ -418,7 +437,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         } else {
             currentStrokeRef.current = {
                 color: PEN_COLOR,
-                width: PEN_WIDTH,
+                width: getPenStrokeWidth(e.pointerType, e.pressure),
                 points: [{ ...pos, t: timestamp }]
             };
 
@@ -485,7 +504,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
-    const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    const draw = (e: React.PointerEvent) => {
         if (!isDrawingRef.current || !canvasRef.current) return;
 
         const pos = getPos(e);
@@ -527,7 +546,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
-    const stopDrawing = (e?: React.MouseEvent | React.TouchEvent) => {
+    const stopDrawing = (e?: React.PointerEvent) => {
         clearHoldSnap();
         if (!isDrawingRef.current) return;
         isDrawingRef.current = false;
@@ -936,6 +955,8 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                         <button
                             onClick={() => setBgImage(undefined)}
                             className="mt-2 w-full py-1 px-2 bg-red-900/40 text-red-300 rounded-lg text-xs font-bold hover:bg-red-900/60"
+                            aria-label="Clear PDF Background"
+                            title="Remove the imported slide background"
                         >
                             Clear PDF
                         </button>
@@ -947,13 +968,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                         ref={canvasRef}
                         className="w-full h-full touch-none cursor-crosshair"
                         style={{ display: 'block', maxWidth: '100%', maxHeight: '100%' }}
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={(e) => stopDrawing(e)}
-                        onMouseLeave={() => stopDrawing()}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={(e) => stopDrawing(e)}
+                        onPointerDown={startDrawing}
+                        onPointerMove={draw}
+                        onPointerUp={(e) => stopDrawing(e)}
+                        onPointerLeave={() => stopDrawing()}
+                        onPointerCancel={() => stopDrawing()}
                         aria-label="Drawing canvas for lecture notes"
                     />
                 </div>
@@ -979,7 +998,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                                 <p className="text-gray-500 italic">No materials found</p>
                             )}
                         </div>
-                        <button onClick={() => setShowMaterialPicker(false)} className="w-full py-3 bg-gray-700 text-white font-bold rounded-2xl">
+                        <button
+                            onClick={() => setShowMaterialPicker(false)}
+                            className="w-full py-3 bg-gray-700 text-white font-bold rounded-2xl"
+                            aria-label="Close Material Picker"
+                        >
                             CLOSE
                         </button>
                     </div>

@@ -11,8 +11,7 @@ import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
 import ConfirmationModal from './ConfirmationModal';
 import MoodlePickerModal from './MoodlePickerModal';
-import NotebookViewer from './NotebookViewer';
-import NotebookPlayback from './NotebookPlayback';
+import LectureSplitView from './LectureSplitView';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -22,7 +21,7 @@ import { getStoredDriveToken, getDriveFileObjectUrl } from '../services/googleDr
  * Recordings live in the user's Drive, which needs an Authorization header that
  * an <audio src> cannot send. Fetch the bytes once and hand back a blob URL.
  */
-const useDriveAudio = (fileId?: string, inlineAudio?: string): { src?: string; error?: string } => {
+export const useDriveAudio = (fileId?: string, inlineAudio?: string): { src?: string; error?: string } => {
     const [src, setSrc] = useState<string | undefined>(inlineAudio);
     const [error, setError] = useState<string | undefined>();
 
@@ -121,17 +120,6 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
              <Volume2 className="w-7 h-7" />}
             {isPlaying ? 'Stop' : 'Read Aloud'}
         </button>
-    );
-};
-
-/** Resolves the recording (inline or from Drive) before rendering the notes. */
-const LectureNotesPlayer: React.FC<{ memory: VoiceMemory }> = ({ memory }) => {
-    const { src, error } = useDriveAudio(memory.audioDriveFileId, memory.audioDataUrl);
-    return (
-        <>
-            {error && <p className="text-yellow-400 font-bold text-xs mb-2">{error}</p>}
-            <NotebookViewer notebook={memory.notebook!} audioSrc={src} />
-        </>
     );
 };
 
@@ -714,7 +702,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                         {/* Hand the viewer the recording itself. It used to be
                                             given whatever <audio> happened to be first in the
                                             document, which was never the right element. */}
-                                        <LectureNotesPlayer memory={selectedItem as VoiceMemory} />
+                                        <LectureSplitView memory={selectedItem as VoiceMemory} />
                                     </div>
                                 )}
                                 <div>

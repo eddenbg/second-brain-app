@@ -300,23 +300,72 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
         return () => audioElement.removeEventListener('ended', handleAudioEnd);
     }, [audioElement, duration, redrawStrokes]);
 
+    // Shared seek mechanics: clamp to the valid range, update the audio clock,
+    // React state, and repaint the strokes up to the new time. Both the mouse
+    // click handler and the keyboard handler drive playback through this so
+    // there's exactly one place that touches audioElement.currentTime.
+    const seekTo = useCallback((newTime: number) => {
+        if (!audioElement || duration === 0) return;
+
+        const clamped = Math.min(Math.max(newTime, 0), duration);
+        setCurrentTime(clamped);
+        audioElement.currentTime = clamped;
+        redrawStrokes(clamped);
+    }, [audioElement, duration, redrawStrokes]);
+
     const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!audioElement || duration === 0) return;
 
         const progressBar = e.currentTarget;
         const rect = progressBar.getBoundingClientRect();
         const percent = (e.clientX - rect.left) / rect.width;
-        const newTime = percent * duration;
+        seekTo(percent * duration);
+    };
 
-        setCurrentTime(newTime);
-        audioElement.currentTime = newTime;
-        redrawStrokes(newTime);
+    const SEEK_STEP_SECONDS = 5;
+
+    const handleProgressKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!audioElement || duration === 0) return;
+
+        switch (e.key) {
+            case 'ArrowLeft':
+            case 'ArrowDown':
+                e.preventDefault();
+                seekTo(currentTime - SEEK_STEP_SECONDS);
+                break;
+            case 'ArrowRight':
+            case 'ArrowUp':
+                e.preventDefault();
+                seekTo(currentTime + SEEK_STEP_SECONDS);
+                break;
+            case 'Home':
+                e.preventDefault();
+                seekTo(0);
+                break;
+            case 'End':
+                e.preventDefault();
+                seekTo(duration);
+                break;
+            default:
+                break;
+        }
     };
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Spoken-word version of formatTime's own mins/secs split, for aria-valuetext
+    // — NVDA reads "1:12" digit-by-digit, which is much harder to parse by ear
+    // than "1 minute 12 seconds".
+    const describeTimeForScreenReader = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        const minPart = `${mins} ${mins === 1 ? 'minute' : 'minutes'}`;
+        const secPart = `${secs} ${secs === 1 ? 'second' : 'seconds'}`;
+        return `${minPart} ${secPart}`;
     };
 
     // Hit detection: Find if click is near any stroke point
@@ -437,6 +486,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     <button
                         onClick={handlePlay}
                         className="notebook-play-button"
+                        aria-label={isPlaying ? 'Pause notes' : 'Play notes'}
                     >
                         {isPlaying ? '⏸ STOP' : '▶ PLAY NOTES'}
                     </button>
@@ -448,6 +498,14 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     <div
                         className="notebook-progress"
                         onClick={handleProgressClick}
+                        onKeyDown={handleProgressKeyDown}
+                        role="slider"
+                        tabIndex={0}
+                        aria-label="Seek notes"
+                        aria-valuemin={0}
+                        aria-valuemax={duration}
+                        aria-valuenow={currentTime}
+                        aria-valuetext={`${describeTimeForScreenReader(currentTime)} of ${describeTimeForScreenReader(duration)}`}
                     >
                         <div
                             className="notebook-progress-bar"
@@ -459,6 +517,10 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                         <span>{formatTime(currentTime)}</span>
                         <span>{formatTime(duration)}</span>
                     </div>
+
+                    <span className="sr-only" aria-live="polite">
+                        {isPlaying ? 'Playing' : 'Paused'}
+                    </span>
                 </div>
             )}
 
@@ -545,6 +607,23 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     font-size: 12px;
                     color: #666;
                     font-weight: 500;
+                }
+
+                .notebook-progress:focus-visible {
+                    outline: 2px solid #4CAF50;
+                    outline-offset: 2px;
+                }
+
+                .sr-only {
+                    position: absolute;
+                    width: 1px;
+                    height: 1px;
+                    padding: 0;
+                    margin: -1px;
+                    overflow: hidden;
+                    clip: rect(0, 0, 0, 0);
+                    white-space: nowrap;
+                    border: 0;
                 }
             `}</style>
         </div>
