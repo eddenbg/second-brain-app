@@ -19,6 +19,8 @@ export interface StoredData {
     courses: string[];
     tasks: Task[];
     moodleToken?: string;
+    /** Course name -> term name (e.g. "Fall 2026"). Courses with no entry belong to 'General'. */
+    courseTerms?: Record<string, string>;
 }
 
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
@@ -105,6 +107,7 @@ export const useRecordings = () => {
     const [moodleToken, setMoodleToken] = useState<string | null>(null);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
+    const [courseTerms, setCourseTerms] = useState<Record<string, string>>({});
     
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -125,6 +128,7 @@ export const useRecordings = () => {
                 setTasks(data.tasks || []);
                 setSavedCourses(data.courses || []);
                 setMoodleToken(data.moodleToken || null);
+                setCourseTerms(data.courseTerms || {});
             } catch (e) {
                 console.error("Failed to parse local storage", e);
             }
@@ -260,9 +264,11 @@ export const useRecordings = () => {
                     const data = doc.data();
                     setSavedCourses(data.courses || []);
                     setMoodleToken(data.moodleToken || null);
+                    setCourseTerms(data.courseTerms || {});
                 } else {
                     setSavedCourses([]);
                     setMoodleToken(null);
+                    setCourseTerms({});
                 }
             },
             (error) => {
@@ -290,9 +296,9 @@ export const useRecordings = () => {
 
     // 5. Save to local storage for offline persistent cache
     useEffect(() => {
-        const data = { memories, tasks, courses: savedCourses, moodleToken };
+        const data = { memories, tasks, courses: savedCourses, moodleToken, courseTerms };
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-    }, [memories, tasks, savedCourses, moodleToken]);
+    }, [memories, tasks, savedCourses, moodleToken, courseTerms]);
 
     // --- Cloud Sync Action ---
     const performSync = useCallback(async () => {
@@ -313,7 +319,7 @@ export const useRecordings = () => {
             }
 
             const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-            batch.set(settingsRef, { courses: savedCourses, moodleToken }, { merge: true });
+            batch.set(settingsRef, { courses: savedCourses, moodleToken, courseTerms }, { merge: true });
 
             await batch.commit();
         } catch (e) {
@@ -322,7 +328,7 @@ export const useRecordings = () => {
         } finally {
             setIsSyncing(false);
         }
-    }, [user, memories, tasks, savedCourses, moodleToken]);
+    }, [user, memories, tasks, savedCourses, moodleToken, courseTerms]);
 
     // Reports failure instead of throwing into a promise nobody awaits. A rejected
     // write here used to disappear entirely, so a recording that was never stored
@@ -424,7 +430,7 @@ export const useRecordings = () => {
     // Returns why it failed rather than silently doing nothing: without this the
     // Add Course button looked broken when the user simply was not signed in yet.
     // Callers that do not care can ignore the result.
-    const addCourse = useCallback(async (courseName: string): Promise<{ ok: boolean; reason?: string }> => {
+    const addCourse = useCallback(async (courseName: string, term?: string): Promise<{ ok: boolean; reason?: string }> => {
         if (!db || (db as any).type === 'mock') {
             return { ok: false, reason: 'Storage is unavailable. Check your connection and try again.' };
         }
@@ -433,25 +439,29 @@ export const useRecordings = () => {
         }
         try {
             const updated = [...new Set([...savedCourses, courseName])];
+            const updatedTerms = { ...courseTerms, [courseName]: term || 'General' };
             const { setDoc } = await import('firebase/firestore');
-            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken }, { merge: true });
+            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken, courseTerms: updatedTerms }, { merge: true });
             return { ok: true };
         } catch (e: any) {
             console.error('addCourse failed', e);
             return { ok: false, reason: e?.message || 'Could not save the course.' };
         }
-    }, [user, savedCourses, moodleToken]);
+    }, [user, savedCourses, moodleToken, courseTerms]);
 
     const deleteCourse = useCallback(async (courseName: string) => {
         if (!user || !db || (db as any).type === 'mock') return;
         const { setDoc, deleteDoc } = await import('firebase/firestore');
         // Remove from savedCourses
         const updatedCourses = savedCourses.filter(c => c !== courseName);
-        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updatedCourses, moodleToken }, { merge: true });
+        // Remove from courseTerms
+        const updatedTerms = { ...courseTerms };
+        delete updatedTerms[courseName];
+        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updatedCourses, moodleToken, courseTerms: updatedTerms }, { merge: true });
         // Delete all memories belonging to this course
         const courseMemories = memories.filter(m => m.category === 'college' && (m as any).course === courseName);
         await Promise.all(courseMemories.map(m => deleteDoc(doc(db, 'users', user.uid, 'memories', m.id))));
-    }, [user, savedCourses, moodleToken, memories]);
+    }, [user, savedCourses, moodleToken, memories, courseTerms]);
 
     const saveMoodleToken = useCallback(async (token: string | null) => {
         if (!user || !db || (db as any).type === 'mock') return;
@@ -591,7 +601,7 @@ export const useRecordings = () => {
     }, []);
 
     return {
-        memories, tasks, courses, moodleToken,
+        memories, tasks, courses, moodleToken, courseTerms,
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
         user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,

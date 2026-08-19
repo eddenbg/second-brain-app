@@ -62,8 +62,10 @@ interface CollegeViewProps {
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     bulkDelete: (ids: string[]) => void;
     courses: string[];
-    addCourse: (courseName: string) => void | Promise<{ ok: boolean; reason?: string }>;
+    addCourse: (courseName: string, term?: string) => void | Promise<{ ok: boolean; reason?: string }>;
     deleteCourse: (courseName: string) => void;
+    /** Course name -> term name. Courses with no entry belong to the 'General' bucket. */
+    courseTerms: Record<string, string>;
     tasks: Task[];
     addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
     updateTask: (id: string, updates: Partial<Task>) => void;
@@ -125,7 +127,7 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
 
 const CollegeView: React.FC<CollegeViewProps> = ({
     lectures, onSave, onDelete, onUpdate, bulkDelete,
-    courses, addCourse, deleteCourse, tasks, addTask, updateTask, deleteTask, moodleToken,
+    courses, addCourse, deleteCourse, courseTerms, tasks, addTask, updateTask, deleteTask, moodleToken,
     backHandlerRef
 }) => {
     const [mainTab, setMainTab] = useState<'courses' | 'files' | 'tasks'>('courses');
@@ -133,19 +135,21 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
     const [selectedItem, setSelectedItem] = useState<AnyMemory | null>(null);
     const [newCourseName, setNewCourseName] = useState('');
+    const [newCourseTerm, setNewCourseTerm] = useState('');
     const [addCourseError, setAddCourseError] = useState<string | null>(null);
 
     const handleAddCourse = async () => {
         const name = newCourseName.trim();
         if (!name) return;
         setAddCourseError(null);
-        const result = await addCourse(name);
+        const result = await addCourse(name, newCourseTerm.trim() || undefined);
         // Older callers return void; only a definite failure should surface here.
         if (result && result.ok === false) {
             setAddCourseError(result.reason || 'Could not create the course.');
             return;
         }
         setNewCourseName('');
+        setNewCourseTerm('');
     };
     const [courseViewMode, setCourseViewMode] = useState<'list' | 'grid'>(() =>
         (localStorage.getItem('college_view_mode') as 'list' | 'grid') || 'list'
@@ -240,6 +244,27 @@ const CollegeView: React.FC<CollegeViewProps> = ({
         if (courseSortBy === 'recent') return arr.sort((a, b) => (recentAccess[b] || 0) - (recentAccess[a] || 0));
         return arr; // manual = insertion order
     }, [courses, courseSortBy, recentAccess]);
+
+    // Group courses by term for display. Courses saved before terms existed (or
+    // imported from Moodle, which has no term concept) have no courseTerms entry
+    // and fall back to the 'General' bucket. The alpha/recent/manual sort mode
+    // still governs the order of courses WITHIN each term group; only the term
+    // groups themselves get their own ordering — alphabetical, with 'General'
+    // pushed to the end so it doesn't dominate the top of a term-organized list.
+    const coursesByTerm = useMemo(() => {
+        const groups: { [term: string]: string[] } = {};
+        sortedCourses.forEach(course => {
+            const term = courseTerms[course] || 'General';
+            if (!groups[term]) groups[term] = [];
+            groups[term].push(course);
+        });
+        const terms = Object.keys(groups).sort((a, b) => {
+            if (a === 'General') return 1;
+            if (b === 'General') return -1;
+            return a.localeCompare(b);
+        });
+        return terms.map(term => ({ term, courses: groups[term] }));
+    }, [sortedCourses, courseTerms]);
 
     // Register hardware back handler with App.tsx so it runs before the tab-level back logic
     useEffect(() => {
@@ -378,18 +403,31 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     </div>
 
                     {/* New course input */}
-                    <div className="flex gap-3">
-                        <input
-                            type="text"
-                            value={newCourseName}
-                            onChange={(e) => setNewCourseName(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && newCourseName.trim()) handleAddCourse();
-                            }}
-                            placeholder="New Course Name…"
-                            className="flex-grow"
-                            aria-label="Enter new course name"
-                        />
+                    <div className="flex gap-3 flex-wrap">
+                        <div className="flex-grow min-w-[10rem]">
+                            <input
+                                type="text"
+                                value={newCourseName}
+                                onChange={(e) => setNewCourseName(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && newCourseName.trim()) handleAddCourse();
+                                }}
+                                placeholder="New Course Name…"
+                                aria-label="Enter new course name"
+                            />
+                        </div>
+                        <div className="flex-grow min-w-[10rem] basis-40">
+                            <input
+                                type="text"
+                                value={newCourseTerm}
+                                onChange={(e) => setNewCourseTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && newCourseName.trim()) handleAddCourse();
+                                }}
+                                placeholder="Term (defaults to General)…"
+                                aria-label="Enter term for new course, defaults to General if left blank"
+                            />
+                        </div>
                         <button
                             onClick={handleAddCourse}
                             aria-label="Add course"
@@ -438,57 +476,66 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </div>
                     )}
 
-                    {/* Course cards */}
-                    <div className={courseViewMode === 'grid' ? 'grid grid-cols-2 gap-4' : 'flex flex-col gap-4'}>
-                        {sortedCourses.map(course => (
-                            courseViewMode === 'grid' ? (
-                                // Grid card — compact, square-ish
-                                <div key={course} className="card-brutal flex flex-col gap-2 relative p-4">
-                                    <button
-                                        onClick={() => {
-                                            const count = memoriesByCourse[course]?.length || 0;
-                                            setConfirmDialog({ course, count });
-                                        }}
-                                        className="absolute top-2 right-2 p-1 text-white/20 hover:text-red-400 transition-colors"
-                                        aria-label={`Delete ${course}`}
-                                    >
-                                        <Trash2 size={16} strokeWidth={3} />
-                                    </button>
-                                    <button onClick={() => handleSelectCourse(course)} className="flex flex-col items-center gap-2 pt-2">
-                                        <Folder size={40} className="text-[#60A5FA]" strokeWidth={3} />
-                                        <h2 className="text-sm font-black text-center uppercase tracking-tight leading-tight line-clamp-2">{course}</h2>
-                                        <p className="text-[#60A5FA] text-xs uppercase tracking-widest">
-                                            {memoriesByCourse[course]?.length || 0} items
-                                        </p>
-                                    </button>
+                    {/* Course cards, grouped by term */}
+                    <div className="flex flex-col gap-6">
+                        {coursesByTerm.map(({ term, courses: termCourses }) => (
+                            <div key={term} className="flex flex-col gap-4">
+                                <h3 className="text-sm font-black uppercase tracking-widest text-[#60A5FA] border-b-2 border-white/20 pb-2">
+                                    {term}
+                                </h3>
+                                <div className={courseViewMode === 'grid' ? 'grid grid-cols-2 gap-4' : 'flex flex-col gap-4'}>
+                                    {termCourses.map(course => (
+                                        courseViewMode === 'grid' ? (
+                                            // Grid card — compact, square-ish
+                                            <div key={course} className="card-brutal flex flex-col gap-2 relative p-4">
+                                                <button
+                                                    onClick={() => {
+                                                        const count = memoriesByCourse[course]?.length || 0;
+                                                        setConfirmDialog({ course, count });
+                                                    }}
+                                                    className="absolute top-2 right-2 p-1 text-white/20 hover:text-red-400 transition-colors"
+                                                    aria-label={`Delete ${course}`}
+                                                >
+                                                    <Trash2 size={16} strokeWidth={3} />
+                                                </button>
+                                                <button onClick={() => handleSelectCourse(course)} className="flex flex-col items-center gap-2 pt-2">
+                                                    <Folder size={40} className="text-[#60A5FA]" strokeWidth={3} />
+                                                    <h2 className="text-sm font-black text-center uppercase tracking-tight leading-tight line-clamp-2">{course}</h2>
+                                                    <p className="text-[#60A5FA] text-xs uppercase tracking-widest">
+                                                        {memoriesByCourse[course]?.length || 0} items
+                                                    </p>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            // List card
+                                            <div key={course} className="card-brutal flex items-center gap-5 text-left hover:bg-white/5">
+                                                <button onClick={() => handleSelectCourse(course)} className="flex items-center gap-5 flex-grow min-w-0">
+                                                    <Folder size={48} className="text-[#60A5FA] flex-shrink-0" strokeWidth={3} />
+                                                    <div className="flex-grow overflow-hidden">
+                                                        <h2 className="text-xl truncate">{course}</h2>
+                                                        <p className="text-[#60A5FA] text-sm uppercase tracking-widest">
+                                                            {memoriesByCourse[course]?.length || 0} items
+                                                        </p>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        const count = memoriesByCourse[course]?.length || 0;
+                                                        setConfirmDialog({ course, count });
+                                                    }}
+                                                    className="flex-shrink-0 p-2 text-white/30 hover:text-red-400 transition-colors"
+                                                    aria-label={`Delete ${course}`}
+                                                >
+                                                    <Trash2 size={22} strokeWidth={3} />
+                                                </button>
+                                            </div>
+                                        )
+                                    ))}
                                 </div>
-                            ) : (
-                                // List card
-                                <div key={course} className="card-brutal flex items-center gap-5 text-left hover:bg-white/5">
-                                    <button onClick={() => handleSelectCourse(course)} className="flex items-center gap-5 flex-grow min-w-0">
-                                        <Folder size={48} className="text-[#60A5FA] flex-shrink-0" strokeWidth={3} />
-                                        <div className="flex-grow overflow-hidden">
-                                            <h2 className="text-xl truncate">{course}</h2>
-                                            <p className="text-[#60A5FA] text-sm uppercase tracking-widest">
-                                                {memoriesByCourse[course]?.length || 0} items
-                                            </p>
-                                        </div>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            const count = memoriesByCourse[course]?.length || 0;
-                                            setConfirmDialog({ course, count });
-                                        }}
-                                        className="flex-shrink-0 p-2 text-white/30 hover:text-red-400 transition-colors"
-                                        aria-label={`Delete ${course}`}
-                                    >
-                                        <Trash2 size={22} strokeWidth={3} />
-                                    </button>
-                                </div>
-                            )
+                            </div>
                         ))}
                         {courses.length === 0 && (
-                            <div className="col-span-2 py-16 text-center opacity-40">
+                            <div className="py-16 text-center opacity-40">
                                 <Folder size={64} className="mx-auto mb-4" strokeWidth={2} />
                                 <p className="text-xl uppercase">No courses yet</p>
                             </div>
