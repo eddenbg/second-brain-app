@@ -50,6 +50,54 @@ const stripUndefined = (value: any): any => {
 const INLINE_MEDIA_LIMIT = 700_000;
 
 /**
+ * Best-effort, silent reissue of the Calendar/Drive access token.
+ *
+ * Uses a separate GoogleAuthProvider instance with prompt: 'none', not the
+ * shared `googleProvider` singleton from utils/firebase.ts — that singleton
+ * backs the ordinary sign-in button, and mutating its custom parameters here
+ * would leak 'none' into that flow too, silently breaking sign-in for anyone
+ * who has not already granted consent (their popup would fail instead of
+ * showing the consent screen).
+ *
+ * prompt: 'none' is standard OAuth2, not a Firebase feature: if the browser
+ * still holds an active Google session and consent was already granted,
+ * Google reissues a token with no UI at all; otherwise the request fails
+ * cleanly (interaction_required) rather than falling back to a visible
+ * prompt. So this either fixes the expired token invisibly or does nothing —
+ * it can never surprise the user with an unexpected popup.
+ *
+ * Callers already sit inside a user-gesture call chain (this runs from
+ * externalizeMedia, itself reached from tapping Save), which is what keeps a
+ * same-tick signInWithPopup from being blocked — this must not be called from
+ * a background timer, where the popup would be blocked outright.
+ */
+const trySilentGoogleReauth = async (): Promise<string | null> => {
+    if (!auth?.currentUser || auth.currentUser.isAnonymous) return null;
+
+    const silentProvider = new GoogleAuthProvider();
+    silentProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+    silentProvider.addScope('https://www.googleapis.com/auth/drive.readonly');
+    silentProvider.addScope('https://www.googleapis.com/auth/drive.file');
+    silentProvider.setCustomParameters({ prompt: 'none' });
+
+    try {
+        const result = await signInWithPopup(auth, silentProvider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const token = credential?.accessToken;
+        if (!token) return null;
+        saveGoogleToken(token);
+        saveDriveToken(token);
+        return token;
+    } catch {
+        // Expected whenever silent reauth is not possible — no active Google
+        // session in this browser, or consent was revoked. Not an error worth
+        // surfacing; the caller falls back to its existing "please reconnect"
+        // messaging exactly as before this existed.
+        return null;
+    }
+};
+
+/**
  * Move oversized recordings out of the document and into the user's Drive.
  *
  * A Firestore document cannot exceed 1MB, and base64 audio blows past that after
@@ -72,7 +120,14 @@ const externalizeMedia = async (
 
     if (oversized.length === 0) return { memory };
 
-    const driveToken = getStoredDriveToken();
+    // The Calendar/Drive access token Google hands back is only valid for an
+    // hour, and this client never receives a refresh token — Google does not
+    // hand one to a browser app with no server-side client secret to redeem it,
+    // by design. Before giving up, try one silent reauth: if the browser still
+    // has an active Google session and consent was already granted, Google can
+    // reissue a token with no prompt at all, so in the common case the person
+    // saving this recording never sees anything.
+    const driveToken = getStoredDriveToken() || await trySilentGoogleReauth();
     if (!driveToken) {
         for (const f of oversized) delete memory[f];
         return {
