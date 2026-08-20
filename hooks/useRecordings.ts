@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AnyMemory, WebMemory, Task } from '../types';
+import type { AnyMemory, WebMemory, Task, CalendarEvent } from '../types';
 import { db, auth, storage } from '../utils/firebase';
 import { 
     collection, 
@@ -18,6 +18,7 @@ export interface StoredData {
     memories: AnyMemory[];
     courses: string[];
     tasks: Task[];
+    calendarEvents?: CalendarEvent[];
     moodleToken?: string;
     /** Course name -> term name (e.g. "Fall 2026"). Courses with no entry belong to 'General'. */
     courseTerms?: Record<string, string>;
@@ -104,6 +105,12 @@ const externalizeMedia = async (
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
+    // Manually-added ('manual' source) calendar entries only. Moodle and Google
+    // events are separate read-only feeds fetched live from those services —
+    // this is just the app's own events, which previously lived in App.tsx as
+    // plain React state with no Firestore write at all, so they vanished on
+    // reload and never reached a second device.
+    const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
     const [moodleToken, setMoodleToken] = useState<string | null>(null);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
@@ -117,6 +124,7 @@ export const useRecordings = () => {
 
     const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingTaskIdsRef = useRef<Set<string>>(new Set());
+    const pendingCalendarEventIdsRef = useRef<Set<string>>(new Set());
 
     // 1. Initial Load from LocalStorage (for speed)
     useEffect(() => {
@@ -126,6 +134,7 @@ export const useRecordings = () => {
                 const data = JSON.parse(stored);
                 setMemories(data.memories || []);
                 setTasks(data.tasks || []);
+                setCalendarEvents(data.calendarEvents || []);
                 setSavedCourses(data.courses || []);
                 setMoodleToken(data.moodleToken || null);
                 setCourseTerms(data.courseTerms || {});
@@ -246,9 +255,29 @@ export const useRecordings = () => {
             }
         );
 
+        // Calendar Events Listener (manually-added events only)
+        const calendarEventsRef = collection(db, 'users', user.uid, 'calendarEvents');
+        const unsubCalendarEvents = onSnapshot(
+            calendarEventsRef,
+            (snapshot) => {
+                const remoteEvents = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CalendarEvent[];
+                setCalendarEvents(prev => {
+                    const pendingIds = pendingCalendarEventIdsRef.current;
+                    if (pendingIds.size === 0) return remoteEvents;
+                    const remoteIds = new Set(remoteEvents.map(e => e.id));
+                    const stillPending = prev.filter(e => pendingIds.has(e.id) && !remoteIds.has(e.id));
+                    return [...remoteEvents, ...stillPending];
+                });
+            },
+            (error) => {
+                console.error('Calendar events listener error:', error);
+            }
+        );
+
         return () => {
             unsubMemories();
             unsubTasks();
+            unsubCalendarEvents();
         };
     }, [user]);
 
@@ -296,9 +325,9 @@ export const useRecordings = () => {
 
     // 5. Save to local storage for offline persistent cache
     useEffect(() => {
-        const data = { memories, tasks, courses: savedCourses, moodleToken, courseTerms };
+        const data = { memories, tasks, calendarEvents, courses: savedCourses, moodleToken, courseTerms };
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-    }, [memories, tasks, savedCourses, moodleToken, courseTerms]);
+    }, [memories, tasks, calendarEvents, savedCourses, moodleToken, courseTerms]);
 
     // --- Cloud Sync Action ---
     const performSync = useCallback(async () => {
@@ -318,6 +347,11 @@ export const useRecordings = () => {
                 batch.set(docRef, task);
             }
 
+            for (const event of calendarEvents) {
+                const docRef = doc(db, 'users', user.uid, 'calendarEvents', event.id);
+                batch.set(docRef, event);
+            }
+
             const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
             batch.set(settingsRef, { courses: savedCourses, moodleToken, courseTerms }, { merge: true });
 
@@ -328,7 +362,7 @@ export const useRecordings = () => {
         } finally {
             setIsSyncing(false);
         }
-    }, [user, memories, tasks, savedCourses, moodleToken, courseTerms]);
+    }, [user, memories, tasks, calendarEvents, savedCourses, moodleToken, courseTerms]);
 
     // Reports failure instead of throwing into a promise nobody awaits. A rejected
     // write here used to disappear entirely, so a recording that was never stored
@@ -425,6 +459,33 @@ export const useRecordings = () => {
         if (!user || !db || (db as any).type === 'mock') return;
         const { deleteDoc } = await import('firebase/firestore');
         await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
+    }, [user]);
+
+    const addCalendarEvent = useCallback(async (eventData: Omit<CalendarEvent, 'id'>) => {
+        const newEvent: CalendarEvent = { ...eventData, id: Date.now().toString(), source: 'manual' };
+        pendingCalendarEventIdsRef.current.add(newEvent.id);
+        setCalendarEvents(prev => [...prev, newEvent].sort(
+            (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+        )); // optimistic — shows immediately, same as addTask
+        if (!user || !db || (db as any).type === 'mock') {
+            pendingCalendarEventIdsRef.current.delete(newEvent.id);
+            return;
+        }
+        try {
+            const { setDoc } = await import('firebase/firestore');
+            await setDoc(doc(db, 'users', user.uid, 'calendarEvents', newEvent.id), newEvent);
+        } catch (err) {
+            console.error('addCalendarEvent failed:', err);
+        } finally {
+            pendingCalendarEventIdsRef.current.delete(newEvent.id);
+        }
+    }, [user]);
+
+    const deleteCalendarEvent = useCallback(async (id: string) => {
+        setCalendarEvents(prev => prev.filter(e => e.id !== id));
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'users', user.uid, 'calendarEvents', id));
     }, [user]);
 
     // Returns why it failed rather than silently doing nothing: without this the
@@ -601,9 +662,10 @@ export const useRecordings = () => {
     }, []);
 
     return {
-        memories, tasks, courses, moodleToken, courseTerms,
+        memories, tasks, courses, moodleToken, courseTerms, calendarEvents,
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
+        addCalendarEvent, deleteCalendarEvent,
         user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,

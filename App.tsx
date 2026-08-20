@@ -38,7 +38,6 @@ function App() {
   const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xlarge'>(() =>
     (localStorage.getItem('font_size') as 'normal' | 'large' | 'xlarge') || 'normal'
   );
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
@@ -111,6 +110,11 @@ function App() {
     tasks, addTask, updateTask, deleteTask,
     courses, addCourse, deleteCourse, courseTerms, user, loading,
     moodleToken, saveMoodleToken,
+    // Manually-added calendar events now live in Firestore via the hook, same
+    // as memories/tasks — previously this was plain useState right here in
+    // App.tsx with no persistence at all, so an event added on one device
+    // never showed up on another, and vanished on a reload of the same one.
+    calendarEvents, addCalendarEvent, deleteCalendarEvent,
     signInWithGoogle, signOut: signOutUser,
   } = useRecordings();
 
@@ -280,12 +284,9 @@ function App() {
     getMoodleEvents();
   }, [moodleToken]);
 
-  const addCalendarEvent = (event: Omit<CalendarEvent, 'id'>) => {
-    const newEvent = { ...event, id: Date.now().toString(), source: 'manual' as const };
-    setCalendarEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
-  };
-
-  const deleteCalendarEvent = (eventId: string) => {
+  // Just opens the confirmation dialog; the hook's deleteCalendarEvent (which
+  // actually removes the event, from Firestore too) runs on confirm below.
+  const confirmDeleteCalendarEvent = (eventId: string) => {
       setConfirmDialog({ eventId });
   };
 
@@ -499,7 +500,7 @@ function App() {
           events={allCalendarEvents}
           onClose={() => toggleSchedule(false)}
           onAddEvent={addCalendarEvent}
-          onDeleteEvent={deleteCalendarEvent}
+          onDeleteEvent={confirmDeleteCalendarEvent}
         />
       )}
 
@@ -511,7 +512,7 @@ function App() {
           cancelText="Cancel"
           isDangerous={true}
           onConfirm={() => {
-            setCalendarEvents(prev => prev.filter(e => e.id !== confirmDialog.eventId));
+            deleteCalendarEvent(confirmDialog.eventId);
             setConfirmDialog(null);
           }}
           onCancel={() => setConfirmDialog(null)}
