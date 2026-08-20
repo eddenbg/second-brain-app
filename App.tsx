@@ -17,7 +17,6 @@ import { processSharedUrl } from './services/geminiService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
 import { getStoredDriveToken } from './services/googleDriveService';
-import { callRecordingService } from './services/callRecordingService';
 import { updateService } from './services/updateService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
@@ -318,18 +317,6 @@ function App() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [user]);
 
-  // Initialize call recording service (Android only)
-  useEffect(() => {
-    if (user && !user.isAnonymous) {
-      callRecordingService.startMonitoring().catch(err => {
-        // Silent fail - call recordings only work on native Android app
-        console.debug('Call recording service not available:', err);
-      });
-    }
-    return () => {
-      callRecordingService.stopMonitoring();
-    };
-  }, [user]);
 
   // Initialize live update service for instant web app updates
   useEffect(() => {

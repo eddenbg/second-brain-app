@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
     Volume2, Loader2, X, Package, Camera, FileText,
-    ListTodo, StopCircle, Play, Tag, Phone
+    ListTodo, StopCircle, Play, Tag
 } from 'lucide-react';
 import type { AnyMemory, VoiceMemory, DocumentMemory, Task, PhysicalItemMemory, WebMemory } from '../types';
 import Recorder from './Recorder';
@@ -53,8 +53,7 @@ type SubView =
   | 'transcribe'
   | 'detail'
   | 'search'
-  | 'favorites'
-  | 'calls';
+  | 'favorites';
 
 // --- Read-Aloud Button ---
 const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
@@ -974,50 +973,6 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 <div className="h-[40vh] card-brutal p-0 overflow-hidden">
                     <QASession memories={[selectedItem]} tasks={[]} />
                 </div>
-            </div>
-        );
-    }
-
-    // ── Call Recordings (Native Android App) ──────────────────────────────
-    if (subView === 'calls') {
-        return (
-            <div className="flex flex-col gap-6">
-                <header className="flex justify-between items-center">
-                    <h2 className="text-2xl font-black uppercase">📞 Call Recordings</h2>
-                    <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
-                        <ArrowLeft size={32} strokeWidth={3} />
-                    </button>
-                </header>
-
-                <div className="bg-cyan-900/40 border-2 border-cyan-500/30 rounded-2xl p-4">
-                    <p className="text-cyan-200 text-sm font-bold leading-relaxed">
-                        📱 <strong>Auto-Syncing:</strong> Your Galaxy phone's call recordings are being imported automatically. Ask Claude about what was said in any call.
-                    </p>
-                </div>
-
-                <div className="card-brutal">
-                    <h3 className="text-xl font-black text-white uppercase mb-4">How It Works</h3>
-                    <div className="space-y-3 text-sm text-gray-300">
-                        <p>✓ Your call recordings are automatically detected and imported</p>
-                        <p>✓ Each call is transcribed and searchable</p>
-                        <p>✓ Ask Claude: "What did my friend say about X?"</p>
-                        <p>✓ Completely private - stays on your device</p>
-                    </div>
-                </div>
-
-                <div className="h-[40vh] card-brutal p-0 overflow-hidden">
-                    <QASession
-                        memories={memories.filter(m => m.type === 'voice' && m.title.includes('Call'))}
-                        tasks={[]}
-                    />
-                </div>
-
-                <button
-                    onClick={goBack}
-                    className="w-full h-14 bg-gray-700 text-white rounded-2xl font-black text-lg uppercase hover:bg-gray-600 transition-colors"
-                >
-                    Back to Hub
-                </button>
             </div>
         );
     }
