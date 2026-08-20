@@ -104,3 +104,73 @@ export const fetchNotionPageContent = async (token: string, pageId: string): Pro
     const data = await res.json();
     return (data.results || []).map(blockToText).filter(Boolean).join('\n').slice(0, 8000);
 };
+
+export interface NotionLink {
+    url: string;
+    label: string;
+}
+
+const MAX_LINK_PAGES = 5; // 5 * 100 blocks — a generous cap against runaway pagination
+
+/** All blocks on a page, following Notion's cursor past the first 100. */
+const fetchAllBlocks = async (token: string, pageId: string): Promise<any[]> => {
+    const blocks: any[] = [];
+    let cursor: string | undefined;
+
+    for (let i = 0; i < MAX_LINK_PAGES; i++) {
+        const params = new URLSearchParams({ token, action: 'blocks', pageId });
+        if (cursor) params.set('cursor', cursor);
+        const res = await retryWithExponentialBackoff(() =>
+            fetchWithTimeout(`${PROXY}?${params}`, { timeout: 30000 }),
+            { maxRetries: 2, initialDelayMs: 1000 }
+        );
+        if (!res.ok) break;
+        const data = await res.json();
+        blocks.push(...(data.results || []));
+        if (!data.has_more || !data.next_cursor) break;
+        cursor = data.next_cursor;
+    }
+
+    return blocks;
+};
+
+/**
+ * Every external URL findable in one block: a hyperlink on a run of text
+ * (rich_text[].href), or a bookmark/embed/link_preview block, which Notion uses
+ * specifically for a pasted link with no surrounding text.
+ */
+const extractLinksFromBlock = (block: any): NotionLink[] => {
+    const links: NotionLink[] = [];
+    const content = block[block.type];
+
+    for (const rt of content?.rich_text || []) {
+        if (rt.href) links.push({ url: rt.href, label: rt.plain_text || rt.href });
+    }
+
+    if (block.type === 'bookmark' || block.type === 'embed' || block.type === 'link_preview') {
+        const url: string | undefined = content?.url;
+        if (url) {
+            const caption = (content?.caption || []).map((c: any) => c.plain_text).join('').trim();
+            links.push({ url, label: caption || url });
+        }
+    }
+
+    return links;
+};
+
+/** Every distinct external link on a Notion page, in document order. */
+export const fetchNotionPageLinks = async (token: string, pageId: string): Promise<NotionLink[]> => {
+    const blocks = await fetchAllBlocks(token, pageId);
+    const seen = new Set<string>();
+    const links: NotionLink[] = [];
+
+    for (const block of blocks) {
+        for (const link of extractLinksFromBlock(block)) {
+            if (seen.has(link.url)) continue;
+            seen.add(link.url);
+            links.push(link);
+        }
+    }
+
+    return links;
+};

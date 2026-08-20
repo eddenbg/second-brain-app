@@ -1,19 +1,67 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import type { NotionPage } from '../services/notionService';
-import { searchNotionPages } from '../services/notionService';
+import type { NotionPage, NotionLink } from '../services/notionService';
+import { searchNotionPages, fetchNotionPageLinks } from '../services/notionService';
 import { XIcon, SearchIcon, Loader2Icon, ArrowLeftIcon } from './Icons';
 
 interface NotionPickerModalProps {
     token: string;
     onClose: () => void;
     onImport: (page: NotionPage) => void;
+    /** Save a batch of links the user selected out of one page's contents. */
+    onImportLinks: (links: NotionLink[]) => void;
     importedUrls: Set<string>;
 }
 
-const NotionPickerModal: React.FC<NotionPickerModalProps> = ({ token, onClose, onImport, importedUrls }) => {
+const NotionPickerModal: React.FC<NotionPickerModalProps> = ({ token, onClose, onImport, onImportLinks, importedUrls }) => {
     const [allPages, setAllPages] = useState<NotionPage[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Link-picking mode: browsing every external link found on one page, so the
+    // user can import a chosen subset instead of the whole page as one clip.
+    const [linkPickerPage, setLinkPickerPage] = useState<NotionPage | null>(null);
+    const [pageLinks, setPageLinks] = useState<NotionLink[]>([]);
+    const [isLoadingLinks, setIsLoadingLinks] = useState(false);
+    const [linksError, setLinksError] = useState<string | null>(null);
+    const [selectedLinkUrls, setSelectedLinkUrls] = useState<Set<string>>(new Set());
+
+    const openLinkPicker = useCallback((page: NotionPage) => {
+        setLinkPickerPage(page);
+        setPageLinks([]);
+        setSelectedLinkUrls(new Set());
+        setLinksError(null);
+        setIsLoadingLinks(true);
+        fetchNotionPageLinks(token, page.id)
+            .then(links => {
+                setPageLinks(links);
+                setSelectedLinkUrls(new Set(links.map(l => l.url))); // default: all selected
+            })
+            .catch(() => setLinksError('Could not read links from this page. Please try again.'))
+            .finally(() => setIsLoadingLinks(false));
+    }, [token]);
+
+    const closeLinkPicker = () => setLinkPickerPage(null);
+
+    const toggleLink = (url: string) => {
+        setSelectedLinkUrls(prev => {
+            const next = new Set(prev);
+            if (next.has(url)) next.delete(url); else next.add(url);
+            return next;
+        });
+    };
+
+    const toggleSelectAllLinks = () => {
+        setSelectedLinkUrls(prev =>
+            prev.size === pageLinks.length ? new Set() : new Set(pageLinks.map(l => l.url))
+        );
+    };
+
+    const importSelectedLinks = () => {
+        const chosen = pageLinks.filter(l => selectedLinkUrls.has(l.url) && !importedUrls.has(l.url));
+        if (chosen.length === 0) return;
+        onImportLinks(chosen);
+        closeLinkPicker();
+    };
 
     const [navStack, setNavStack] = useState<Array<{ id: string | null; title: string }>>(
         [{ id: null, title: 'Workspace' }]
@@ -77,6 +125,113 @@ const NotionPickerModal: React.FC<NotionPickerModalProps> = ({ token, onClose, o
 
     const displayPages = searchMode && searchQuery.trim() ? searchResults : visiblePages;
     const isCurrentlyLoading = isLoading || (searchMode && isSearching);
+
+    if (linkPickerPage) {
+        const selectedCount = selectedLinkUrls.size;
+        const allSelected = pageLinks.length > 0 && selectedCount === pageLinks.length;
+
+        return (
+            <div className="fixed inset-0 bg-black/90 z-[200] flex flex-col animate-fade-in" onClick={onClose}>
+                <div
+                    className="bg-gray-800 rounded-t-[2.5rem] w-full max-h-[92vh] flex flex-col border-t-4 border-gray-700 mt-auto"
+                    onClick={e => e.stopPropagation()}
+                >
+                    <div className="w-12 h-1.5 bg-gray-600 rounded-full mx-auto mt-4 shrink-0" />
+
+                    <header className="flex items-center gap-3 px-4 py-3 border-b-2 border-gray-700 shrink-0">
+                        <button onClick={closeLinkPicker} aria-label="Back to pages" className="p-2 bg-gray-700 rounded-xl shrink-0">
+                            <ArrowLeftIcon className="w-5 h-5 text-white" />
+                        </button>
+                        <div className="flex-grow min-w-0">
+                            <p dir="auto" className="font-black text-white text-sm truncate">
+                                Links in {linkPickerPage.title || 'Untitled'}
+                            </p>
+                            {!isLoadingLinks && !linksError && (
+                                <p className="text-[10px] text-gray-500 font-bold mt-0.5">
+                                    {selectedCount} of {pageLinks.length} selected
+                                </p>
+                            )}
+                        </div>
+                        <button onClick={onClose} aria-label="Close" className="p-2 bg-gray-700 rounded-xl shrink-0">
+                            <XIcon className="w-5 h-5 text-white" />
+                        </button>
+                    </header>
+
+                    <div className="flex-grow overflow-y-auto px-4 py-3 space-y-2 min-h-0">
+                        {isLoadingLinks && (
+                            <div className="flex justify-center py-12">
+                                <Loader2Icon className="w-8 h-8 animate-spin text-purple-400" />
+                            </div>
+                        )}
+                        {linksError && <p className="text-red-400 font-bold text-center py-6 text-sm">{linksError}</p>}
+                        {!isLoadingLinks && !linksError && pageLinks.length === 0 && (
+                            <p className="text-gray-500 font-black text-center py-12 text-xs uppercase tracking-widest">
+                                No external links found on this page
+                            </p>
+                        )}
+                        {!isLoadingLinks && !linksError && pageLinks.length > 0 && (
+                            <>
+                                <button
+                                    onClick={toggleSelectAllLinks}
+                                    className="w-full flex items-center gap-3 p-3 bg-gray-900 rounded-2xl border-2 border-gray-700"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={allSelected}
+                                        onChange={toggleSelectAllLinks}
+                                        aria-label={allSelected ? 'Deselect all links' : 'Select all links'}
+                                        className="w-5 h-5 accent-purple-500 shrink-0 pointer-events-none"
+                                        tabIndex={-1}
+                                    />
+                                    <span className="text-white font-black text-xs uppercase tracking-widest">
+                                        {allSelected ? 'Deselect all' : 'Select all'}
+                                    </span>
+                                </button>
+                                {pageLinks.map(link => {
+                                    const isImported = importedUrls.has(link.url);
+                                    const isChecked = selectedLinkUrls.has(link.url);
+                                    return (
+                                        <label
+                                            key={link.url}
+                                            className={`flex items-center gap-3 p-4 bg-gray-900 rounded-2xl border-2 ${isImported ? 'border-green-800 opacity-60' : 'border-gray-700'}`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                disabled={isImported}
+                                                onChange={() => toggleLink(link.url)}
+                                                aria-label={`${isImported ? 'Already imported: ' : 'Select '}${link.label}`}
+                                                className="w-5 h-5 accent-purple-500 shrink-0"
+                                            />
+                                            <div className="flex-grow min-w-0">
+                                                <p dir="auto" className="font-bold text-white text-sm truncate">{link.label}</p>
+                                                <p dir="ltr" className="text-[10px] text-gray-500 truncate mt-0.5">{link.url}</p>
+                                            </div>
+                                            {isImported && (
+                                                <span className="text-[10px] font-black text-green-400 uppercase shrink-0">Added</span>
+                                            )}
+                                        </label>
+                                    );
+                                })}
+                            </>
+                        )}
+                    </div>
+
+                    {!isLoadingLinks && !linksError && pageLinks.length > 0 && (
+                        <div className="px-4 py-3 border-t-2 border-gray-700 shrink-0">
+                            <button
+                                onClick={importSelectedLinks}
+                                disabled={selectedCount === 0}
+                                className="w-full py-3 rounded-2xl font-black text-sm uppercase disabled:opacity-40 disabled:cursor-not-allowed bg-purple-600 text-white active:scale-95 transition-all"
+                            >
+                                Import {selectedCount} {selectedCount === 1 ? 'Link' : 'Links'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 bg-black/90 z-[200] flex flex-col animate-fade-in" onClick={onClose}>
@@ -179,17 +334,28 @@ const NotionPickerModal: React.FC<NotionPickerModalProps> = ({ token, onClose, o
                                         </div>
                                     </>
                                 )}
-                                <button
-                                    onClick={() => !isImported && onImport(page)}
-                                    disabled={isImported}
-                                    className={`px-4 py-2 rounded-xl font-black text-xs uppercase shrink-0 transition-all ${
-                                        isImported
-                                            ? 'bg-green-800 text-green-400'
-                                            : 'bg-purple-600 text-white active:scale-95'
-                                    }`}
-                                >
-                                    {isImported ? 'Added ✓' : 'Import'}
-                                </button>
+                                {/* Stacked, not side-by-side, so this row never forces horizontal
+                                    scroll on a narrow screen. */}
+                                <div className="flex flex-col gap-2 shrink-0">
+                                    <button
+                                        onClick={() => !isImported && onImport(page)}
+                                        disabled={isImported}
+                                        className={`px-4 py-2 rounded-xl font-black text-xs uppercase transition-all ${
+                                            isImported
+                                                ? 'bg-green-800 text-green-400'
+                                                : 'bg-purple-600 text-white active:scale-95'
+                                        }`}
+                                    >
+                                        {isImported ? 'Added ✓' : 'Import'}
+                                    </button>
+                                    <button
+                                        onClick={() => openLinkPicker(page)}
+                                        aria-label={`Choose links from ${page.title || 'Untitled'} to import`}
+                                        className="px-4 py-2 rounded-xl font-black text-xs uppercase bg-gray-700 text-white active:scale-95 transition-all"
+                                    >
+                                        Links
+                                    </button>
+                                </div>
                             </div>
                         );
                     })}

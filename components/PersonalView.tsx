@@ -18,7 +18,7 @@ import MemoryThumbnail from './MemoryThumbnail';
 import TranscriptionUploader from './TranscriptionUploader';
 import { generateSpeechFromText } from '../services/geminiService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
-import type { NotionPage } from '../services/notionService';
+import type { NotionPage, NotionLink } from '../services/notionService';
 import { decode, decodeAudioData } from '../utils/audio';
 import { getLocationName } from '../utils/location';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
@@ -177,6 +177,24 @@ const PersonalView: React.FC<PersonalViewProps> = ({
             content,
             category: 'personal',
         } as Omit<WebMemory, 'id' | 'date'>);
+    };
+
+    /**
+     * Saves a batch of external links found inside a Notion page as individual
+     * web clips. Unlike a full page import, these aren't crawled/summarized —
+     * the link's own text (or the URL itself) is stored as the clip's content,
+     * which is honest about what was actually captured.
+     */
+    const handleImportNotionLinks = (links: NotionLink[]) => {
+        for (const link of links) {
+            onSaveMemory({
+                type: 'web',
+                title: link.label || link.url,
+                url: link.url,
+                content: link.label || link.url,
+                category: 'personal',
+            } as Omit<WebMemory, 'id' | 'date'>);
+        }
     };
 
     const handleSaveVoiceNote = async (mem: Omit<VoiceMemory, 'id'|'date'|'category'>) => {
@@ -354,6 +372,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         setShowNotionPicker(false);
                     }}
                     onImport={page => { handleImportFromNotion(page); }}
+                    onImportLinks={handleImportNotionLinks}
                     importedUrls={importedNotionUrls}
                 />
             )}
@@ -569,6 +588,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             setShowNotionPicker(false);
                         }}
                         onImport={page => { handleImportFromNotion(page); }}
+                        onImportLinks={handleImportNotionLinks}
                         importedUrls={importedNotionUrls}
                     />
                 )}

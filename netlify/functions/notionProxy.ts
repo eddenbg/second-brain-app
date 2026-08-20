@@ -74,6 +74,7 @@ export default async (req: Request, _context: Context) => {
   const action = url.searchParams.get("action");
   const query = url.searchParams.get("query") || '';
   const pageId = url.searchParams.get("pageId");
+  const cursor = url.searchParams.get("cursor");
 
   if (!token || !action) {
     return new Response(JSON.stringify({ error: "Missing token or action" }), { status: 400, headers });
@@ -107,7 +108,12 @@ export default async (req: Request, _context: Context) => {
     }
 
     if (action === 'blocks' && pageId) {
-      const res = await fetch(`${NOTION_BASE}/blocks/${pageId}/children?page_size=100`, {
+      // A page's blocks are capped at 100 per request. Scanning a whole page for
+      // links needs every block, not just the first 100, so let the caller page
+      // through via Notion's own cursor.
+      const qs = new URLSearchParams({ page_size: '100' });
+      if (cursor) qs.set('start_cursor', cursor);
+      const res = await fetch(`${NOTION_BASE}/blocks/${pageId}/children?${qs}`, {
         headers: notionHeaders,
       });
       const data = await res.json();
