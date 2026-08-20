@@ -16,7 +16,7 @@ import NotionPickerModal from './NotionPickerModal';
 import SearchBar from './SearchBar';
 import MemoryThumbnail from './MemoryThumbnail';
 import TranscriptionUploader from './TranscriptionUploader';
-import { generateSpeechFromText } from '../services/geminiService';
+import { generateSpeechFromText, askQuestion } from '../services/geminiService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
 import type { NotionPage, NotionLink } from '../services/notionService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -103,6 +103,95 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
              <Volume2 className="w-7 h-7" />}
             {isPlaying ? 'Stop' : 'Read Aloud'}
         </button>
+    );
+};
+
+/**
+ * Listen controls for a saved web clip: play the clip's saved text as-is, or
+ * have it summarized on the fly and read just that gist. Both operate on
+ * whatever `content` holds regardless of how the clip was saved — an
+ * AI-written summary from the share-target flow, manually pasted text, or a
+ * short note for a video link — so "article, video, or whatever" is really
+ * just "there is some text to read," which is all either button needs.
+ */
+const WebClipListenButtons: React.FC<{ content: string }> = ({ content }) => {
+    const [playingMode, setPlayingMode] = useState<'full' | 'gist' | null>(null);
+    const [loadingMode, setLoadingMode] = useState<'full' | 'gist' | null>(null);
+    const audioCtxRef = useRef<AudioContext | null>(null);
+    const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const gistCacheRef = useRef<string | null>(null);
+
+    useEffect(() => () => { sourceRef.current?.stop(); audioCtxRef.current?.close(); }, []);
+
+    const stop = () => {
+        sourceRef.current?.stop();
+        setPlayingMode(null);
+    };
+
+    const speak = async (text: string) => {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        audioCtxRef.current = ctx;
+        const b64 = await generateSpeechFromText(text);
+        if (!b64) return false;
+        const buf = await decodeAudioData(decode(b64), ctx, 24000, 1);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.onended = () => setPlayingMode(null);
+        src.start(0);
+        sourceRef.current = src;
+        return true;
+    };
+
+    const toggle = async (mode: 'full' | 'gist') => {
+        if (playingMode === mode) { stop(); return; }
+        if (playingMode) stop();
+
+        setLoadingMode(mode);
+        try {
+            let text = content;
+            if (mode === 'gist') {
+                if (!gistCacheRef.current) {
+                    gistCacheRef.current = await askQuestion(
+                        'Summarize this in 2-3 short spoken sentences — the gist only, no markdown, no headings.',
+                        content
+                    );
+                }
+                text = gistCacheRef.current;
+            }
+            const started = await speak(text);
+            if (started) setPlayingMode(mode);
+        } catch (e) { console.error(e); }
+        finally { setLoadingMode(null); }
+    };
+
+    if (!content.trim()) return null;
+
+    const renderButton = (mode: 'full' | 'gist', label: string, playingLabel: string) => {
+        const isPlaying = playingMode === mode;
+        const isLoading = loadingMode === mode;
+        return (
+            <button
+                onClick={() => toggle(mode)}
+                disabled={loadingMode !== null && !isLoading}
+                aria-label={isPlaying ? `Stop ${playingLabel}` : label}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-xs uppercase tracking-wide transition-all disabled:opacity-40 ${
+                    isPlaying ? 'bg-red-600 text-white' : 'bg-white/10 text-white'
+                }`}
+            >
+                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> :
+                 isPlaying ? <StopCircle className="w-5 h-5" /> :
+                 <Play className="w-5 h-5" />}
+                {isLoading ? 'Loading…' : isPlaying ? 'Stop' : label}
+            </button>
+        );
+    };
+
+    return (
+        <div className="flex gap-2">
+            {renderButton('full', 'Play', 'playback')}
+            {renderButton('gist', 'Play Gist', 'the gist')}
+        </div>
     );
 };
 
@@ -725,6 +814,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                         <Trash2 size={20} strokeWidth={3} />
                                     </button>
                                 </div>
+                                <WebClipListenButtons content={w.content} />
                                 <a
                                     href={w.url}
                                     target="_blank"
@@ -943,6 +1033,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     {selectedItem.type === 'web' && (
                         <div className="space-y-5">
                             <p className="text-xl leading-relaxed">{(selectedItem as WebMemory).content}</p>
+                            <WebClipListenButtons content={(selectedItem as WebMemory).content} />
                             <a
                                 href={(selectedItem as WebMemory).url}
                                 target="_blank"
