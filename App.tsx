@@ -50,6 +50,22 @@ function App() {
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSavingSharedLink, setIsSavingSharedLink] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Several independent effects (Notion connect, Moodle calendar failure,
+  // Google Calendar/Drive expiry) each show a toast on their own schedule.
+  // Setting a toast directly with its own setTimeout(() => setToast(null))
+  // meant a second toast arriving before the first one's timer fired could
+  // get wiped out early by that stale timer. Routing every toast through
+  // here clears any pending timer first, so exactly one is ever running and
+  // it always matches whichever message is actually showing.
+  const showToast = useCallback((message: string, durationMs: number) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(message);
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, durationMs);
+  }, []);
   const [confirmDialog, setConfirmDialog] = useState<{ eventId: string } | null>(null);
   // Capture share params immediately on mount before auth loads (prevents race condition)
   const pendingShareRef = useRef<{ url: string; title: string; text: string } | null>(null);
@@ -230,16 +246,13 @@ function App() {
               setTimeout(() => window.close(), 300);
               return;
             }
-            setToast('Notion connected!');
-            setTimeout(() => setToast(null), 4000);
+            showToast('Notion connected!', 4000);
           } else {
-            setToast('Notion connection failed. Try again.');
-            setTimeout(() => setToast(null), 5000);
+            showToast('Notion connection failed. Try again.', 5000);
           }
         })
         .catch(() => {
-          setToast('Notion connection failed. Try again.');
-          setTimeout(() => setToast(null), 5000);
+          showToast('Notion connection failed. Try again.', 5000);
         });
     }
   }, []);
@@ -284,8 +297,7 @@ function App() {
         console.error('[App] Moodle events fetch failed', err);
         if (cancelled) return;
         setMoodleEvents([]);
-        setToast('Could not load Moodle calendar events. Open Settings to check your connection.');
-        setTimeout(() => setToast(null), 6000);
+        showToast('Could not load Moodle calendar events. Open Settings to check your connection.', 6000);
       });
     return () => { cancelled = true; };
   }, [moodleToken]);
@@ -351,10 +363,8 @@ function App() {
   // just rendering an empty Schedule view with no explanation.
   useEffect(() => {
     if (!googleCalendarNeedsReconnect) return;
-    setToast('Google Calendar connection expired. Open Settings to reconnect.');
-    const timer = setTimeout(() => setToast(null), 6000);
-    return () => clearTimeout(timer);
-  }, [googleCalendarNeedsReconnect]);
+    showToast('Google Calendar connection expired. Open Settings to reconnect.', 6000);
+  }, [googleCalendarNeedsReconnect, showToast]);
 
   // Separately, notify about Google Drive (used for recording backups, not
   // the Schedule view) lapsing. Nothing on screen actively fetches with the
@@ -365,8 +375,7 @@ function App() {
       if (document.visibilityState !== 'visible') return;
       if (!user || user.isAnonymous) return;
       if (!getStoredDriveToken()) {
-        setToast('Google Drive connection expired. Open Settings to reconnect.');
-        setTimeout(() => setToast(null), 6000);
+        showToast('Google Drive connection expired. Open Settings to reconnect.', 6000);
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
