@@ -27,6 +27,9 @@ interface SettingsModalProps {
     onClose: () => void;
     moodleToken: string | null;
     onSaveMoodleToken: (token: string) => void;
+    anthropicApiKey?: string | null;
+    onSaveAnthropicApiKey?: (key: string | null) => void;
+    onNotionTokenChanged?: (token: string | null) => void;
     onGoogleConnected?: () => void;
     user?: User | null;
     onSignIn?: () => Promise<void>;
@@ -78,7 +81,7 @@ const GOOGLE_LOGO = (
     </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, anthropicApiKey, onSaveAnthropicApiKey, onNotionTokenChanged, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize }) => {
     const { isInstallable, installApp } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
@@ -118,19 +121,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [notionClientSecretInput, setNotionClientSecretInput] = useState(() => getStoredNotionClientSecret());
     const [notionCredsSaved, setNotionCredsSaved] = useState(0);
     const [anthropicKeyInput, setAnthropicKeyInput] = useState('');
-    const [anthropicKeySaved, setAnthropicKeySaved] = useState(() => !!localStorage.getItem('anthropic_api_key'));
+    // Synced via Firestore under the signed-in Google account (see useRecordings'
+    // saveAnthropicApiKey) so connecting on one device connects every device on
+    // that account. Falls back to this device's localStorage if the prop isn't
+    // wired up by a parent (defensive only — App.tsx always passes it).
+    const anthropicKeySaved = !!(anthropicApiKey ?? localStorage.getItem('anthropic_api_key'));
 
     const handleSaveAnthropicKey = () => {
         const trimmed = anthropicKeyInput.trim();
         if (!trimmed) return;
-        localStorage.setItem('anthropic_api_key', trimmed);
+        if (onSaveAnthropicApiKey) onSaveAnthropicApiKey(trimmed);
+        else localStorage.setItem('anthropic_api_key', trimmed);
         setAnthropicKeyInput('');
-        setAnthropicKeySaved(true);
     };
 
     const handleClearAnthropicKey = () => {
-        localStorage.removeItem('anthropic_api_key');
-        setAnthropicKeySaved(false);
+        if (onSaveAnthropicApiKey) onSaveAnthropicApiKey(null);
+        else localStorage.removeItem('anthropic_api_key');
     };
 
     // The Google access token Firebase hands back lasts about an hour and there is
@@ -205,6 +212,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         if (!t) return;
         saveNotionToken(t);
         setNotionToken(t);
+        onNotionTokenChanged?.(t);
         setNotionInput('');
         setShowManualNotion(false);
     };
@@ -224,6 +232,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const handleClearNotionToken = () => {
         clearNotionToken();
         setNotionToken('');
+        onNotionTokenChanged?.(null);
         setNotionInput('');
         setNotionError(null);
     };
@@ -282,9 +291,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const finishNotionSignIn = useCallback((token: string) => {
         saveNotionToken(token);
         setNotionToken(token);
+        onNotionTokenChanged?.(token);
         setIsWaitingForNotion(false);
         setNotionError(null);
-    }, []);
+    }, [onNotionTokenChanged]);
 
     const watchNotionPopup = (popup: Window) => {
         notionWatchCleanup.current?.();

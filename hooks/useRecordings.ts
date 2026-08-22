@@ -20,11 +20,20 @@ export interface StoredData {
     tasks: Task[];
     calendarEvents?: CalendarEvent[];
     moodleToken?: string;
+    anthropicApiKey?: string;
+    notionToken?: string;
     /** Course name -> term name (e.g. "Fall 2026"). Courses with no entry belong to 'General'. */
     courseTerms?: Record<string, string>;
 }
 
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
+
+// Same device-local keys the standalone Claude/Notion connect UI already reads
+// from directly (ClaudeResearchPanel.tsx, notionService.ts). Mirroring writes
+// into these on every Firestore sync means those components sync across
+// devices for free, with no prop-threading required.
+const ANTHROPIC_KEY_LOCAL_KEY = 'anthropic_api_key';
+const NOTION_TOKEN_LOCAL_KEY = 'notion_integration_token';
 
 /**
  * Firestore rejects any document containing an undefined value, failing the whole
@@ -167,6 +176,8 @@ export const useRecordings = () => {
     // reload and never reached a second device.
     const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
     const [moodleToken, setMoodleToken] = useState<string | null>(null);
+    const [anthropicApiKey, setAnthropicApiKey] = useState<string | null>(null);
+    const [notionToken, setNotionToken] = useState<string | null>(null);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
     const [courseTerms, setCourseTerms] = useState<Record<string, string>>({});
@@ -197,6 +208,12 @@ export const useRecordings = () => {
                 console.error("Failed to parse local storage", e);
             }
         }
+        // Claude/Notion keys are kept in their own localStorage entries (read
+        // directly by ClaudeResearchPanel.tsx and notionService.ts), not the
+        // blob above — seed state from those so this device's own connection
+        // shows immediately, before the Firestore settings listener confirms it.
+        setAnthropicApiKey(localStorage.getItem(ANTHROPIC_KEY_LOCAL_KEY) || null);
+        setNotionToken(localStorage.getItem(NOTION_TOKEN_LOCAL_KEY) || null);
     }, []);
 
     // 2. Handle Auth state — auto sign-in anonymously (no login screen)
@@ -343,16 +360,65 @@ export const useRecordings = () => {
         const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
         const unsubSettings = onSnapshot(
             settingsRef,
-            (doc) => {
+            async (doc) => {
                 if (doc.exists()) {
                     const data = doc.data();
                     setSavedCourses(data.courses || []);
                     setMoodleToken(data.moodleToken || null);
                     setCourseTerms(data.courseTerms || {});
+
+                    // Cross-device sync: whatever this Google account has connected
+                    // on any device becomes this device's connection too, so signing
+                    // in with Google is the only step needed anywhere. Distinguish
+                    // "field absent" (this account has never synced one — e.g. an
+                    // existing device already has a token saved locally from before
+                    // this synced-settings field existed) from "field explicitly
+                    // null" (deliberately disconnected on some device) — only the
+                    // latter should clear an existing local token. The absent case
+                    // instead migrates this device's local token up to the cloud.
+                    if ('anthropicApiKey' in data) {
+                        setAnthropicApiKey(data.anthropicApiKey || null);
+                        if (data.anthropicApiKey) localStorage.setItem(ANTHROPIC_KEY_LOCAL_KEY, data.anthropicApiKey);
+                        else localStorage.removeItem(ANTHROPIC_KEY_LOCAL_KEY);
+                    } else {
+                        const localKey = localStorage.getItem(ANTHROPIC_KEY_LOCAL_KEY);
+                        setAnthropicApiKey(localKey);
+                        if (localKey) {
+                            const { setDoc } = await import('firebase/firestore');
+                            setDoc(settingsRef, { anthropicApiKey: localKey }, { merge: true }).catch(() => {});
+                        }
+                    }
+
+                    if ('notionToken' in data) {
+                        setNotionToken(data.notionToken || null);
+                        if (data.notionToken) localStorage.setItem(NOTION_TOKEN_LOCAL_KEY, data.notionToken);
+                        else localStorage.removeItem(NOTION_TOKEN_LOCAL_KEY);
+                    } else {
+                        const localToken = localStorage.getItem(NOTION_TOKEN_LOCAL_KEY);
+                        setNotionToken(localToken);
+                        if (localToken) {
+                            const { setDoc } = await import('firebase/firestore');
+                            setDoc(settingsRef, { notionToken: localToken }, { merge: true }).catch(() => {});
+                        }
+                    }
                 } else {
                     setSavedCourses([]);
                     setMoodleToken(null);
                     setCourseTerms({});
+                    // No settings doc at all yet — same migrate-don't-clobber logic
+                    // as above, just against an empty object instead of `data`.
+                    const localKey = localStorage.getItem(ANTHROPIC_KEY_LOCAL_KEY);
+                    setAnthropicApiKey(localKey);
+                    const localToken = localStorage.getItem(NOTION_TOKEN_LOCAL_KEY);
+                    setNotionToken(localToken);
+                    if (localKey || localToken) {
+                        import('firebase/firestore').then(({ setDoc }) => {
+                            setDoc(settingsRef, {
+                                ...(localKey ? { anthropicApiKey: localKey } : {}),
+                                ...(localToken ? { notionToken: localToken } : {}),
+                            }, { merge: true }).catch(() => {});
+                        });
+                    }
                 }
             },
             (error) => {
@@ -586,6 +652,36 @@ export const useRecordings = () => {
         setMoodleToken(token);
     }, [user, savedCourses]);
 
+    // Claude and Notion connections are plain string tokens (no OAuth refresh
+    // flow like Google), so storing them in the same synced settings doc as
+    // moodleToken makes "sign in with Google" the only step needed anywhere —
+    // any device on this account picks the connection up via the settings
+    // listener above, which also mirrors it into this device's localStorage
+    // for the components that still read those keys directly.
+    // Read auth.currentUser fresh rather than closing over the `user` state —
+    // syncNotionToken in particular can be called from a one-time mount effect
+    // handling the Notion OAuth redirect, which fires before the anonymous
+    // sign-in resolves and would otherwise capture a stale null user forever.
+    const saveAnthropicApiKey = useCallback(async (key: string | null) => {
+        if (key) localStorage.setItem(ANTHROPIC_KEY_LOCAL_KEY, key);
+        else localStorage.removeItem(ANTHROPIC_KEY_LOCAL_KEY);
+        setAnthropicApiKey(key);
+        const uid = auth?.currentUser?.uid;
+        if (!uid || !db || (db as any).type === 'mock') return;
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', uid, 'settings', 'general'), { anthropicApiKey: key }, { merge: true });
+    }, []);
+
+    const syncNotionToken = useCallback(async (token: string | null) => {
+        if (token) localStorage.setItem(NOTION_TOKEN_LOCAL_KEY, token);
+        else localStorage.removeItem(NOTION_TOKEN_LOCAL_KEY);
+        setNotionToken(token);
+        const uid = auth?.currentUser?.uid;
+        if (!uid || !db || (db as any).type === 'mock') return;
+        const { setDoc } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', uid, 'settings', 'general'), { notionToken: token }, { merge: true });
+    }, []);
+
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
 
@@ -721,6 +817,7 @@ export const useRecordings = () => {
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
         addCalendarEvent, deleteCalendarEvent,
+        anthropicApiKey, saveAnthropicApiKey, notionToken, syncNotionToken,
         user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,

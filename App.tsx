@@ -116,6 +116,7 @@ function App() {
     // never showed up on another, and vanished on a reload of the same one.
     calendarEvents, addCalendarEvent, deleteCalendarEvent,
     signInWithGoogle, signOut: signOutUser,
+    anthropicApiKey, saveAnthropicApiKey, syncNotionToken,
   } = useRecordings();
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
@@ -222,6 +223,7 @@ function App() {
         .then(data => {
           if (data.access_token) {
             saveNotionToken(data.access_token);
+            syncNotionToken(data.access_token);
             // If this is running in a popup opened by the main app, send the
             // token back and close — the parent window saves it and we're done.
             if (window.opener && window.opener !== window) {
@@ -487,6 +489,9 @@ function App() {
           onSignOut={signOutUser}
           moodleToken={moodleToken}
           onSaveMoodleToken={saveMoodleToken}
+          anthropicApiKey={anthropicApiKey}
+          onSaveAnthropicApiKey={saveAnthropicApiKey}
+          onNotionTokenChanged={syncNotionToken}
           isDarkMode={isDarkMode}
           onToggleDarkMode={toggleDarkMode}
           isHighContrast={isHighContrast}
