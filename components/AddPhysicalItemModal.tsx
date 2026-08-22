@@ -193,7 +193,10 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
               onerror: (e) => { console.error(e); setError('Transcription error.'); },
               onclose: () => {},
             },
-            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: { language: 'he' } },
+            // 'language' is not a real field on AudioTranscriptionConfig — it was
+            // silently ignored, so this recorder never actually got the Hebrew-first
+            // bias the rest of the app's transcription paths use (see Recorder.tsx).
+            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: { languageCodes: ['he-IL'] } },
         });
     };
 

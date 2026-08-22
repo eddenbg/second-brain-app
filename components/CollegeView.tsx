@@ -352,9 +352,11 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                 title: content.name,
                 category: 'college',
                 course: courseName,
-                url: url,
-                source: 'moodle'
-            });
+                fileUrl: url,
+                mimeType: content.mimetype || 'application/octet-stream',
+                sourceType: 'moodle',
+                moodleId: String(content.id),
+            } as Omit<FileMemory, 'id' | 'date'>);
         }
     };
 
