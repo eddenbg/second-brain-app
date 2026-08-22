@@ -7,6 +7,21 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 const TOKEN_KEY = 'google_cal_token';
 const TOKEN_EXPIRY_KEY = 'google_cal_token_expiry';
 
+/**
+ * Fired on `window` every time the stored Calendar token is written or
+ * cleared (connect, disconnect, or a 401 discovered mid-fetch). Nothing about
+ * a localStorage write is reactive on its own — the native `storage` event
+ * does not even fire in the tab that made the change — so anything that needs
+ * to notice a token appearing or disappearing (the Schedule view's fetch
+ * effect, Settings' connection-status display) listens for this instead of
+ * polling.
+ */
+export const GOOGLE_TOKEN_CHANGE_EVENT = 'google-calendar-token-changed';
+
+const notifyTokenChanged = (): void => {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(GOOGLE_TOKEN_CHANGE_EVENT));
+};
+
 const getClientId = (): string =>
     localStorage.getItem(CLIENT_ID_STORAGE_KEY) || process.env.GOOGLE_CLIENT_ID || '';
 
@@ -61,6 +76,7 @@ export const connectGoogleCalendar = (): Promise<string> => {
                 const expiry = Date.now() + (response.expires_in - 60) * 1000;
                 localStorage.setItem(TOKEN_KEY, token);
                 localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+                notifyTokenChanged();
                 resolve(token);
             }
         });
@@ -72,6 +88,7 @@ export const saveGoogleToken = (token: string, expiresInSeconds = 3600): void =>
     const expiry = Date.now() + (expiresInSeconds - 60) * 1000;
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+    notifyTokenChanged();
 };
 
 export const disconnectGoogleCalendar = () => {
@@ -81,6 +98,7 @@ export const disconnectGoogleCalendar = () => {
     }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    notifyTokenChanged();
 };
 
 export const fetchGoogleCalendarEvents = async (token: string): Promise<CalendarEvent[]> => {
@@ -98,8 +116,11 @@ export const fetchGoogleCalendarEvents = async (token: string): Promise<Calendar
         if (response.status === 401) {
             localStorage.removeItem(TOKEN_KEY);
             localStorage.removeItem(TOKEN_EXPIRY_KEY);
+            notifyTokenChanged();
         }
-        throw new Error(`Calendar API error: ${response.status}`);
+        const error = new Error(`Calendar API error: ${response.status}`) as Error & { code?: string };
+        if (response.status === 401) error.code = 'GOOGLE_AUTH_EXPIRED';
+        throw error;
     }
 
     const data = await response.json();

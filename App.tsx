@@ -16,7 +16,7 @@ import { fetchMoodleEvents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { extractUrlContent } from './services/urlContentService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
-import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
+import { getStoredToken, fetchGoogleCalendarEvents, GOOGLE_TOKEN_CHANGE_EVENT } from './services/googleCalendarService';
 import { getStoredDriveToken } from './services/googleDriveService';
 import { updateService } from './services/updateService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task } from './types';
@@ -41,6 +41,11 @@ function App() {
   );
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
+  // True when the person is signed in with a real Google account but the
+  // Calendar fetch below could not load events because the access token has
+  // expired or was rejected — as opposed to simply never having connected
+  // Calendar at all, which is not an error worth surfacing.
+  const [googleCalendarNeedsReconnect, setGoogleCalendarNeedsReconnect] = useState(false);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSavingSharedLink, setIsSavingSharedLink] = useState(false);
@@ -264,15 +269,25 @@ function App() {
   }, [loading, user, handleProcessShare]);
 
   useEffect(() => {
-    const getMoodleEvents = async () => {
-      if (moodleToken) {
-        const events = await fetchMoodleEvents(moodleToken);
-        setMoodleEvents(events);
-      } else {
+    if (!moodleToken) {
+      setMoodleEvents([]);
+      return;
+    }
+    let cancelled = false;
+    fetchMoodleEvents(moodleToken)
+      .then(events => { if (!cancelled) setMoodleEvents(events); })
+      .catch(err => {
+        // fetchMoodleEvents now throws instead of silently resolving to []
+        // (that silence was the bug: a healthy connection with no visible
+        // failure and no events). Surface it via the same toast pattern used
+        // for Google/Notion above so it isn't console-only.
+        console.error('[App] Moodle events fetch failed', err);
+        if (cancelled) return;
         setMoodleEvents([]);
-      }
-    };
-    getMoodleEvents();
+        setToast('Could not load Moodle calendar events. Open Settings to check your connection.');
+        setTimeout(() => setToast(null), 6000);
+      });
+    return () => { cancelled = true; };
   }, [moodleToken]);
 
   // Just opens the confirmation dialog; the hook's deleteCalendarEvent (which
@@ -282,26 +297,75 @@ function App() {
   };
 
   // Load Google Calendar events.
-  // Re-runs when the signed-in user changes: the token is written to localStorage
-  // during sign-in, which is not reactive on its own, so mounting-only meant events
-  // did not appear until the next full reload.
+  //
+  // Re-runs when the signed-in user changes, and also re-runs whenever the
+  // stored Calendar token is written or cleared anywhere else in the app —
+  // Settings' reconnect flow, a future silent-reauth path, or this fetch's
+  // own 401 handling — via the 'google-calendar-token-changed' event
+  // googleCalendarService fires on every such write. Without that second
+  // trigger, `user`'s object identity does not change just because
+  // localStorage did, so events fetched before a reconnect never refetched
+  // short of a full page reload.
+  //
+  // Google Calendar access tokens last roughly an hour and this app is never
+  // issued a refresh token (Google does not hand one to a browser app with no
+  // server-side secret to redeem it), so the very common case is: the person
+  // connected Calendar at some point, comes back to the app later, and the
+  // token has quietly expired since. getStoredToken() already treats that as
+  // "no token" (it checks the locally-recorded expiry itself), so this used
+  // to just leave googleEvents empty with zero explanation — a "connected"
+  // Settings screen and a silently blank Schedule view. Track that case
+  // explicitly instead of swallowing it.
   useEffect(() => {
-    const token = getStoredToken();
-    if (!token) return;
     let cancelled = false;
-    fetchGoogleCalendarEvents(token)
-      .then(events => { if (!cancelled) setGoogleEvents(events); })
-      .catch(() => { if (!cancelled) setGoogleEvents([]); });
-    return () => { cancelled = true; };
+
+    const runFetch = () => {
+      const token = getStoredToken();
+      if (!token) {
+        setGoogleEvents([]);
+        // Only worth flagging for someone actually signed in with Google —
+        // for anonymous/never-connected users, "no token" isn't an error.
+        setGoogleCalendarNeedsReconnect(!!user && !user.isAnonymous);
+        return;
+      }
+      setGoogleCalendarNeedsReconnect(false);
+      fetchGoogleCalendarEvents(token)
+        .then(events => { if (!cancelled) setGoogleEvents(events); })
+        .catch(() => {
+          if (cancelled) return;
+          setGoogleEvents([]);
+          setGoogleCalendarNeedsReconnect(true);
+        });
+    };
+
+    runFetch();
+    window.addEventListener(GOOGLE_TOKEN_CHANGE_EVENT, runFetch);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(GOOGLE_TOKEN_CHANGE_EVENT, runFetch);
+    };
   }, [user]);
 
-  // Notify user when Google token expires so they know to reconnect
+  // Tell the user the moment the fetch above determines Google Calendar
+  // events could not be loaded because the connection lapsed, rather than
+  // just rendering an empty Schedule view with no explanation.
+  useEffect(() => {
+    if (!googleCalendarNeedsReconnect) return;
+    setToast('Google Calendar connection expired. Open Settings to reconnect.');
+    const timer = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [googleCalendarNeedsReconnect]);
+
+  // Separately, notify about Google Drive (used for recording backups, not
+  // the Schedule view) lapsing. Nothing on screen actively fetches with the
+  // Drive token the way the effect above does for Calendar, so a visibility
+  // check remains the only signal available for it.
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState !== 'visible') return;
       if (!user || user.isAnonymous) return;
-      if (!getStoredToken() && !getStoredDriveToken()) {
-        setToast('Google connection expired. Open Settings to reconnect.');
+      if (!getStoredDriveToken()) {
+        setToast('Google Drive connection expired. Open Settings to reconnect.');
         setTimeout(() => setToast(null), 6000);
       }
     };

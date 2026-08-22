@@ -83,49 +83,49 @@ export const testMoodleConnection = async (token: string): Promise<boolean> => {
 
 export const fetchMoodleEvents = async (token: string): Promise<CalendarEvent[]> => {
     if (!token) return [];
-    try {
-        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events`;
-        console.log(`[MoodleService] Fetching events...`);
 
-        const response = await retryWithExponentialBackoff(() =>
-            fetchWithTimeout(url, { timeout: 45000 }),
-            { maxRetries: 3, initialDelayMs: 1000 }
-        );
+    // core_calendar_get_calendar_events does NOT return "everything" when
+    // called bare — Moodle scopes it via an `options` struct (timestart/
+    // timeend/userevents/siteevents), and without it the server falls back
+    // to its own narrow default window. That means a bare call technically
+    // succeeds with `events: []` and no error at all, which is exactly the
+    // "connected but nothing shows up" symptom this was fixing. Mirror the
+    // ~3-month window (current month through 2 months ahead) that
+    // fetchGoogleCalendarEvents uses, so both calendar sources behave
+    // consistently for the user. `events` (course/group/eventid filters) is
+    // left unset on purpose — Moodle defaults that to the user's own
+    // enrolled courses, which is what we want here.
+    const now = new Date();
+    const timeStart = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+    const timeEnd = Math.floor(new Date(now.getFullYear(), now.getMonth() + 3, 0).getTime() / 1000);
 
-        if (!response.ok) {
-            const text = await response.text();
-            console.error(`[MoodleService] Events fetch failed with status ${response.status}: ${text}`);
-            let errorData;
-            try {
-                errorData = JSON.parse(text);
-            } catch (e) {
-                errorData = { error: text || "Network response was not ok" };
-            }
-            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-        }
+    const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events` +
+        `&options%5Buserevents%5D=1&options%5Bsiteevents%5D=1` +
+        `&options%5Btimestart%5D=${timeStart}&options%5Btimeend%5D=${timeEnd}`;
+    console.log(`[MoodleService] Fetching events from ${new Date(timeStart * 1000).toDateString()} to ${new Date(timeEnd * 1000).toDateString()}...`);
 
-        const data = await response.json();
-        console.log(`[MoodleService] Events fetched successfully`);
+    const response = await retryWithExponentialBackoff(() =>
+        fetchWithTimeout(url, { timeout: 45000 }),
+        { maxRetries: 3, initialDelayMs: 1000 }
+    );
+    const data = await parseMoodleProxyResponse(response, 'calendar events');
 
-        if (data.error) {
-            throw new Error(data.error);
-        }
+    const events = Array.isArray(data.events) ? data.events : [];
+    // Not an error — but worth a breadcrumb, since "connected, no error, still
+    // zero events" is precisely the failure mode that was silently swallowed
+    // before and is hardest to distinguish from "the user just has nothing
+    // scheduled this window" without this log line.
+    console.log(`[MoodleService] Fetched ${events.length} calendar event(s)`);
 
-        if (data.events) {
-            return data.events.map((e: any) => ({
-                id: `moodle_${e.id}`,
-                title: e.name,
-                startTime: new Date(e.timestart * 1000).toISOString(),
-                endTime: new Date((e.timestart + e.timeduration) * 1000).toISOString(),
-                category: 'college',
-                description: e.description,
-                source: 'moodle',
-            }));
-        }
-    } catch (e) {
-        console.error("Moodle Event Fetch Error", e);
-    }
-    return [];
+    return events.map((e: any) => ({
+        id: `moodle_${e.id}`,
+        title: e.name,
+        startTime: new Date(e.timestart * 1000).toISOString(),
+        endTime: new Date((e.timestart + e.timeduration) * 1000).toISOString(),
+        category: 'college',
+        description: e.description,
+        source: 'moodle',
+    }));
 };
 
 export const fetchMoodleCourses = async (token: string): Promise<MoodleCourse[]> => {

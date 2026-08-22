@@ -52,9 +52,6 @@ export default async (req: Request, context: Context) => {
 
   const token = url.searchParams.get("token");
   const wsfunction = url.searchParams.get("wsfunction");
-  const courseid = url.searchParams.get("courseid");
-  const classification = url.searchParams.get("classification");
-  const userid = url.searchParams.get("userid");
 
   if (!token || !wsfunction) {
     return new Response(JSON.stringify({ error: "Missing parameters: token and wsfunction are required" }), {
@@ -76,14 +73,20 @@ export default async (req: Request, context: Context) => {
   try {
     let finalUrl = `${moodleApiBase}&wsfunction=${wsfunction}`;
 
-    if (courseid) {
-        finalUrl += `&courseid=${courseid}`;
-    }
-    if (classification) {
-        finalUrl += `&classification=${classification}`;
-    }
-    if (userid) {
-        finalUrl += `&userid=${encodeURIComponent(userid)}`;
+    // Forward every other query param verbatim, including PHP-style array/
+    // nested keys such as `options[timestart]`, `options[timeend]`, or
+    // `events[courseids][]`. Moodle's REST endpoint expects exactly these
+    // bracketed key names to populate nested wsfunction parameters (e.g.
+    // core_calendar_get_calendar_events's `options`/`events` structures) —
+    // a hardcoded allowlist of scalar params (courseid/classification/userid)
+    // silently dropped anything else callers tried to send, which meant a
+    // wsfunction like core_calendar_get_calendar_events could never be scoped
+    // to a date range and would fall back to Moodle's own (very narrow)
+    // default window, technically-succeeding with an empty result.
+    const RESERVED_PARAMS = new Set(['token', 'wsfunction', 'action']);
+    for (const [key, value] of url.searchParams.entries()) {
+        if (RESERVED_PARAMS.has(key)) continue;
+        finalUrl += `&${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
     }
 
     console.log(`Proxying Moodle Request: ${wsfunction}`);

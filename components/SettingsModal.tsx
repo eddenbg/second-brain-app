@@ -8,6 +8,7 @@ import { testMoodleConnection, loginWithCredentials } from '../services/moodleSe
 import {
     disconnectGoogleCalendar,
     getStoredToken,
+    GOOGLE_TOKEN_CHANGE_EVENT,
 } from '../services/googleCalendarService';
 import {
     disconnectGoogleDrive,
@@ -145,6 +146,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     // has already lapsed — and the Notion token can be written by the OAuth
     // callback in another window. Re-read all three from storage periodically and
     // whenever the app returns to the foreground, so the copy below stays true.
+    // Also re-read immediately on GOOGLE_TOKEN_CHANGE_EVENT (fired by
+    // googleCalendarService on every token write/clear, including the Schedule
+    // view's fetch discovering a 401) so a lapsed connection is reflected the
+    // moment it's discovered, not up to 30s later.
     useEffect(() => {
         const syncFromStorage = () => {
             setIsGoogleConnected(!!getStoredToken());
@@ -153,9 +158,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         };
         const interval = window.setInterval(syncFromStorage, 30000);
         document.addEventListener('visibilitychange', syncFromStorage);
+        window.addEventListener(GOOGLE_TOKEN_CHANGE_EVENT, syncFromStorage);
         return () => {
             window.clearInterval(interval);
             document.removeEventListener('visibilitychange', syncFromStorage);
+            window.removeEventListener(GOOGLE_TOKEN_CHANGE_EVENT, syncFromStorage);
         };
     }, []);
 
