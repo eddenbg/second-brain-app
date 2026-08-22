@@ -291,9 +291,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const handleImportFromNotion = async (page: NotionPage) => {
         const token = getStoredNotionToken();
         let content = page.title;
+        let fetchedFullText = false;
         if (token) {
             const text = await fetchNotionPageContent(token, page.id);
-            if (text) content = text;
+            if (text) { content = text; fetchedFullText = true; }
         }
         onSaveMemory({
             type: 'web',
@@ -301,6 +302,11 @@ const PersonalView: React.FC<PersonalViewProps> = ({
             url: page.url,
             content,
             category: 'personal',
+            // Already the real full page text from Notion's own API — storing it
+            // as fullText too means Play uses it directly instead of trying (and
+            // typically failing, since Notion page URLs sit behind a login wall)
+            // to re-fetch the same content from the raw URL on first tap.
+            ...(fetchedFullText && { fullText: content, fullTextFetchedAt: new Date().toISOString() }),
         } as Omit<WebMemory, 'id' | 'date'>);
     };
 
