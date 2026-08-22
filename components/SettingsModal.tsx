@@ -117,25 +117,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [notionClientIdInput, setNotionClientIdInput] = useState(() => getStoredNotionClientId());
     const [notionClientSecretInput, setNotionClientSecretInput] = useState(() => getStoredNotionClientSecret());
     const [notionCredsSaved, setNotionCredsSaved] = useState(0);
-    const [firebaseUID, setFirebaseUID] = useState<string>('');
-    const [refreshToken, setRefreshToken] = useState<string>('');
-    const [showMCPSetup, setShowMCPSetup] = useState(false);
+    const [anthropicKeyInput, setAnthropicKeyInput] = useState('');
+    const [anthropicKeySaved, setAnthropicKeySaved] = useState(() => !!localStorage.getItem('anthropic_api_key'));
 
-    useEffect(() => {
-        if (auth?.currentUser) {
-            setFirebaseUID(auth.currentUser.uid);
-            const rt = (auth.currentUser as any).stsTokenManager?.refreshToken ?? '';
-            setRefreshToken(rt);
-        }
-        const unsubscribe = auth?.onAuthStateChanged?.((u: User | null) => {
-            if (u) {
-                setFirebaseUID(u.uid);
-                const rt = (u as any).stsTokenManager?.refreshToken ?? '';
-                setRefreshToken(rt);
-            }
-        });
-        return () => unsubscribe?.();
-    }, []);
+    const handleSaveAnthropicKey = () => {
+        const trimmed = anthropicKeyInput.trim();
+        if (!trimmed) return;
+        localStorage.setItem('anthropic_api_key', trimmed);
+        setAnthropicKeyInput('');
+        setAnthropicKeySaved(true);
+    };
+
+    const handleClearAnthropicKey = () => {
+        localStorage.removeItem('anthropic_api_key');
+        setAnthropicKeySaved(false);
+    };
 
     // The Google access token Firebase hands back lasts about an hour and there is
     // no refresh token, so a modal left open drifts into claiming a connection that
@@ -373,17 +369,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setIsWaitingForNotion(true);
         watchNotionPopup(popup);
     };
-
-    const mcpConfigSnippet = `{
-  "mcpServers": {
-    "second-brain": {
-      "url": "https://eddenbg-second-brain.netlify.app/.netlify/functions/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_MCP_API_KEY"
-      }
-    }
-  }
-}`;
 
     return (
         <div className="fixed inset-0 bg-black/95 z-[200] flex flex-col p-3 sm:p-4 animate-fade-in"
@@ -935,71 +920,52 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                     </div>
 
 
-                    {/* MCP / Claude Integration Section */}
+                    {/* Claude AI Research Section */}
                     <div className="space-y-4">
-                        <h3 className="text-purple-400 font-black text-xs uppercase tracking-widest px-2">Claude AI Integration (MCP)</h3>
+                        <h3 className="text-purple-400 font-black text-xs uppercase tracking-widest px-2">Claude AI Research</h3>
 
-                        <div className="bg-gray-900 border-2 border-purple-800 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 space-y-4">
-                            <p className="text-gray-300 text-xs font-bold leading-relaxed">
-                                Connect your Second Brain to Claude Desktop so you can ask Claude questions about your notes and thoughts directly.
+                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${anthropicKeySaved ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-purple-800'}`}>
+                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
+                                <div className="w-8 h-8 bg-purple-700 rounded-xl flex items-center justify-center shrink-0">
+                                    <BrainCircuitIcon className="w-5 h-5 text-white" />
+                                </div>
+                                <p className="text-base sm:text-lg font-black text-white uppercase">Claude</p>
+                                {anthropicKeySaved && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                            </div>
+                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
+                                Powers "Research with Claude" in Browse by Topic. Claude doesn't offer a one-tap sign-in like Google — connecting takes a free API key instead.
                             </p>
 
-                            <button
-                                onClick={() => setShowMCPSetup(!showMCPSetup)}
-                                className="w-full py-3 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
-                            >
-                                {showMCPSetup ? 'Hide Setup' : 'Show MCP Setup'}
-                            </button>
-
-                            {showMCPSetup && (
-                                <div className="space-y-4 animate-fade-in">
-                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
-                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 1 — Your Firebase User ID</p>
-                                        <p className="text-gray-400 text-xs">Add this as <code className="text-yellow-300">FIREBASE_USER_ID</code> in Netlify env vars.</p>
-                                        <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-3 border border-gray-600">
-                                            <code className="text-yellow-300 text-xs flex-1 truncate font-mono">
-                                                {firebaseUID || 'Loading... (open this after signing in)'}
-                                            </code>
-                                            {firebaseUID && <CopyButton text={firebaseUID} label="Copy" />}
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
-                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 2 — Firebase Refresh Token</p>
-                                        <p className="text-gray-400 text-xs">Add this as <code className="text-yellow-300">FIREBASE_REFRESH_TOKEN</code> in Netlify env vars. Keep it secret!</p>
-                                        <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-3 border border-gray-600">
-                                            <code className="text-yellow-300 text-xs flex-1 font-mono" style={{ wordBreak: 'break-all' }}>
-                                                {refreshToken
-                                                    ? `${refreshToken.slice(0, 40)}...`
-                                                    : 'Not available (sign in first)'}
-                                            </code>
-                                            {refreshToken && <CopyButton text={refreshToken} label="Copy" />}
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
-                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 3 — Set MCP API Key</p>
-                                        <p className="text-gray-400 text-xs">In Netlify → Site Settings → Environment Variables, add <code className="text-yellow-300">MCP_API_KEY</code> with any long random string you choose.</p>
-                                    </div>
-
-                                    <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-2">
-                                        <p className="text-purple-300 font-black text-xs uppercase tracking-widest">Step 4 — Claude Desktop Config</p>
-                                        <p className="text-gray-400 text-xs">Add this to your <code className="text-yellow-300">claude_desktop_config.json</code> (replace YOUR_MCP_API_KEY):</p>
-                                        <div className="relative">
-                                            <pre className="bg-gray-900 rounded-lg p-3 text-xs text-green-300 font-mono overflow-x-auto leading-relaxed whitespace-pre-wrap">
-                                                {mcpConfigSnippet}
-                                            </pre>
-                                            <div className="mt-2">
-                                                <CopyButton text={mcpConfigSnippet} label="Copy Config" />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-blue-900/30 border border-blue-700 rounded-xl p-3">
-                                        <p className="text-blue-300 text-xs font-bold">
-                                            Once connected, you can ask Claude: "What did I record last week?" or "What are my pending tasks?" or "Search my notes about algorithm complexity."
-                                        </p>
-                                    </div>
+                            {anthropicKeySaved ? (
+                                <button
+                                    onClick={handleClearAnthropicKey}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                >
+                                    Disconnect Claude
+                                </button>
+                            ) : (
+                                <div className="space-y-3">
+                                    <input
+                                        type="password"
+                                        value={anthropicKeyInput}
+                                        onChange={e => setAnthropicKeyInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleSaveAnthropicKey()}
+                                        placeholder="Paste your Claude API key"
+                                        autoComplete="off"
+                                        aria-label="Anthropic API key"
+                                        className="w-full bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                        style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                    />
+                                    <button
+                                        onClick={handleSaveAnthropicKey}
+                                        disabled={!anthropicKeyInput.trim()}
+                                        className="w-full py-3 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 disabled:opacity-40"
+                                    >
+                                        Connect Claude
+                                    </button>
+                                    <p className="text-gray-500 text-[10px] font-bold leading-relaxed">
+                                        Get a free key at console.anthropic.com (Settings → API Keys). Stored on this device only.
+                                    </p>
                                 </div>
                             )}
                         </div>
