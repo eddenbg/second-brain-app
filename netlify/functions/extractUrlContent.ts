@@ -30,6 +30,19 @@ const corsHeaders = {
 // whole element, not just the tag.
 const STRIP_TAG_NAMES = ["script", "style", "noscript", "nav", "header", "footer", "form", "iframe", "svg", "aside"];
 
+// Many real sites (this was reported against a page that reads out its full
+// nav menu — "Home, About Us..." — before ever reaching the article) put
+// navigation/chrome in a plain <div> with no semantic <nav>/<header> tag at
+// all, so STRIP_TAG_NAMES alone misses it. Strip the first div/ul/section
+// whose class or id names one of these patterns, same non-nesting-aware
+// approach as stripTagAndContents below (this is not a full HTML parser —
+// see the file-level comment — just enough to catch the common case).
+const CHROME_CLASS_PATTERNS = [
+    "nav", "navbar", "menu", "sidebar", "site-header", "site-footer",
+    "breadcrumb", "cookie", "banner", "social-share", "share-buttons",
+    "related-posts", "related-articles", "comments", "newsletter", "subscribe",
+];
+
 // Block-level tags: their closing tag becomes a newline, so paragraphs and
 // list items don't get smashed together into one run-on line once the tags
 // themselves are stripped.
@@ -59,13 +72,30 @@ function stripTagAndContents(html: string, tagName: string): string {
   return html.replace(re, " ");
 }
 
+/** Strips the first div/ul/section whose class or id contains one of
+ *  CHROME_CLASS_PATTERNS. Same non-nesting-aware caveat as stripTagAndContents
+ *  above — a deeply nested match can over- or under-strip — but this catches
+ *  the common "nav is a <div class='navbar'>, not a <nav>" case that the
+ *  semantic-tag strip above misses entirely. */
+function stripChromeByClass(html: string): string {
+  let out = html;
+  for (const pattern of CHROME_CLASS_PATTERNS) {
+    const re = new RegExp(
+      `<(div|ul|section)\\b[^>]*\\b(?:class|id)=["'][^"']*${pattern}[^"']*["'][^>]*>[\\s\\S]*?<\\/\\1>`,
+      "gi"
+    );
+    out = out.replace(re, " ");
+  }
+  return out;
+}
+
 /** Prefer the main article container when the page has one, so nav/sidebar
  *  text that slipped past the tag strip doesn't dilute the body. */
 function pickMainRegion(html: string): string {
   const candidates = [
     /<article\b[^>]*>([\s\S]*?)<\/article>/i,
     /<main\b[^>]*>([\s\S]*?)<\/main>/i,
-    /<div[^>]+(?:id|class)=["'][^"']*(?:article|post-content|entry-content|main-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]+(?:id|class)=["'][^"']*(?:article|post-content|entry-content|main-content|post-body|article-body|story-body|content-body)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
   ];
   for (const re of candidates) {
     const match = html.match(re);
@@ -87,6 +117,10 @@ function htmlToReadableText(html: string): string {
   for (const tag of STRIP_TAG_NAMES) {
     cleaned = stripTagAndContents(cleaned, tag);
   }
+  // Runs on the whole document, not just the eventually-picked region, so it
+  // also catches chrome nested inside whatever pickMainRegion selects (e.g. a
+  // "related posts" div inside <article>).
+  cleaned = stripChromeByClass(cleaned);
 
   const region = pickMainRegion(cleaned);
 

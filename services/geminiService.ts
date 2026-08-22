@@ -104,15 +104,24 @@ export async function chatWithMemories(
     } catch (error) { return 'I encountered an error. Please try again.'; }
 }
 
+const TTS_TIMEOUT_MS = 30000;
+
 export async function generateSpeechFromText(text: string): Promise<string | null> {
     const ai = getGeminiInstance();
     if (!ai) return null;
     try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
-            contents: [{ parts: [{ text: text.substring(0, 5000) }] }],
-            config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } },
-        });
+        // The SDK call itself has no timeout, so a slow/hung TTS response left
+        // every "Read Aloud"/"Play" button spinning indefinitely with no way
+        // out. Race it against a timeout so the caller gets null (and its own
+        // "couldn't generate audio" handling) instead of a dead spinner.
+        const response = await Promise.race([
+            ai.models.generateContent({
+                model: "gemini-2.5-flash-preview-tts",
+                contents: [{ parts: [{ text: text.substring(0, 5000) }] }],
+                config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } },
+            }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('TTS request timed out')), TTS_TIMEOUT_MS)),
+        ]);
         return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
     } catch (error) { return null; }
 }
