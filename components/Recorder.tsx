@@ -53,9 +53,26 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [recordingTime, setRecordingTime] = useState(0);
     const [showSummarize, setShowSummarize] = useState(false);
     const [summaryText, setSummaryText] = useState<string>('');
+    // Set once a recording has actually been started, and never cleared back to
+    // false while this Recorder instance is alive. This — not `transcript` — is
+    // what decides whether Stop lands on the reviewable "lecture finished"
+    // screen. Gating on transcript meant a lecture with little or no live
+    // transcription (a failed Live session, or just a few seconds of silence)
+    // dumped the user straight back to the pristine "tap to start" screen with
+    // zero indication anything had been recorded, silently discarding the
+    // audio that was captured.
+    const [hasRecordedOnce, setHasRecordedOnce] = useState(false);
+    // True from the moment Stop is pressed until the MediaRecorder's onstop ->
+    // FileReader chain has actually finished writing audioDataUrl (or
+    // videoDataUrl). That chain is asynchronous, so the review screen cannot
+    // assume the audio is already there the instant recording stops.
+    const [isFinalizingAudio, setIsFinalizingAudio] = useState(false);
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    // Resolves once onstop's FileReader has finished (successfully or not),
+    // so handleSave can wait for it instead of racing the async read.
+    const audioFinalizedRef = useRef<Promise<void> | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const frameIntervalRef = useRef<number | null>(null);
@@ -131,6 +148,14 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
             setStream(mediaStream);
             setIsRecording(true);
+            setHasRecordedOnce(true);
+
+            // A new deferred promise per recording: resolves once onstop's
+            // FileReader has actually written audioDataUrl/videoDataUrl (or
+            // given up), so stopRecording/handleSave can wait on it instead of
+            // assuming the async read already finished.
+            let resolveAudioFinalized: () => void = () => {};
+            audioFinalizedRef.current = new Promise<void>((resolve) => { resolveAudioFinalized = resolve; });
 
             const chunks: Blob[] = [];
             // An audio-only stream must be recorded as audio/webm; asking for
@@ -149,6 +174,13 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     const dataUrl = reader.result as string;
                     if (isAudioOnlyCapture) setAudioDataUrl(dataUrl);
                     else setVideoDataUrl(dataUrl);
+                    setIsFinalizingAudio(false);
+                    resolveAudioFinalized();
+                };
+                reader.onerror = () => {
+                    console.error('Failed to read recorded audio/video blob:', reader.error);
+                    setIsFinalizingAudio(false);
+                    resolveAudioFinalized();
                 };
                 reader.readAsDataURL(blob);
             };
@@ -277,6 +309,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
     const stopRecording = async () => {
         setIsRecording(false);
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            setIsFinalizingAudio(true);
+        }
         mediaRecorderRef.current?.stop();
 
         // Clear recording timer
@@ -380,6 +415,22 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const handleSave = async () => {
         setIsProcessing(true);
         try {
+            // The Save button is disabled while isFinalizingAudio is true, but
+            // that state update and this click can still race (e.g. Save
+            // triggered a tick before the disabled prop re-renders) — wait for
+            // the recorder's onstop -> FileReader chain to actually finish so
+            // audioDataUrl below reflects reality instead of whatever state
+            // happened to be set when this function started running. Capped so
+            // a stuck reader can never hang Save forever; on timeout we save
+            // with whatever audio state currently has rather than losing the
+            // transcript and notes too.
+            if (audioFinalizedRef.current) {
+                await Promise.race([
+                    audioFinalizedRef.current,
+                    new Promise<void>((resolve) => setTimeout(resolve, 8000)),
+                ]);
+            }
+
             const analysis = await analyzeVoiceNote(transcript);
             const location = await getCurrentLocation();
 
@@ -435,7 +486,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     // tablet held in landscape meant scrolling past a full screen of buttons to
     // read anything. Here the transcript and the notes sit side by side and each
     // column scrolls on its own, so the page itself never scrolls.
-    if (notebookMode && !isRecording && transcript && !showSummarize) {
+    if (notebookMode && !isRecording && hasRecordedOnce && !showSummarize) {
         return (
             <div className="fixed inset-0 bg-black z-[200] flex flex-col overscroll-none">
                 <div className="shrink-0 flex items-center gap-3 px-3 h-14 bg-black border-b border-white/10">
@@ -451,18 +502,18 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     </div>
                     <button
                         onClick={() => { setShowSummarize(true); setSummaryText(''); handleSummarize(); }}
-                        disabled={isProcessing}
+                        disabled={isProcessing || !transcript}
                         className="px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-xs uppercase disabled:bg-gray-600"
                     >
                         Summarize
                     </button>
                     <button
                         onClick={handleSave}
-                        disabled={isProcessing}
+                        disabled={isProcessing || isFinalizingAudio}
                         aria-label="Save lecture"
                         className="px-6 py-2 rounded-xl bg-green-600 text-white font-black text-xs uppercase disabled:bg-gray-600"
                     >
-                        {isProcessing ? 'Saving…' : 'Save'}
+                        {isFinalizingAudio ? 'Finalizing…' : isProcessing ? 'Saving…' : 'Save'}
                     </button>
                 </div>
 
@@ -476,16 +527,27 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     {/* Transcript */}
                     <div className="w-1/2 min-w-0 overflow-y-auto p-5 border-r border-white/10">
                         <h4 className="text-sm font-black text-yellow-400 uppercase tracking-widest mb-3">Transcript</h4>
-                        <p className="text-white text-base leading-relaxed whitespace-pre-wrap">{transcript}</p>
+                        {transcript ? (
+                            <p className="text-white text-base leading-relaxed whitespace-pre-wrap">{transcript}</p>
+                        ) : (
+                            <p className="text-white/40 text-sm font-bold">
+                                No speech was transcribed for this recording{error ? ' — see the error above.' : '.'} Your audio and any handwritten notes were still saved below.
+                            </p>
+                        )}
                     </div>
                     {/* Notes exactly as drawn */}
                     <div className="w-1/2 min-w-0 overflow-hidden flex flex-col">
                         <h4 className="shrink-0 text-sm font-black text-green-400 uppercase tracking-widest px-5 pt-5 pb-2">Your notes</h4>
                         <div className="flex-1 min-h-0">
-                            {notebookData && notebookData.strokes && notebookData.strokes.length > 0 ? (
+                            {isFinalizingAudio ? (
+                                <p className="text-white/40 text-sm font-bold px-5 flex items-center gap-3">
+                                    <Loader2Icon className="w-5 h-5 animate-spin" /> Finalizing recorded audio…
+                                </p>
+                            ) : notebookData && notebookData.strokes && notebookData.strokes.length > 0 ? (
                                 <NotebookViewer
                                     notebook={notebookData}
                                     audioSrc={audioDataUrl || undefined}
+                                    noAudioMessage="No audio was saved for this recording."
                                 />
                             ) : (
                                 <p className="text-white/40 text-sm font-bold px-5">Nothing was drawn during this lecture.</p>
@@ -617,7 +679,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 </div>
             )}
 
-            {(audioOnly || captureMode === 'remote') && !(notebookMode && !isRecording && !transcript) && (
+            {(audioOnly || captureMode === 'remote') && !(notebookMode && !isRecording && !hasRecordedOnce) && (
                 <div className="w-full h-40 bg-black/40 rounded-[2rem] flex flex-col items-center justify-center border-2 border-white/10">
                     <MicIcon className={`w-20 h-20 ${isRecording ? 'text-red-400 animate-pulse' : 'text-white/40'}`} />
                     <p className="mt-3 font-black uppercase text-sm text-white/50 tracking-widest">
@@ -627,7 +689,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             )}
 
             {/* Lecture mode start screen: exactly one button — tap it and the notebook opens full-screen */}
-            {notebookMode && !isRecording && !transcript ? (
+            {notebookMode && !isRecording && !hasRecordedOnce ? (
                 <button
                     onClick={startRecording}
                     aria-label="Start recording lecture"
@@ -656,12 +718,12 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                  </button>
                  <button
                     onClick={handleSave}
-                    disabled={isRecording || isProcessing || !transcript}
+                    disabled={isRecording || isProcessing || isFinalizingAudio || !transcript}
                     aria-label={isProcessing ? "Saving recording" : "Save recording"}
                     className="w-full sm:w-auto px-6 sm:px-10 py-4 sm:py-5 bg-yellow-500 rounded-2xl text-[#001f3f] disabled:bg-gray-700 disabled:text-gray-400 active:scale-95 transition-transform flex items-center justify-center gap-3 sm:gap-4 font-black text-xl sm:text-2xl uppercase shadow-xl"
                 >
                     {isProcessing ? <Loader2Icon className="w-10 h-10 animate-spin"/> : <SaveIcon className="w-10 h-10"/>}
-                    <span>{isProcessing ? 'Saving...' : 'Save'}</span>
+                    <span>{isFinalizingAudio ? 'Finalizing…' : isProcessing ? 'Saving...' : 'Save'}</span>
                 </button>
             </div>
             )}
@@ -777,11 +839,11 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             </button>
                             <button
                                 onClick={handleSave}
-                                disabled={isProcessing}
+                                disabled={isProcessing || isFinalizingAudio}
                                 className="flex-1 py-3 bg-green-600 text-white rounded-2xl font-black uppercase hover:bg-green-500 disabled:bg-gray-600 transition-all flex items-center justify-center gap-3"
                             >
-                                {isProcessing ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <SaveIcon className="w-5 h-5" />}
-                                {isProcessing ? 'Saving...' : (notebookMode ? 'Save Lecture' : 'Save')}
+                                {isProcessing || isFinalizingAudio ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <SaveIcon className="w-5 h-5" />}
+                                {isFinalizingAudio ? 'Finalizing…' : isProcessing ? 'Saving...' : (notebookMode ? 'Save Lecture' : 'Save')}
                             </button>
                         </div>
                     </div>

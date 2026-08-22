@@ -98,9 +98,17 @@ export default async (req: Request, context: Context) => {
     
     if (data.exception) {
         console.error("Moodle Internal Exception:", data);
-        return new Response(JSON.stringify({ 
-            error: data.message || "Moodle server returned an exception", 
-            details: data 
+        // errorcode (e.g. "invalidtoken", "accessexception") is surfaced at the
+        // top level, not just buried in `details`, so callers can tell "this
+        // token doesn't exist / has expired" apart from "this token exists but
+        // isn't allowed to call this particular wsfunction" — Moodle uses the
+        // same errorcode/message text for both, which is what made the original
+        // bug report ("invalidtoken" on course-listing while the same token
+        // works fine for calendar sync) so confusing.
+        return new Response(JSON.stringify({
+            error: data.message || "Moodle server returned an exception",
+            errorcode: data.errorcode,
+            details: data
         }), {
             status: 401,
             headers,

@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { generateTitleForContent } from '../services/geminiService';
+import { extractUrlContent } from '../services/urlContentService';
 import type { WebMemory } from '../types';
-import { BrainCircuitIcon, XIcon, SaveIcon, LinkIcon } from './Icons';
+import { BrainCircuitIcon, XIcon, SaveIcon, LinkIcon, Loader2Icon } from './Icons';
 import MiniRecorder from './MiniRecorder';
 import { getCurrentLocation } from '../utils/location';
 
@@ -20,6 +21,7 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
     const [tags, setTags] = useState('');
     const [voiceNote, setVoiceNote] = useState('');
     const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (!url && title.includes('http')) {
@@ -45,21 +47,32 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
 
     const handleSave = async () => {
         if (!title.trim() && !url.trim()) return;
-        const location = await getCurrentLocation();
-        const newMemory: Omit<WebMemory, 'id' | 'date' | 'category'> = {
-            type: 'web',
-            url,
-            title: title || 'Shared Link',
-            content: content || `Shared URL: ${url}`,
-            tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
-            ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote } }),
-            ...(location && { location }),
-        };
-        onSave(newMemory);
-        onClose();
+        setIsSaving(true);
+        try {
+            const location = await getCurrentLocation();
+            // Fetch the real page text server-side (bypasses browser CORS) so
+            // "Play" can read the whole clip later instead of just this short
+            // note. Best-effort — a failed/slow fetch never blocks the save.
+            const trimmedUrl = url.trim();
+            const extracted = trimmedUrl ? await extractUrlContent(trimmedUrl) : null;
+            const newMemory: Omit<WebMemory, 'id' | 'date' | 'category'> = {
+                type: 'web',
+                url,
+                title: title || extracted?.title || 'Shared Link',
+                content: content || `Shared URL: ${url}`,
+                tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
+                ...(extracted?.text && { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() }),
+                ...(voiceNote.trim() && { voiceNote: { transcript: voiceNote } }),
+                ...(location && { location }),
+            };
+            onSave(newMemory);
+            onClose();
+        } finally {
+            setIsSaving(false);
+        }
     };
-    
-    const isSaveDisabled = (!title.trim() && !url.trim());
+
+    const isSaveDisabled = (!title.trim() && !url.trim()) || isSaving;
 
     return (
         <div className="fixed inset-0 bg-black/90 flex flex-col justify-center items-center z-[140] p-4">
@@ -67,12 +80,13 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
                 <header className="flex justify-between items-center p-6 border-b-4 border-gray-700 shrink-0 bg-gray-800">
                     <h2 className="text-xl font-black text-white flex items-center gap-4 uppercase"><LinkIcon className="w-8 h-8"/> Clip</h2>
                     <div className="flex items-center gap-3">
-                        <button 
-                            onClick={handleSave} 
-                            disabled={isSaveDisabled} 
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaveDisabled}
                             className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white font-black rounded-xl text-sm uppercase shadow-xl disabled:bg-gray-700 active:scale-95 transition-all"
                         >
-                            <SaveIcon className="w-5 h-5"/> SAVE
+                            {isSaving ? <Loader2Icon className="w-5 h-5 animate-spin"/> : <SaveIcon className="w-5 h-5"/>}
+                            {isSaving ? 'Fetching…' : 'SAVE'}
                         </button>
                         <button onClick={onClose} className="p-3 bg-gray-700 rounded-2xl active:scale-90 transition-transform"><XIcon className="w-6 h-6 text-gray-400"/></button>
                     </div>

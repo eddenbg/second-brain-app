@@ -12,13 +12,14 @@ import ConfirmationModal from './components/ConfirmationModal';
 import OfflineBanner from './components/OfflineBanner';
 import { useRecordings } from './hooks/useRecordings';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
-import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
+import { fetchMoodleEvents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
+import { extractUrlContent } from './services/urlContentService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
 import { getStoredDriveToken } from './services/googleDriveService';
 import { updateService } from './services/updateService';
-import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
+import type { AnyMemory, WebMemory, CalendarEvent, Task } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
 const viewTitles: Record<View, string> = {
@@ -42,7 +43,7 @@ function App() {
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
-  const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
+  const [isSavingSharedLink, setIsSavingSharedLink] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ eventId: string } | null>(null);
   // Capture share params immediately on mount before auth loads (prevents race condition)
@@ -122,42 +123,22 @@ function App() {
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const personalMemories = useMemo(() => memories.filter(m => m.category === 'personal'), [memories]);
 
-  // Moodle sync
-  useEffect(() => {
-    const syncMoodle = async () => {
-      // Only the token gates this. A brand-new account has no memories yet, and
-      // requiring one here meant the very users who need the import never got it.
-      if (!moodleToken) return;
-      try {
-        setIsSyncingMoodle(true);
-        const moodleCourses = await fetchMoodleCourses(moodleToken);
-        for (const mc of moodleCourses) {
-          if (!courses.includes(mc.fullname)) addCourse(mc.fullname);
-        }
-        for (const mc of moodleCourses) {
-          const contents = await fetchCourseContents(moodleToken, mc.id);
-          for (const item of contents) {
-            const alreadySaved = memories.some(m => m.title === item.name && (m as any).course === mc.fullname);
-            if (!alreadySaved) {
-              await addMemory({
-                type: 'file',
-                title: item.name,
-                category: 'college',
-                course: mc.fullname,
-                fileUrl: item.fileurl,
-                mimeType: item.mimetype,
-              } as Omit<FileMemory, 'id' | 'date'>);
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Moodle sync failed', e);
-      } finally {
-        setIsSyncingMoodle(false);
-      }
-    };
-    syncMoodle();
-  }, [moodleToken, addCourse, memories.length]);
+  // Moodle course/file sync used to run here silently and automatically —
+  // no confirmation, no visible progress (isSyncingMoodle was set but never
+  // rendered anywhere) — creating a local course per Moodle course and
+  // importing every file it found the moment a token existed. In practice it
+  // was inert: the wsfunctions it called (core_course_get_..., see
+  // moodleService.ts) hit an invalidtoken exception on this Moodle install
+  // before ever reaching the import step, so nothing ever actually landed.
+  // Fixing that error path would have switched this on for real, at which
+  // point it directly conflicts with the deliberate, reviewed import flows
+  // now in College Hub: "Import Semester" (CollegeView.tsx) lets the user see
+  // and confirm which Moodle courses become notebooks before anything is
+  // created, and the in-course "Browse Moodle" button imports a course's
+  // files on demand. Silently mass-creating courses and mass-importing every
+  // file in the background would fight both of those and dump everything
+  // into an untermed "General" bucket besides. Removed in favor of the
+  // explicit UI.
 
   const toggleSettings = (open: boolean) => {
     if (open) {
@@ -182,7 +163,14 @@ function App() {
   const handleProcessShare = useCallback(async (url: string, title: string, text: string) => {
     setIsProcessingShare(true);
     try {
-      const analysis = await processSharedUrl(url, title, text, webCategories);
+      // Analysis gives a short AI summary for `content`; separately fetch the
+      // real page text server-side so "Play" has the whole article to read,
+      // not just that summary. Run in parallel — extraction failing shouldn't
+      // block the share, it just leaves fullText unset (falls back to content).
+      const [analysis, extracted] = await Promise.all([
+        processSharedUrl(url, title, text, webCategories),
+        extractUrlContent(url),
+      ]);
       await addMemory({
         type: 'web',
         url: url,
@@ -190,7 +178,8 @@ function App() {
         content: analysis.summary,
         contentType: analysis.type,
         category: 'personal',
-        tags: analysis.suggestedTags.length > 0 ? analysis.suggestedTags : analysis.takeaways
+        tags: analysis.suggestedTags.length > 0 ? analysis.suggestedTags : analysis.takeaways,
+        ...(extracted?.text && { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() }),
       } as Omit<WebMemory, 'id' | 'date'>);
       setView('personal');
     } catch (error) {
@@ -434,13 +423,30 @@ function App() {
           <p className="text-white/70 text-center break-all">{sharedContent.url}</p>
           <div className="flex gap-4">
             <button
+              disabled={isSavingSharedLink}
               onClick={async () => {
-                await addMemory({ type: 'web', url: sharedContent.url, title: sharedContent.title, content: '', category: 'personal' } as Omit<WebMemory, 'id' | 'date'>);
-                setSharedContent(null);
-                setView('personal');
+                setIsSavingSharedLink(true);
+                try {
+                  // The AI analysis path failed (hence this fallback modal), but the
+                  // page fetch is independent of that — still worth trying so this
+                  // clip isn't stuck with an empty `content` and no full text either.
+                  const extracted = await extractUrlContent(sharedContent.url);
+                  await addMemory({
+                    type: 'web',
+                    url: sharedContent.url,
+                    title: sharedContent.title || extracted?.title || 'Shared Link',
+                    content: extracted?.text ? extracted.text.slice(0, 500) : '',
+                    category: 'personal',
+                    ...(extracted?.text && { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() }),
+                  } as Omit<WebMemory, 'id' | 'date'>);
+                  setSharedContent(null);
+                  setView('personal');
+                } finally {
+                  setIsSavingSharedLink(false);
+                }
               }}
-              className="px-8 py-4 bg-white text-[#001F3F] rounded-2xl font-black text-lg uppercase"
-            >Save</button>
+              className="px-8 py-4 bg-white text-[#001F3F] rounded-2xl font-black text-lg uppercase disabled:opacity-50"
+            >{isSavingSharedLink ? 'Saving…' : 'Save'}</button>
             <button onClick={() => setSharedContent(null)} className="px-8 py-4 bg-white/10 text-white rounded-2xl font-black text-lg uppercase">Dismiss</button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Loader2, ExternalLink, Download, X } from 'lucide-react';
 import type { AnyMemory, WebMemory } from '../types';
+import { extractUrlContent } from '../services/urlContentService';
 
 interface Resource {
   title: string;
@@ -26,6 +27,7 @@ const ClaudeResearchPanel: React.FC<ClaudeResearchPanelProps> = ({ topic, onSave
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [imported, setImported] = useState<Set<string>>(new Set());
+  const [importing, setImporting] = useState<Set<string>>(new Set());
 
   const research = async () => {
     if (!query.trim()) return;
@@ -52,16 +54,25 @@ const ClaudeResearchPanel: React.FC<ClaudeResearchPanelProps> = ({ topic, onSave
     }
   };
 
-  const importResource = (resource: Resource) => {
-    onSaveMemory({
-      type: 'web',
-      title: resource.title,
-      category: 'personal',
-      url: resource.url,
-      content: resource.summary,
-      tags: [topic],
-    } as Omit<WebMemory, 'id' | 'date'>);
-    setImported(prev => new Set([...prev, resource.url]));
+  const importResource = async (resource: Resource) => {
+    setImporting(prev => new Set([...prev, resource.url]));
+    try {
+      // Fetch the real page text server-side so "Play" on this clip later
+      // reads the whole resource, not just Claude's short summary.
+      const extracted = await extractUrlContent(resource.url);
+      onSaveMemory({
+        type: 'web',
+        title: resource.title,
+        category: 'personal',
+        url: resource.url,
+        content: resource.summary,
+        tags: [topic],
+        ...(extracted?.text && { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() }),
+      } as Omit<WebMemory, 'id' | 'date'>);
+      setImported(prev => new Set([...prev, resource.url]));
+    } finally {
+      setImporting(prev => { const next = new Set(prev); next.delete(resource.url); return next; });
+    }
   };
 
   return (
@@ -127,12 +138,12 @@ const ClaudeResearchPanel: React.FC<ClaudeResearchPanelProps> = ({ topic, onSave
               <p className="text-xs opacity-75 leading-relaxed">{res.summary}</p>
               <button
                 onClick={() => importResource(res)}
-                disabled={imported.has(res.url)}
+                disabled={imported.has(res.url) || importing.has(res.url)}
                 className="w-full !py-2 !text-xs bg-white text-[#001F3F] disabled:opacity-40 flex items-center justify-center gap-1"
                 style={{ minHeight: 36 }}
               >
-                <Download className="w-3 h-3" />
-                {imported.has(res.url) ? 'Saved to Web Clips' : 'Import to Web Clips'}
+                {importing.has(res.url) ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                {imported.has(res.url) ? 'Saved to Web Clips' : importing.has(res.url) ? 'Importing…' : 'Import to Web Clips'}
               </button>
             </div>
           ))}

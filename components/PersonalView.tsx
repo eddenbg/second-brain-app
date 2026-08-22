@@ -17,6 +17,7 @@ import SearchBar from './SearchBar';
 import MemoryThumbnail from './MemoryThumbnail';
 import TranscriptionUploader from './TranscriptionUploader';
 import { generateSpeechFromText, askQuestion } from '../services/geminiService';
+import { extractUrlContent } from '../services/urlContentService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
 import type { NotionPage, NotionLink } from '../services/notionService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -107,20 +108,32 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
 };
 
 /**
- * Listen controls for a saved web clip: play the clip's saved text as-is, or
- * have it summarized on the fly and read just that gist. Both operate on
- * whatever `content` holds regardless of how the clip was saved — an
- * AI-written summary from the share-target flow, manually pasted text, or a
- * short note for a video link — so "article, video, or whatever" is really
- * just "there is some text to read," which is all either button needs.
+ * Listen controls for a saved web clip: "Play" reads the clip's full text,
+ * "Play Gist" summarizes that same full text into a short spoken gist so the
+ * two are genuinely different lengths, not near-duplicates of each other.
+ *
+ * "Full text" means `memory.fullText` — the real article/page body fetched
+ * server-side at save time — when present. Clips saved before that existed
+ * (or by a save path that didn't fetch it) only have the short `content`
+ * stub; the first time either button is pressed on one of those, this
+ * lazily fetches and caches the full text via onUpdateMemory so the clip is
+ * upgraded for good, not stuck re-reading the same short stub forever. If
+ * that fetch fails (or there's no URL to fetch), it falls back to `content`
+ * and says so, rather than silently pretending it's the full article.
  */
-const WebClipListenButtons: React.FC<{ content: string }> = ({ content }) => {
+const WebClipListenButtons: React.FC<{
+    memory: WebMemory;
+    onUpdateMemory: (id: string, updates: Partial<AnyMemory>) => void;
+}> = ({ memory, onUpdateMemory }) => {
     const [playingMode, setPlayingMode] = useState<'full' | 'gist' | null>(null);
     const [loadingMode, setLoadingMode] = useState<'full' | 'gist' | null>(null);
+    const [usingFallback, setUsingFallback] = useState(false);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const gistCacheRef = useRef<string | null>(null);
+    const fullTextRef = useRef<string | null>(memory.fullText ?? null);
 
+    useEffect(() => { fullTextRef.current = memory.fullText ?? null; }, [memory.fullText]);
     useEffect(() => () => { sourceRef.current?.stop(); audioCtxRef.current?.close(); }, []);
 
     const stop = () => {
@@ -143,18 +156,35 @@ const WebClipListenButtons: React.FC<{ content: string }> = ({ content }) => {
         return true;
     };
 
+    /** The richest text available, fetching-and-caching the real page body
+     *  on first use for legacy/unwired clips that only have the short stub. */
+    const resolveSourceText = async (): Promise<{ text: string; isFallback: boolean }> => {
+        if (fullTextRef.current) return { text: fullTextRef.current, isFallback: false };
+        if (memory.url) {
+            const extracted = await extractUrlContent(memory.url);
+            if (extracted?.text) {
+                fullTextRef.current = extracted.text;
+                onUpdateMemory(memory.id, { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() } as Partial<WebMemory>);
+                return { text: extracted.text, isFallback: false };
+            }
+        }
+        return { text: memory.content, isFallback: true };
+    };
+
     const toggle = async (mode: 'full' | 'gist') => {
         if (playingMode === mode) { stop(); return; }
         if (playingMode) stop();
 
         setLoadingMode(mode);
         try {
-            let text = content;
+            const { text: sourceText, isFallback } = await resolveSourceText();
+            setUsingFallback(isFallback);
+            let text = sourceText;
             if (mode === 'gist') {
                 if (!gistCacheRef.current) {
                     gistCacheRef.current = await askQuestion(
                         'Summarize this in 2-3 short spoken sentences — the gist only, no markdown, no headings.',
-                        content
+                        sourceText
                     );
                 }
                 text = gistCacheRef.current;
@@ -165,7 +195,7 @@ const WebClipListenButtons: React.FC<{ content: string }> = ({ content }) => {
         finally { setLoadingMode(null); }
     };
 
-    if (!content.trim()) return null;
+    if (!memory.content.trim() && !memory.fullText?.trim()) return null;
 
     const renderButton = (mode: 'full' | 'gist', label: string, playingLabel: string) => {
         const isPlaying = playingMode === mode;
@@ -188,9 +218,16 @@ const WebClipListenButtons: React.FC<{ content: string }> = ({ content }) => {
     };
 
     return (
-        <div className="flex gap-2">
-            {renderButton('full', 'Play', 'playback')}
-            {renderButton('gist', 'Play Gist', 'the gist')}
+        <div className="flex flex-col gap-1.5">
+            <div className="flex gap-2">
+                {renderButton('full', 'Play', 'playback')}
+                {renderButton('gist', 'Play Gist', 'the gist')}
+            </div>
+            {usingFallback && playingMode && (
+                <p className="text-[10px] text-white/40 font-bold uppercase tracking-wide text-center">
+                    Couldn't fetch the full article — playing the saved note instead
+                </p>
+            )}
         </div>
     );
 };
@@ -814,7 +851,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                         <Trash2 size={20} strokeWidth={3} />
                                     </button>
                                 </div>
-                                <WebClipListenButtons content={w.content} />
+                                <WebClipListenButtons memory={w} onUpdateMemory={onUpdateMemory} />
                                 <a
                                     href={w.url}
                                     target="_blank"
@@ -1032,8 +1069,22 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     )}
                     {selectedItem.type === 'web' && (
                         <div className="space-y-5">
-                            <p className="text-xl leading-relaxed">{(selectedItem as WebMemory).content}</p>
-                            <WebClipListenButtons content={(selectedItem as WebMemory).content} />
+                            {(() => {
+                                const web = selectedItem as WebMemory;
+                                // Show the note separately only when it's actually distinct from
+                                // the full text — e.g. Notion page imports set `content` to the
+                                // full page already, so showing both would just repeat it.
+                                const showNoteSeparately = web.content && web.fullText && web.content !== web.fullText;
+                                return (
+                                    <>
+                                        {showNoteSeparately && (
+                                            <p className="text-white/60 text-sm italic leading-relaxed">{web.content}</p>
+                                        )}
+                                        <p className="text-xl leading-relaxed whitespace-pre-wrap">{web.fullText || web.content}</p>
+                                    </>
+                                );
+                            })()}
+                            <WebClipListenButtons memory={selectedItem as WebMemory} onUpdateMemory={onUpdateMemory} />
                             <a
                                 href={(selectedItem as WebMemory).url}
                                 target="_blank"

@@ -10,9 +10,21 @@ interface NotebookViewerProps {
      *  player and replays the strokes in sync. */
     audioSrc?: string;
     audioElement?: HTMLAudioElement | null;
+    /**
+     * Shown in place of the (missing) play button when the caller has
+     * definitively determined there is no audio to offer — neither `audioSrc`
+     * nor `audioElement` was passed at all. Opt-in and omitted by default:
+     * callers that route audio through a loading/error flow of their own
+     * (LectureSplitView via useDriveAudio) already surface a specific reason
+     * above this component and should leave this unset to avoid a second,
+     * possibly contradictory message. A caller with no such flow (Recorder's
+     * own post-recording review) should pass this so a save that ended up
+     * with no audio is loud instead of just quietly missing a Play button.
+     */
+    noAudioMessage?: string;
 }
 
-const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, audioElement: externalAudio }) => {
+const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, audioElement: externalAudio, noAudioMessage }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const ownAudioRef = useRef<HTMLAudioElement>(null);
     const [ownAudioReady, setOwnAudioReady] = useState(false);
@@ -462,6 +474,14 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
 
     const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+    // Neither an audioSrc nor an externalAudio element was given at all — as
+    // opposed to one being given but still loading (audioSrc present but
+    // ownAudioReady still false, or externalAudio explicitly passed as null).
+    // Only fires when the caller opted in via noAudioMessage, so a caller with
+    // its own loading/error UI (LectureSplitView) never gets a second,
+    // possibly-contradictory message from in here.
+    const noAudioProvided = Boolean(noAudioMessage) && !audioSrc && externalAudio === undefined;
+
     return (
         <div className="notebook-viewer">
             {audioSrc && (
@@ -490,6 +510,12 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     >
                         {isPlaying ? '⏸ STOP' : '▶ PLAY NOTES'}
                     </button>
+                )}
+
+                {noAudioProvided && (
+                    <div className="notebook-no-audio" role="status">
+                        {noAudioMessage}
+                    </div>
                 )}
             </div>
 
@@ -577,6 +603,22 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
 
                 .notebook-play-button:active {
                     transform: translate(-50%, -50%) scale(0.95);
+                }
+
+                .notebook-no-audio {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    max-width: 85%;
+                    padding: 14px 20px;
+                    font-size: 15px;
+                    font-weight: 700;
+                    text-align: center;
+                    color: #fde68a;
+                    background-color: rgba(120, 53, 15, 0.55);
+                    border: 1px solid rgba(253, 230, 138, 0.4);
+                    border-radius: 10px;
                 }
 
                 .notebook-controls {

@@ -9,8 +9,8 @@ import { extractHandwritingFromImage } from '../services/geminiService';
  *  so the lasso must not read as "a round outline" at a glance. */
 const LassoGlyph: React.FC = () => (
     <svg
-        width="20"
-        height="20"
+        width="36"
+        height="36"
         viewBox="0 0 20 20"
         fill="none"
         stroke="currentColor"
@@ -25,9 +25,17 @@ const LassoGlyph: React.FC = () => (
     </svg>
 );
 
+/** Shared sizing for every toolbar button: a large square tap target with a
+ *  large glyph inside it. The user is legally blind and reported the previous
+ *  small square buttons (~32px) as much too hard to see — this roughly
+ *  quadruples the tap target and glyph size. There is plenty of unused
+ *  horizontal room above the canvas on a tablet, so this does not risk
+ *  wrapping to a second row or overflowing a ~2000px-wide landscape screen. */
+const TOOLBAR_BUTTON_SIZE = 'w-20 h-20 flex items-center justify-center text-4xl shrink-0';
+
 type Point2D = { x: number; y: number };
 
-const HOLD_SNAP_MS = 600;
+const HOLD_SNAP_MS = 200;
 const HOLD_MOVE_TOLERANCE = 5; // CSS px the pen may drift and still count as "held"
 
 /** extractHandwritingFromImage resolves with a sentinel string instead of
@@ -834,11 +842,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     return (
         <div className="flex flex-col h-full bg-black overflow-hidden">
             {/* Top Toolbar - Samsung Notes Style */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-black border-b border-white/10 shrink-0 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-6 px-6 py-4 bg-black border-b border-white/10 shrink-0 overflow-x-auto no-scrollbar">
                 {/* Drawing Tools */}
                 <button
                     onClick={() => { setTool('pen'); setHasLassoSelection(false); }}
-                    className={`p-2 rounded-lg transition-all ${
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'pen' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                     }`}
                     aria-label="Pen Tool"
@@ -848,7 +856,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </button>
                 <button
                     onClick={() => { setTool('eraser'); setHasLassoSelection(false); }}
-                    className={`p-2 rounded-lg transition-all ${
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'eraser' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                     }`}
                     aria-label="Eraser Tool"
@@ -860,7 +868,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 {/* Shape Tools */}
                 <button
                     onClick={() => { setTool('rectangle'); setHasLassoSelection(false); }}
-                    className={`p-2 rounded-lg transition-all ${
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'rectangle' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                     }`}
                     aria-label="Rectangle Tool"
@@ -870,7 +878,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </button>
                 <button
                     onClick={() => { setTool('circle'); setHasLassoSelection(false); }}
-                    className={`p-2 rounded-lg transition-all ${
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'circle' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                     }`}
                     aria-label="Circle Tool"
@@ -880,7 +888,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </button>
                 <button
                     onClick={() => { setTool('line'); setHasLassoSelection(false); }}
-                    className={`p-2 rounded-lg transition-all ${
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'line' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
                     }`}
                     aria-label="Line Tool"
@@ -891,7 +899,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
 
                 <button
                     onClick={() => setTool('lasso')}
-                    className={`p-2 rounded-lg transition-all ${
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'lasso'
                             ? hasLassoSelection
                                 ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-400'
@@ -905,13 +913,13 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 </button>
 
                 {/* Divider */}
-                <div className="w-px h-6 bg-gray-600 mx-1"></div>
+                <div className="w-px h-14 bg-gray-600 shrink-0"></div>
 
                 {/* Undo/Redo */}
                 <button
                     onClick={handleUndo}
                     disabled={undoStack.length === 0}
-                    className="p-2 rounded-lg transition-all bg-gray-700 text-gray-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all bg-gray-700 text-gray-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed`}
                     aria-label="Undo"
                     title="Undo"
                 >
@@ -920,7 +928,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 <button
                     onClick={handleRedo}
                     disabled={redoStack.length === 0}
-                    className="p-2 rounded-lg transition-all bg-gray-700 text-gray-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all bg-gray-700 text-gray-400 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed`}
                     aria-label="Redo"
                     title="Redo"
                 >
@@ -930,15 +938,15 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 {/* Text Conversion Button - appears after lasso selection */}
                 {hasLassoSelection && (
                     <>
-                        <div className="w-px h-6 bg-gray-600 mx-1"></div>
+                        <div className="w-px h-14 bg-gray-600 shrink-0"></div>
                         <button
                             onClick={convertLassoAreaToText}
                             disabled={isExtracting}
-                            className="px-3 py-2 rounded-lg transition-all bg-green-600 text-white hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed font-black text-xs uppercase tracking-widest flex items-center gap-2 shadow-lg"
+                            className="px-6 py-4 rounded-2xl transition-all bg-green-600 text-white hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed font-black text-xl uppercase tracking-widest flex items-center gap-3 shadow-lg shrink-0"
                             aria-label="Convert selection to text"
                             title="Convert handwriting to text (Hebrew + English)"
                         >
-                            {isExtracting ? <Loader2Icon className="w-5 h-5 animate-spin" /> : '🎯'}
+                            {isExtracting ? <Loader2Icon className="w-8 h-8 animate-spin" /> : <span className="text-3xl">🎯</span>}
                             {isExtracting ? 'Converting...' : 'CONVERT'}
                         </button>
                     </>

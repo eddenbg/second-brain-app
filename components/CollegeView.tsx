@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
     Folder, Mic, FileText, ArrowLeft, Plus,
     Trash2, X, LayoutGrid, ListTodo, FileStack, Camera,
-    Volume2, Loader2, StopCircle, Brain, List, ArrowUpDown
+    Volume2, Loader2, StopCircle, Brain, List, ArrowUpDown, GraduationCap
 } from 'lucide-react';
 import type { AnyMemory, VoiceMemory, DocumentMemory, Task, FileMemory } from '../types';
 import Recorder from './Recorder';
@@ -11,6 +11,7 @@ import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
 import ConfirmationModal from './ConfirmationModal';
 import MoodlePickerModal from './MoodlePickerModal';
+import MoodleSemesterImportModal from './MoodleSemesterImportModal';
 import LectureSplitView from './LectureSplitView';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
@@ -26,8 +27,17 @@ export const useDriveAudio = (fileId?: string, inlineAudio?: string): { src?: st
     const [error, setError] = useState<string | undefined>();
 
     useEffect(() => {
-        if (inlineAudio) { setSrc(inlineAudio); return; }
-        if (!fileId) { setSrc(undefined); return; }
+        if (inlineAudio) { setSrc(inlineAudio); setError(undefined); return; }
+        if (!fileId) {
+            // Neither an inline recording nor a Drive file reference exists for
+            // this memory — there is genuinely nothing to play, most likely
+            // because the save that created it never captured or attached
+            // audio. This used to return silently, which looked to the user
+            // like a missing/broken Play button with no explanation at all.
+            setSrc(undefined);
+            setError('No audio was saved for this recording.');
+            return;
+        }
 
         const token = getStoredDriveToken();
         if (!token) {
@@ -164,7 +174,13 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [fileFilter, setFileFilter] = useState<'all' | 'recordings' | 'docs'>('all');
     const [sharedAudioData, setSharedAudioData] = useState<any | null>(null);
     const [showMoodlePicker, setShowMoodlePicker] = useState(false);
+    // Set when "Browse Moodle" is opened from inside a specific course's
+    // dashboard, so the picker can jump straight to that course's files and
+    // tag anything imported with this name. Null for the top-level "Moodle
+    // Files" entry point, which still behaves exactly as before.
+    const [moodlePickerCourseName, setMoodlePickerCourseName] = useState<string | null>(null);
     const [importedMoodleUrls, setImportedMoodleUrls] = useState<Set<string>>(new Set());
+    const [showSemesterImport, setShowSemesterImport] = useState(false);
 
     // ── Auto-start a lecture the moment the recording view opens ────────────────
     // Tapping "Record Lecture" on the course dashboard used to land on a screen
@@ -389,7 +405,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </button>
                         {moodleToken && (
                             <button
-                                onClick={() => setShowMoodlePicker(true)}
+                                onClick={() => { setMoodlePickerCourseName(null); setShowMoodlePicker(true); }}
                                 aria-label="Browse Moodle files"
                                 className="flex-1 h-24 bg-[#f98012] text-white rounded-3xl flex items-center justify-center gap-4"
                             >
@@ -401,6 +417,19 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             </button>
                         )}
                     </div>
+
+                    {/* Bring the whole semester in at once, as reviewed notebooks
+                        rather than a silent background sync — see MoodleSemesterImportModal. */}
+                    {moodleToken && (
+                        <button
+                            onClick={() => setShowSemesterImport(true)}
+                            aria-label="Import this semester's courses from Moodle"
+                            className="w-full h-16 bg-white/10 text-white rounded-2xl border-2 border-[#f98012]/50 flex items-center justify-center gap-3"
+                        >
+                            <GraduationCap className="w-6 h-6 text-[#f98012]" strokeWidth={3} />
+                            <span className="font-black uppercase text-sm tracking-wide">Import Semester from Moodle</span>
+                        </button>
+                    )}
 
                     {/* New course input */}
                     <div className="flex gap-3 flex-wrap">
@@ -574,6 +603,20 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             <span className="font-black uppercase text-base">Scan Doc</span>
                         </button>
                     </div>
+
+                    {/* In-context Moodle browsing — pulls this course's own materials
+                        straight in, tagged to it, without hunting through "My Courses"
+                        again. MoodlePickerModal auto-matches selectedCourse by name. */}
+                    {moodleToken && (
+                        <button
+                            onClick={() => { setMoodlePickerCourseName(selectedCourse); setShowMoodlePicker(true); }}
+                            className="w-full h-16 bg-[#f98012] text-white rounded-2xl flex items-center justify-center gap-3"
+                            aria-label={`Browse Moodle materials for ${selectedCourse}`}
+                        >
+                            <Folder size={24} strokeWidth={3} />
+                            <span className="font-black uppercase text-sm tracking-wide">Browse Moodle for This Course</span>
+                        </button>
+                    )}
 
                     {/* Study Session — only shown when course has materials */}
                     {(memoriesByCourse[selectedCourse] || []).length > 0 && (
@@ -933,9 +976,19 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             {showMoodlePicker && moodleToken && (
                 <MoodlePickerModal
                     token={moodleToken}
-                    onClose={() => setShowMoodlePicker(false)}
+                    onClose={() => { setShowMoodlePicker(false); setMoodlePickerCourseName(null); }}
                     onImport={handleImportMoodleContent}
                     importedUrls={importedMoodleUrls}
+                    initialCourseName={moodlePickerCourseName || undefined}
+                />
+            )}
+
+            {showSemesterImport && moodleToken && (
+                <MoodleSemesterImportModal
+                    token={moodleToken}
+                    existingCourseNames={courses}
+                    onClose={() => setShowSemesterImport(false)}
+                    onImportCourse={addCourse}
                 />
             )}
         </div>

@@ -8,28 +8,29 @@ interface MoodlePickerModalProps {
     onClose: () => void;
     onImport: (content: MoodleContent, courseId: number, courseName: string) => void;
     importedUrls: Set<string>;
+    /**
+     * When opened from inside a specific course/notebook in College Hub, this
+     * is that course's local name. It does two things: (1) once the course
+     * list loads, it's matched against Moodle's courses (exact name first,
+     * then a loose substring match) so the picker jumps straight to that
+     * course's files instead of making the user find it again, and (2)
+     * imported items get tagged with THIS name rather than the matched
+     * Moodle course's own fullname, so they always land in the notebook the
+     * user was actually looking at even if Moodle's naming differs slightly.
+     * When absent, the modal behaves exactly as the standalone "Moodle
+     * Files" entry point always has: pick a course, then browse it.
+     */
+    initialCourseName?: string;
 }
 
-const MoodlePickerModal: React.FC<MoodlePickerModalProps> = ({ token, onClose, onImport, importedUrls }) => {
+const MoodlePickerModal: React.FC<MoodlePickerModalProps> = ({ token, onClose, onImport, importedUrls, initialCourseName }) => {
     const [view, setView] = useState<'courses' | 'files'>('courses');
     const [courses, setCourses] = useState<MoodleCourse[]>([]);
     const [selectedCourse, setSelectedCourse] = useState<MoodleCourse | null>(null);
     const [contents, setContents] = useState<MoodleContent[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        setIsLoading(true);
-        setError(null);
-        fetchMoodleCourses(token)
-            .then(setCourses)
-            // Report what Moodle actually said. "Check your connection" was
-            // misleading when Settings simultaneously showed the connection active.
-            .catch((e) => setError(
-                `Could not load courses: ${e?.message || 'Moodle did not respond'}`
-            ))
-            .finally(() => setIsLoading(false));
-    }, [token]);
+    const [unmatchedNotice, setUnmatchedNotice] = useState<string | null>(null);
 
     const openCourse = async (course: MoodleCourse) => {
         setSelectedCourse(course);
@@ -39,12 +40,47 @@ const MoodlePickerModal: React.FC<MoodlePickerModalProps> = ({ token, onClose, o
         try {
             const items = await fetchCourseContents(token, course.id);
             setContents(items);
-        } catch {
-            setError('Could not load course files. Please try again.');
+        } catch (e: any) {
+            // Report what Moodle actually said, same reasoning as the course-list
+            // error below — a generic "try again" reads as a retry-able glitch
+            // even when the real cause is a permissions setting on the server.
+            setError(e?.message || 'Could not load course files. Please try again.');
         } finally {
             setIsLoading(false);
         }
     };
+
+    useEffect(() => {
+        // openCourse manages its own isLoading/error while it fetches that
+        // course's files — the outer .finally below must not clobber that
+        // mid-flight state when a match hands off to it.
+        let handedOffToOpenCourse = false;
+        setIsLoading(true);
+        setError(null);
+        fetchMoodleCourses(token)
+            .then(list => {
+                setCourses(list);
+                if (!initialCourseName) return;
+                const norm = (s: string) => s.trim().toLowerCase();
+                const target = norm(initialCourseName);
+                const match =
+                    list.find(c => norm(c.fullname) === target || norm(c.shortname) === target) ||
+                    list.find(c => norm(c.fullname).includes(target) || target.includes(norm(c.fullname)));
+                if (match) {
+                    handedOffToOpenCourse = true;
+                    openCourse(match);
+                } else {
+                    // Don't dead-end silently — fall back to the normal picker
+                    // so the user can still find the right course by hand.
+                    setUnmatchedNotice(`Couldn't automatically match "${initialCourseName}" to a Moodle course — pick it below.`);
+                }
+            })
+            // Report what Moodle actually said. "Check your connection" was
+            // misleading when Settings simultaneously showed the connection active.
+            .catch((e) => setError(e?.message || 'Moodle did not respond.'))
+            .finally(() => { if (!handedOffToOpenCourse) setIsLoading(false); });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]);
 
     const goBack = () => {
         setView('courses');
@@ -120,6 +156,9 @@ const MoodlePickerModal: React.FC<MoodlePickerModalProps> = ({ token, onClose, o
                         </div>
                     )}
                     {error && <p className="text-red-400 font-bold text-center py-6 text-sm">{error}</p>}
+                    {!isLoading && !error && unmatchedNotice && view === 'courses' && (
+                        <p className="text-amber-400 font-bold text-center py-2 text-xs">{unmatchedNotice}</p>
+                    )}
 
                     {!isLoading && !error && view === 'courses' && (
                         <>
@@ -174,7 +213,7 @@ const MoodlePickerModal: React.FC<MoodlePickerModalProps> = ({ token, onClose, o
                                             </p>
                                         </div>
                                         <button
-                                            onClick={() => !isImported && url && onImport(item, selectedCourse!.id, selectedCourse!.fullname)}
+                                            onClick={() => !isImported && url && onImport(item, selectedCourse!.id, initialCourseName || selectedCourse!.fullname)}
                                             disabled={isImported || !url}
                                             className={`px-4 py-2 rounded-xl font-black text-xs uppercase shrink-0 transition-all ${
                                                 isImported

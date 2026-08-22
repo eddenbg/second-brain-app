@@ -69,8 +69,19 @@ export interface VoiceMemory extends BaseMemory {
 export interface WebMemory extends BaseMemory {
   type: 'web';
   url: string;
+  /** Short note/summary shown in list previews — a user's own note, an
+   *  AI-written gist from the share-target flow, or (for Notion page
+   *  imports specifically) the full page text, since that flow already
+   *  fetches it in full. Never assume this is short. */
   content: string;
   contentType?: string;
+  /** Full extracted article/page text (server-fetched via extractUrlContent),
+   *  used for "Play" so it reads the whole clip while "Play Gist" summarizes
+   *  it. Absent on clips saved before this existed, or when extraction
+   *  wasn't possible — callers should fall back to `content` and may
+   *  lazily fetch-and-cache this on first use. */
+  fullText?: string;
+  fullTextFetchedAt?: string;
 }
 
 export interface PhysicalItemMemory extends BaseMemory {
@@ -143,6 +154,9 @@ export interface MoodleCourse {
     id: number;
     fullname: string;
     shortname: string;
+    /** Unix seconds. Present on results from core_course_get_enrolled_courses_by_timeline_classification;
+     *  absent from the core_enrol_get_users_courses fallback. Used to guess a term label for semester import. */
+    startdate?: number;
 }
 
 export interface MoodleContent {
