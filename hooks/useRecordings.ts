@@ -612,6 +612,19 @@ export const useRecordings = () => {
     // Returns why it failed rather than silently doing nothing: without this the
     // Add Course button looked broken when the user simply was not signed in yet.
     // Callers that do not care can ignore the result.
+    //
+    // Deliberately does NOT read savedCourses/courseTerms from closure to build
+    // the new value client-side — MoodleSemesterImportModal calls this several
+    // times in a row inside one sequential loop, all from the same captured
+    // function reference (the loop's own closure doesn't pick up a fresher
+    // addCourse mid-run even though this hook produces a new one on every
+    // state change). Building the write from stale local state meant each
+    // call's `setDoc` fully replaced the `courses` array with [stale-list,
+    // thisOneCourse], silently dropping every course added by an earlier
+    // iteration of the same import run. arrayUnion() plus a nested-object
+    // merge for the one changed courseTerms key are both applied server-side
+    // against the current document, so this is safe no matter how many times
+    // it's called back-to-back from a stale closure.
     const addCourse = useCallback(async (courseName: string, term?: string): Promise<{ ok: boolean; reason?: string }> => {
         if (!db || (db as any).type === 'mock') {
             return { ok: false, reason: 'Storage is unavailable. Check your connection and try again.' };
@@ -620,16 +633,17 @@ export const useRecordings = () => {
             return { ok: false, reason: 'Waiting for sign-in. Give it a moment, then try again.' };
         }
         try {
-            const updated = [...new Set([...savedCourses, courseName])];
-            const updatedTerms = { ...courseTerms, [courseName]: term || 'General' };
-            const { setDoc } = await import('firebase/firestore');
-            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken, courseTerms: updatedTerms }, { merge: true });
+            const { setDoc, arrayUnion } = await import('firebase/firestore');
+            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), {
+                courses: arrayUnion(courseName),
+                courseTerms: { [courseName]: term || 'General' },
+            }, { merge: true });
             return { ok: true };
         } catch (e: any) {
             console.error('addCourse failed', e);
             return { ok: false, reason: e?.message || 'Could not save the course.' };
         }
-    }, [user, savedCourses, moodleToken, courseTerms]);
+    }, [user]);
 
     const deleteCourse = useCallback(async (courseName: string) => {
         if (!user || !db || (db as any).type === 'mock') return;
