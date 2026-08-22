@@ -1,7 +1,8 @@
-// Bumped to evict the stale app shell one last time. From here on the shell is
-// fetched network-first, so a deploy no longer depends on this string changing
-// to actually reach an installed device.
-const CACHE_NAME = 'second-brain-v46';
+// Bumped because manifest.json is now also network-first (see the fetch
+// handler below) — this bump is what actually delivers that fix to devices
+// that already have a service worker installed, since without it nothing
+// tells an existing worker to re-run its install/activate step at all.
+const CACHE_NAME = 'second-brain-v47';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -83,6 +84,31 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // manifest.json, network-first, for the same reason as index.html above.
+  // This one bit harder: the cache-first path below meant a manifest.json
+  // change (e.g. the commit that first added share_target) could never reach
+  // an already-installed device at all — manifest.json isn't a navigation
+  // request, so it never got the network-first treatment, and uninstalling
+  // the home-screen shortcut doesn't clear this cache or unregister this
+  // worker, both of which live in the browser's site data for this origin,
+  // not in the shortcut/WebAPK wrapper. A "remove icon, reinstall" on the
+  // same browser therefore reran the install against the exact same stale
+  // cache, silently carrying the old manifest forward every time.
+  if (url.pathname.endsWith('/manifest.json')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }
