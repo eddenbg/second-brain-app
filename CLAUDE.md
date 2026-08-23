@@ -12,9 +12,10 @@ but does not register as a share target — confirmed on 2026-08-23 after
 extensive troubleshooting (cache clears, reinstalls, a real service-worker
 staleness bug that was found and fixed along the way). The fix was simply:
 uninstall the Samsung-Internet-installed icon, and install fresh from Chrome
-Beta instead. Checking Android's Settings → Apps → Second Brain → App details
-→ "installed from" is the fastest way to confirm which browser an existing
-install came from if this ever needs re-diagnosing.
+Beta instead. To confirm which browser an existing install came from if this
+ever needs re-diagnosing: long-press the Second Brain home screen icon → tap
+"App info" → check "installed from". This is the only path to use — do not
+give the longer Settings → Apps → ... route.
 
 If asked to debug "app missing from share menu" again on this device, check
 this first before re-investigating the service worker/manifest caching logic.
