@@ -16,7 +16,7 @@ import NotionPickerModal from './NotionPickerModal';
 import SearchBar from './SearchBar';
 import MemoryThumbnail from './MemoryThumbnail';
 import TranscriptionUploader from './TranscriptionUploader';
-import { generateSpeechFromText, askQuestion } from '../services/geminiService';
+import { generateSpeechFromText, askQuestion, AI_TIMEOUT_ERROR_MESSAGE, UNAVAILABLE_ERROR_MESSAGE } from '../services/geminiService';
 import { extractUrlContent } from '../services/urlContentService';
 import { getStoredNotionToken, fetchNotionPageContent } from '../services/notionService';
 import type { NotionPage, NotionLink } from '../services/notionService';
@@ -107,6 +107,24 @@ const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
     );
 };
 
+// Last-resort backstop for the whole tap-to-play chain (fetch article →
+// optionally summarize → generate audio). Each step already has its own
+// timeout (extractUrlContent ~10s, askQuestion 15s, generateSpeechFromText
+// 20s — see those files), so in the normal case one of those fires first and
+// produces a specific error. This just guarantees that no matter what goes
+// wrong — including a hang in a step that has no timeout of its own, e.g. an
+// awaited call whose promise simply never settles on a flaky connection —
+// the button can never spin for longer than this before showing an error.
+const OVERALL_LISTEN_TIMEOUT_MS = 55000;
+
+type LoadingStage = 'fetching' | 'summarizing' | 'speaking';
+
+const LOADING_STAGE_LABEL: Record<LoadingStage, string> = {
+    fetching: 'Fetching…',
+    summarizing: 'Summarizing…',
+    speaking: 'Generating audio…',
+};
+
 /**
  * Listen controls for a saved web clip: "Play" reads the clip's full text,
  * "Play Gist" summarizes that same full text into a short spoken gist so the
@@ -127,11 +145,22 @@ const WebClipListenButtons: React.FC<{
 }> = ({ memory, onUpdateMemory }) => {
     const [playingMode, setPlayingMode] = useState<'full' | 'gist' | null>(null);
     const [loadingMode, setLoadingMode] = useState<'full' | 'gist' | null>(null);
+    const [loadingStage, setLoadingStage] = useState<LoadingStage | null>(null);
     const [usingFallback, setUsingFallback] = useState(false);
+    // Set on any failure (fetch, summarize, or speech step) so the button
+    // always lands in a visible, explained state instead of just quietly
+    // going back to "Play" with no indication anything happened.
+    const [errorMode, setErrorMode] = useState<'full' | 'gist' | null>(null);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const audioCtxRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const gistCacheRef = useRef<string | null>(null);
     const fullTextRef = useRef<string | null>(memory.fullText ?? null);
+    // Bumped on every toggle() call so a stale run (e.g. the overall timeout
+    // firing after the user already tapped again, or a resolved promise from
+    // a run that's no longer the current one) can recognize it's stale and
+    // skip touching state instead of clobbering a newer run's result.
+    const runIdRef = useRef(0);
 
     useEffect(() => { fullTextRef.current = memory.fullText ?? null; }, [memory.fullText]);
     useEffect(() => () => { sourceRef.current?.stop(); audioCtxRef.current?.close(); }, []);
@@ -175,24 +204,66 @@ const WebClipListenButtons: React.FC<{
         if (playingMode === mode) { stop(); return; }
         if (playingMode) stop();
 
+        const runId = ++runIdRef.current;
+        const isStale = () => runIdRef.current !== runId;
+
         setLoadingMode(mode);
-        try {
+        setLoadingStage('fetching');
+        setErrorMode(null);
+        setErrorMessage(null);
+
+        let timedOut = false;
+        const run = (async () => {
             const { text: sourceText, isFallback } = await resolveSourceText();
+            if (isStale()) return;
             setUsingFallback(isFallback);
             let text = sourceText;
             if (mode === 'gist') {
+                setLoadingStage('summarizing');
                 if (!gistCacheRef.current) {
-                    gistCacheRef.current = await askQuestion(
+                    const summary = await askQuestion(
                         'Summarize this in 2-3 short spoken sentences — the gist only, no markdown, no headings.',
                         sourceText
                     );
+                    // askQuestion never throws — on failure it resolves with one
+                    // of these human-readable sentences instead. Treat those as
+                    // failures here rather than caching and speaking "That took
+                    // too long to generate" as if it were the article's gist.
+                    if (summary === AI_TIMEOUT_ERROR_MESSAGE || summary === UNAVAILABLE_ERROR_MESSAGE) {
+                        throw new Error(summary);
+                    }
+                    gistCacheRef.current = summary;
                 }
                 text = gistCacheRef.current;
             }
+            if (isStale()) return;
+            setLoadingStage('speaking');
             const started = await speak(text);
-            if (started) setPlayingMode(mode);
-        } catch (e) { console.error(e); }
-        finally { setLoadingMode(null); }
+            if (isStale()) return;
+            if (!started) throw new Error("Couldn't generate audio for that — please try again.");
+            setPlayingMode(mode);
+        })();
+
+        const overallTimeout = new Promise<void>((_, reject) => {
+            setTimeout(() => {
+                timedOut = true;
+                reject(new Error("That's taking too long — please try again."));
+            }, OVERALL_LISTEN_TIMEOUT_MS);
+        });
+
+        try {
+            await Promise.race([run, overallTimeout]);
+        } catch (e: any) {
+            console.error(e);
+            if (isStale()) return; // a newer tap has already taken over — don't stomp on it
+            setErrorMode(mode);
+            setErrorMessage(timedOut ? "That's taking too long — please try again." : (e?.message || 'Something went wrong — please try again.'));
+        } finally {
+            if (!isStale()) {
+                setLoadingMode(null);
+                setLoadingStage(null);
+            }
+        }
     };
 
     if (!memory.content.trim() && !memory.fullText?.trim()) return null;
@@ -203,7 +274,12 @@ const WebClipListenButtons: React.FC<{
         return (
             <button
                 onClick={() => toggle(mode)}
-                disabled={loadingMode !== null && !isLoading}
+                // Disabled for BOTH buttons while anything is loading, including
+                // the one currently loading itself — re-tapping it before
+                // toggle()'s playingMode guard applies would kick off a second,
+                // overlapping run (and a second audio stream once its speak()
+                // resolves) rather than doing nothing.
+                disabled={loadingMode !== null}
                 aria-label={isPlaying ? `Stop ${playingLabel}` : label}
                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-black text-xs uppercase tracking-wide transition-all disabled:opacity-40 ${
                     isPlaying ? 'bg-red-600 text-white' : 'bg-white/10 text-white'
@@ -212,7 +288,7 @@ const WebClipListenButtons: React.FC<{
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> :
                  isPlaying ? <StopCircle className="w-5 h-5" /> :
                  <Play className="w-5 h-5" />}
-                {isLoading ? 'Loading…' : isPlaying ? 'Stop' : label}
+                {isLoading ? (loadingStage ? LOADING_STAGE_LABEL[loadingStage] : 'Loading…') : isPlaying ? 'Stop' : label}
             </button>
         );
     };
@@ -226,6 +302,11 @@ const WebClipListenButtons: React.FC<{
             {usingFallback && playingMode && (
                 <p className="text-[10px] text-white/40 font-bold uppercase tracking-wide text-center">
                     Couldn't fetch the full article — playing the saved note instead
+                </p>
+            )}
+            {errorMode && errorMessage && (
+                <p role="alert" className="text-[10px] text-red-400 font-bold uppercase tracking-wide text-center">
+                    {errorMessage}
                 </p>
             )}
         </div>
