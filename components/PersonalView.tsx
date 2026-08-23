@@ -245,7 +245,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const showTopicsRef = useRef(false);
     const showNotionPickerRef = useRef(false);
     const [installDismissed, setInstallDismissed] = useState(() => localStorage.getItem('install_card_dismissed') === '1');
-    const { isInstallable, installApp } = useInstallPrompt();
+    const { isInstallable, installApp, justInstalled } = useInstallPrompt();
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
     // Web clips state
@@ -376,7 +376,12 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <p className="text-blue-100 text-sm font-bold leading-snug">
                             Unlock fullscreen mode and save links from Chrome's share menu.
                         </p>
-                        {isInstallable ? (
+                        {justInstalled ? (
+                            <div className="bg-green-500/20 border-2 border-green-400 rounded-2xl p-4 space-y-1">
+                                <p className="text-white font-black text-xs uppercase tracking-widest">Installed!</p>
+                                <p className="text-blue-100 text-sm font-bold">Close this browser tab and open Second Brain from the icon on your home screen.</p>
+                            </div>
+                        ) : isInstallable ? (
                             <button
                                 onClick={installApp}
                                 className="w-full py-4 bg-white text-blue-600 rounded-2xl font-black text-base uppercase tracking-wide shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"

@@ -16,6 +16,12 @@ const getPrompt = (): BeforeInstallPromptEvent | null =>
 export const useInstallPrompt = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(getPrompt);
   const [isInstallable, setIsInstallable] = useState(() => getPrompt() !== null);
+  // Distinguishes "the browser never offered one-tap install, here's how to do
+  // it manually" from "you just did that install flow seconds ago" — both
+  // states have isInstallable === false, but showing the manual how-to
+  // instructions right after a successful install looks like the install
+  // failed, which is exactly what it should never claim.
+  const [justInstalled, setJustInstalled] = useState(false);
 
   useEffect(() => {
     // Pick up prompt captured before React mounted
@@ -44,8 +50,9 @@ export const useInstallPrompt = () => {
       (window as any).__installPrompt = null;
       setDeferredPrompt(null);
       setIsInstallable(false);
+      setJustInstalled(true);
     }
   };
 
-  return { isInstallable, installApp };
+  return { isInstallable, installApp, justInstalled };
 };
