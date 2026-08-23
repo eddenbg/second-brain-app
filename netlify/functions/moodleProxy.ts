@@ -16,39 +16,17 @@ export default async (req: Request, context: Context) => {
 
   const url = new URL(req.url, 'http://localhost');
 
-  // ── Login with credentials to obtain a token ─────────────────────────
-  if (url.searchParams.get("action") === 'login') {
-    // Credentials arrive in the POST body so they stay out of access logs.
-    let username = '';
-    let password = '';
-    try {
-      const body = await req.json() as { username?: string; password?: string };
-      username = body.username ?? '';
-      password = body.password ?? '';
-    } catch {
-      return new Response(JSON.stringify({ error: "Expected a JSON body with username and password" }), { status: 400, headers });
-    }
-
-    if (!username || !password) {
-      return new Response(JSON.stringify({ error: "username and password required" }), { status: 400, headers });
-    }
-    try {
-      // Moodle's token endpoint accepts form-encoded POST, keeping the
-      // credentials out of the upstream request line too.
-      const res = await fetch('https://online.dyellin.ac.il/login/token.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ username, password, service: 'moodle_mobile_app' }).toString(),
-      });
-      const data = await res.json();
-      if (data.error) {
-        return new Response(JSON.stringify({ error: data.error }), { status: 401, headers });
-      }
-      return new Response(JSON.stringify({ token: data.token }), { status: 200, headers });
-    } catch (e: any) {
-      return new Response(JSON.stringify({ error: "Could not reach Moodle server" }), { status: 502, headers });
-    }
-  }
+  // NOTE: this proxy used to also handle `action=login`, POSTing the user's
+  // raw username/password to Moodle's login/token.php on their behalf. That
+  // path is gone: Moodle sign-in now goes through the browser-based SSO flow
+  // (admin/tool/mobile/launch.php) built in services/moodleService.ts and
+  // SettingsModal's Moodle section, which sends the user to Moodle's own
+  // login page directly — this proxy (and this app generally) never sees
+  // the password at all, only the resulting web service token. See
+  // services/moodleService.ts for the full explanation of why (the old
+  // direct-password grant doesn't work for accounts on an SSO/CAS/SAML/LDAP
+  // auth plugin, which was the actual root cause of the "invalid username or
+  // password" errors even with correct credentials).
 
   const token = url.searchParams.get("token");
   const wsfunction = url.searchParams.get("wsfunction");

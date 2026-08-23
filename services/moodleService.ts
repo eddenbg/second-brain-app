@@ -53,19 +53,124 @@ const parseMoodleProxyResponse = async (response: Response, context: string): Pr
     return body;
 };
 
-export const loginWithCredentials = async (username: string, password: string): Promise<string> => {
-    // Credentials go in the POST body, never the query string — query strings are
-    // recorded verbatim in Netlify's access logs and any proxy in between.
-    const res = await fetchWithTimeout('/api/moodleProxy?action=login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-        timeout: 45000,
+// ── "Sign in with Moodle" (tool_mobile browser-based SSO launch) ──────────
+//
+// This used to POST the user's raw username/password straight to Moodle's
+// login/token.php (moodleProxy.ts's now-removed `action=login`, called from
+// a `loginWithCredentials` here that no longer exists — see git history if
+// you need it back). That only ever works for accounts whose Moodle auth
+// method is a plain password check; it's rejected (Moodle's generic
+// "invalid username or password",
+// regardless of the *actual* reason) for accounts on SSO/CAS/SAML/LDAP-style
+// auth plugins that don't support direct password validation via web
+// service — which is almost certainly why this was broken for the user even
+// with correct credentials.
+//
+// Moodle's own apps sidestep this entirely with a documented browser-based
+// SSO flow (see admin/tool/mobile/launch.php in moodle/moodle — verified
+// against the actual current source, not guessed):
+//   1. Open admin/tool/mobile/launch.php?service=...&passport=...&urlscheme=...
+//      in a real top-level browser navigation (not an iframe — Moodle's own
+//      login page needs to run there, whatever auth method the site uses).
+//   2. The user authenticates on Moodle's own real login page.
+//   3. Moodle redirects to `<urlscheme>://token=<base64>`, where the base64
+//      payload is `<siteid>:::<wstoken>[:::<privatetoken>]`.
+// Normally only the official Moodle app registers a urlscheme (moodlemobile)
+// to receive step 3. This app registers its OWN scheme instead —
+// `web+secondbrain`, declared in public/manifest.json's `protocol_handlers`
+// — using the standard Web App Manifest Protocol Handler API, so an
+// installed PWA can be the OS-level handler for a custom URI scheme, no
+// native app or Moodle-side plugin required.
+//
+// launch.php's urlscheme param is validated against
+// /^[a-zA-Z][a-zA-Z0-9-+.]*$/ (letters/digits/-/+/. only) — `web+secondbrain`
+// satisfies that. Critically, launch.php's final redirect is *always*
+// literally `"$urlscheme://token=$apptoken"` with no way to supply a
+// separate callback host/path via a query param on stock Moodle core — so a
+// plain https:// callback URL (which would avoid needing the Protocol
+// Handler registration at all) is NOT an option here unless this specific
+// Moodle install has a non-core plugin (e.g. local_mobile) adding one, which
+// could not be confirmed — this sandbox has no network access to
+// online.dyellin.ac.il to check. The custom-scheme + Protocol Handler
+// approach below works against unmodified Moodle core.
+//
+// Server-side admin dependency (cannot be worked around client-side): this
+// only works if this Moodle site's Site administration → Plugins → Web
+// services → Mobile app → "Type of login" is set to "Via the browser" (or
+// "Via embedded browser"). If it's left on the default "Via the app", Moodle
+// throws `pluginnotenabledorconfigured` before ever showing a login page.
+
+const MOODLE_SITE_URL = 'https://online.dyellin.ac.il'; // keep in sync with netlify/functions/moodleProxy.ts
+const MOODLE_SSO_SERVICE = 'moodle_mobile_app'; // same service the old password-based login used
+export const MOODLE_SSO_SCHEME = 'web+secondbrain'; // must match public/manifest.json's protocol_handlers[0].protocol
+const MOODLE_SSO_PASSPORT_KEY = 'moodle_sso_passport';
+const MOODLE_SSO_PASSPORT_TTL_MS = 15 * 60 * 1000; // matches launch.php's own 15-minute cookie expiry
+
+/**
+ * Builds the Moodle SSO launch URL and records a passport so the eventual
+ * callback can do a basic sanity check that it's arriving reasonably soon
+ * after we actually initiated a launch. Returns the URL — SettingsModal
+ * navigates the whole window to it (`window.location.href = ...`), which is
+ * required: this has to be a real top-level navigation to Moodle's own
+ * domain, not a fetch or an iframe.
+ */
+export const buildMoodleSsoLaunchUrl = (): string => {
+    const passport = `${Date.now()}-${Math.floor(Math.random() * 1e15)}`;
+    try {
+        localStorage.setItem(MOODLE_SSO_PASSPORT_KEY, passport);
+    } catch { /* best-effort only — a failure here just weakens the staleness check below */ }
+    const params = new URLSearchParams({
+        service: MOODLE_SSO_SERVICE,
+        passport,
+        urlscheme: MOODLE_SSO_SCHEME,
     });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || 'Login failed');
-    if (!data.token) throw new Error('No token returned. Check your username/password.');
-    return data.token;
+    return `${MOODLE_SITE_URL}/admin/tool/mobile/launch.php?${params.toString()}`;
+};
+
+/**
+ * Parses the callback the PWA's registered Protocol Handler hands back —
+ * `web+secondbrain://token=<base64>` (either the full URI as pasted by hand,
+ * or percent-encoded as it arrives in the `?moodle_sso=` query param the
+ * Protocol Handler's `url` template substitutes it into) — and extracts the
+ * Moodle web service token.
+ *
+ * Note on what this deliberately does NOT do: the official Moodle app
+ * additionally verifies the base64 payload's leading `siteid` equals
+ * md5(wwwroot + passport), which guards against something else on the
+ * device invoking this app's `web+secondbrain://` handler with a forged
+ * token. This only checks that a launch was actually initiated recently
+ * (via the stored passport) rather than cryptographically verifying siteid —
+ * full parity would need an MD5 implementation and exact knowledge of this
+ * site's configured $CFG->wwwroot, neither of which could be verified
+ * without live access to the Moodle instance. Treat this as a known
+ * simplification, not a claim of full parity with the official app's
+ * validation.
+ */
+export const parseMoodleSsoCallback = (rawCallback: string): string | null => {
+    let decoded = rawCallback;
+    try { decoded = decodeURIComponent(rawCallback); } catch { /* fall through with the raw value */ }
+
+    const marker = '://token=';
+    const idx = decoded.indexOf(marker);
+    if (idx === -1) return null;
+    const apptoken = decoded.slice(idx + marker.length).trim();
+    if (!apptoken) return null;
+
+    let raw: string;
+    try { raw = atob(apptoken); } catch { return null; }
+    // "<siteid>:::<wstoken>[:::<privatetoken>]"
+    const wstoken = raw.split(':::')[1];
+    if (!wstoken) return null;
+
+    try {
+        const sentAt = Number((localStorage.getItem(MOODLE_SSO_PASSPORT_KEY) || '').split('-')[0]);
+        localStorage.removeItem(MOODLE_SSO_PASSPORT_KEY);
+        if (!sentAt || Date.now() - sentAt > MOODLE_SSO_PASSPORT_TTL_MS) {
+            console.warn('[MoodleService] SSO callback arrived without a matching recent launch — accepting the token anyway, but this is worth a look if it keeps happening.');
+        }
+    } catch { /* non-fatal — the staleness check is best-effort */ }
+
+    return wstoken;
 };
 
 export const testMoodleConnection = async (token: string): Promise<boolean> => {

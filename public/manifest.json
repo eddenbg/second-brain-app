@@ -47,6 +47,12 @@
       ]
     }
   },
+  "protocol_handlers": [
+    {
+      "protocol": "web+secondbrain",
+      "url": "/?moodle_sso=%s"
+    }
+  ],
   "prefer_related_applications": false,
   "screenshots": [
     {
