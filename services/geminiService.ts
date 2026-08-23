@@ -1,12 +1,26 @@
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 
-const UNAVAILABLE_ERROR_MESSAGE = "AI features are currently unavailable. The API key may not be configured.";
+export const UNAVAILABLE_ERROR_MESSAGE = "AI features are currently unavailable. The API key may not be configured.";
+// Distinguishable from other failure text (see UNAVAILABLE_ERROR_MESSAGE and the
+// generic catch-all below) so callers that care — e.g. WebClipListenButtons in
+// PersonalView.tsx — can tell "the model hung and we gave up" apart from "the
+// model answered but the answer wasn't useful" and show a real error state
+// instead of quietly speaking/displaying this sentence as if it were content.
+export const AI_TIMEOUT_ERROR_MESSAGE = "That took too long to generate — please try again.";
 
 let geminiInstance: GoogleGenAI | null = null;
 
 export const getGeminiInstance = (): GoogleGenAI | null => {
     if (geminiInstance) return geminiInstance;
-    const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY;
+    // utils/gemini.ts (used by Recorder.tsx's live transcription) checks
+    // localStorage['gemini_api_key'] before the build-time env var; this copy
+    // didn't, which would silently degrade every other Gemini feature (TTS,
+    // summarization, vision/OCR, My Belongings AI-generate) relative to live
+    // transcription the moment a Settings UI exists to set that key. Matching
+    // the precedence now so the two can't drift again.
+    const apiKey = (typeof localStorage !== 'undefined' && localStorage.getItem('gemini_api_key'))
+        || process.env.API_KEY
+        || (import.meta as any).env?.VITE_API_KEY;
     if (!apiKey) return null;
     geminiInstance = new GoogleGenAI({ apiKey });
     return geminiInstance;
@@ -14,16 +28,30 @@ export const getGeminiInstance = (): GoogleGenAI | null => {
 
 const model = 'gemini-2.5-flash';
 
+const QA_TIMEOUT_MS = 15000;
+
 export async function askQuestion(question: string, context: string): Promise<string> {
     const ai = getGeminiInstance();
     if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
     try {
-        const response = await ai.models.generateContent({
-            model,
-            contents: `Context:\n${context.substring(0, 50000)}\n\nQuestion: ${question}`,
-        });
+        // Same class of bug as generateSpeechFromText below: the SDK call has no
+        // timeout of its own, so a slow/hung response left any caller awaiting
+        // this (e.g. WebClipListenButtons' "Play Gist", which summarizes via
+        // this function before it can even start generating audio) stuck
+        // forever with no rejection to catch. Race it so the caller always
+        // gets a result within a bounded time.
+        const response = await Promise.race([
+            ai.models.generateContent({
+                model,
+                contents: `Context:\n${context.substring(0, 50000)}\n\nQuestion: ${question}`,
+            }),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('QA_TIMEOUT')), QA_TIMEOUT_MS)),
+        ]);
         return response.text ?? "I couldn't find an answer.";
-    } catch (error) { return "I encountered an error while processing your question."; }
+    } catch (error: any) {
+        if (error?.message === 'QA_TIMEOUT') return AI_TIMEOUT_ERROR_MESSAGE;
+        return "I encountered an error while processing your question.";
+    }
 }
 
 export async function generateTitleForContent(content: string): Promise<string> {
@@ -104,7 +132,14 @@ export async function chatWithMemories(
     } catch (error) { return 'I encountered an error. Please try again.'; }
 }
 
-const TTS_TIMEOUT_MS = 30000;
+// Was 30s. That's still a long time to stare at a bare spinner even with a
+// bound on it, and it stacks with whatever fetch/summarize step ran before
+// this (e.g. WebClipListenButtons fetching the article, then summarizing it,
+// then finally reaching this call) — so it's tightened to 20s here, and the
+// callers most exposed to the stacking (WebClipListenButtons) additionally
+// show a progressive "Fetching…" / "Summarizing…" / "Generating audio…"
+// status and an overall dead-man's-switch on top of this.
+const TTS_TIMEOUT_MS = 20000;
 
 export async function generateSpeechFromText(text: string): Promise<string | null> {
     const ai = getGeminiInstance();
@@ -141,6 +176,41 @@ export async function extractTextFromImage(base64Data: string, mimeType: string)
         });
         return response.text ?? "No text found.";
     } catch (error) { return "Error extracting text."; }
+}
+
+export async function generateItemDetailsFromImage(base64Data: string, mimeType: string): Promise<{ title: string; description: string }> {
+    const ai = getGeminiInstance();
+    if (!ai) return { title: 'Untitled', description: '' };
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: {
+                parts: [
+                    { inlineData: { mimeType, data: base64Data } },
+                    { text: `Look at this photo/video frame of a physical object or item. Return a short, descriptive title (max 8 words) and a one-to-two sentence description covering what it is, notable features (color, brand, condition), and its location if visible or inferable. Hebrew is the default and primary language for any visible text — when text is ambiguous, read it as Hebrew rather than English.` }
+                ]
+            },
+            config: {
+                responseMimeType: 'application/json',
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        title: { type: Type.STRING },
+                        description: { type: Type.STRING },
+                    },
+                    required: ['title', 'description'],
+                },
+            },
+        });
+        const parsed = JSON.parse(response.text || '{}');
+        return {
+            title: (parsed.title || 'Untitled').toString().trim(),
+            description: (parsed.description || '').toString().trim(),
+        };
+    } catch (error) {
+        console.error('Error generating item details from image:', error);
+        return { title: 'Untitled', description: '' };
+    }
 }
 
 export async function analyzeVoiceNote(content: string): Promise<{ title: string; actionItems: string[] }> {

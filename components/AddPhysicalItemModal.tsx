@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { generateTitleForContent } from '../services/geminiService';
+import { generateTitleForContent, generateItemDetailsFromImage } from '../services/geminiService';
 import type { PhysicalItemMemory, VideoItemMemory, AnyMemory } from '../types';
 import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon, Loader2Icon } from './Icons';
 import { Image } from 'lucide-react';
@@ -17,6 +17,49 @@ interface AddPhysicalItemModalProps {
 }
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB limit for videos and images
+
+// Splits a "data:<mime>;base64,<data>" URL into its parts, e.g. to feed
+// inlineData to Gemini. Falls back to image/jpeg if the URL is malformed.
+const parseDataUrl = (dataUrl: string): { mimeType: string; data: string } => {
+    const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]*)$/);
+    return match ? { mimeType: match[1], data: match[2] } : { mimeType: 'image/jpeg', data: '' };
+};
+
+// Grabs a single JPEG frame from a recorded video's data URL, for feeding
+// to Gemini vision when there's no typed/spoken description to work from.
+// Returns null (rather than throwing) on any failure so callers can fall
+// back gracefully.
+const captureVideoFrame = (videoUrl: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        let settled = false;
+        const timeoutId = window.setTimeout(() => finish(null), 8000);
+        function finish(result: string | null) {
+            if (settled) return;
+            settled = true;
+            window.clearTimeout(timeoutId);
+            video.remove();
+            resolve(result);
+        }
+        video.onloadeddata = () => {
+            if (!video.videoWidth || !video.videoHeight) { finish(null); return; }
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { finish(null); return; }
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            finish(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        video.onerror = () => finish(null);
+        video.src = videoUrl;
+    });
+};
+
+const formatFallbackTitle = () => `Item — ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
 const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, onSave }) => {
     const [mode, setMode] = useState<'photo' | 'video'>('photo');
@@ -211,36 +254,85 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
     };
 
     const handleGenerateTitle = async () => {
+        setError(null);
         const content = description || transcript;
-        if (!content.trim()) return;
         setIsGeneratingTitle(true);
-        setTitle(await generateTitleForContent(content));
-        setIsGeneratingTitle(false);
+        try {
+            if (content.trim()) {
+                // User typed a description or spoke a voice note during recording —
+                // use that as the source text, same as before.
+                setTitle(await generateTitleForContent(content));
+                if (!description.trim() && transcript.trim()) {
+                    setDescription(transcript.trim());
+                }
+                return;
+            }
+
+            // No text to work from: generate title + description straight from
+            // the photographed/filmed item itself. This is the common case for
+            // a camera-first flow — point camera at object, tap the brain icon.
+            let frameDataUrl: string | null = null;
+            if (mode === 'photo' && imageDataUrl) {
+                frameDataUrl = imageDataUrl;
+            } else if (mode === 'video' && videoDataUrl) {
+                frameDataUrl = await captureVideoFrame(videoDataUrl);
+                if (!frameDataUrl) {
+                    setError("Couldn't grab a frame from the video to analyze. Type a short description instead, then tap the brain icon again, or just tap Save.");
+                    return;
+                }
+            }
+
+            if (!frameDataUrl) {
+                setError('Take a photo or record a video first — or type a description — then tap the brain icon.');
+                return;
+            }
+
+            const { mimeType, data } = parseDataUrl(frameDataUrl);
+            if (!data) {
+                setError('Could not read the captured image. Please retake the photo or video.');
+                return;
+            }
+            const details = await generateItemDetailsFromImage(data, mimeType);
+            setTitle(details.title);
+            if (!description.trim() && details.description) {
+                setDescription(details.description);
+            }
+            if (details.title === 'Untitled' && !details.description) {
+                setError('AI generation failed (check your connection or API key in Settings → AI Features). You can still type a title and Save.');
+            }
+        } finally {
+            setIsGeneratingTitle(false);
+        }
     }
 
     const handleSave = async () => {
-        const hasMedia = imageDataUrl || videoDataUrl;
-        if (!hasMedia || !title.trim()) return;
-        
+        const hasMedia = (mode === 'photo' && !!imageDataUrl) || (mode === 'video' && !!videoDataUrl);
+        if (!hasMedia) return;
+
+        // Never hard-block Save on a missing title — if AI generation was never
+        // run, failed (no network/API key), or was skipped, fall back to a
+        // sensible default rather than leaving the user stuck.
+        const finalTitle = title.trim() || formatFallbackTitle();
+
         const location = await getCurrentLocation();
         const tagList = tags.split(',').map(t => t.trim()).filter(Boolean);
-        
+
         if (mode === 'video' && videoDataUrl) {
             const newMemory: Omit<VideoItemMemory, 'id' | 'date' | 'category'> = {
-                type: 'video', title, description,
+                type: 'video', title: finalTitle, description,
                 videoDataUrl, transcript, structuredTranscript, ...(location && { location }), tags: tagList,
             };
             onSave(newMemory);
         } else if (mode === 'photo' && imageDataUrl) {
             const newMemory: Omit<PhysicalItemMemory, 'id' | 'date' | 'category'> = {
-                type: 'item', title, description,
+                type: 'item', title: finalTitle, description,
                 imageDataUrl, ...(location && { location }),
-                ...(voiceNote.trim() && { 
-                    voiceNote: { 
+                ...(voiceNote.trim() && {
+                    voiceNote: {
                         transcript: voiceNote.trim(),
                         audioDataUrl: audioDataUrl || undefined,
                         structuredTranscript: structuredTranscript.length > 0 ? structuredTranscript : undefined
-                    } 
+                    }
                 }),
                 tags: tagList,
             };
@@ -248,8 +340,14 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         }
         onClose();
     };
-    
-    const isSaveDisabled = !title.trim() || (mode === 'photo' && !imageDataUrl) || (mode === 'video' && !videoDataUrl);
+
+    const isSaveDisabled = (mode === 'photo' && !imageDataUrl) || (mode === 'video' && !videoDataUrl);
+    const canGenerateTitle = !isGeneratingTitle && (
+        (mode === 'photo' && !!imageDataUrl) ||
+        (mode === 'video' && !!videoDataUrl) ||
+        !!description.trim() ||
+        !!transcript.trim()
+    );
 
     return (
         <div className="fixed inset-0 bg-black/90 flex flex-col justify-center items-center z-[120] p-4">
@@ -257,9 +355,11 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                 <header className="flex justify-between items-center p-6 border-b-4 border-gray-700 shrink-0 bg-gray-800">
                     <h2 className="text-xl font-black text-white flex items-center gap-3 uppercase"><CameraIcon className="w-8 h-8"/> Item</h2>
                     <div className="flex items-center gap-3">
-                        <button 
-                            onClick={handleSave} 
-                            disabled={isSaveDisabled} 
+                        <button
+                            onClick={handleSave}
+                            disabled={isSaveDisabled}
+                            aria-label={isSaveDisabled ? `Save is disabled: capture or choose a ${mode} first` : 'Save item'}
+                            title={isSaveDisabled ? `Capture or choose a ${mode} first to enable Save` : 'Save item'}
                             className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white font-black rounded-xl text-sm uppercase shadow-xl disabled:bg-gray-700 active:scale-95 transition-all"
                         >
                             <SaveIcon className="w-5 h-5"/> SAVE
@@ -327,7 +427,13 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                             <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Title</label>
                              <div className="flex gap-2">
                                <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="flex-grow bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
-                               <button onClick={handleGenerateTitle} disabled={isGeneratingTitle || (!description.trim() && !transcript.trim())} className="p-4 bg-purple-600 text-white rounded-2xl disabled:bg-gray-700 shadow-lg active:scale-95 transition-all">
+                               <button
+                                   onClick={handleGenerateTitle}
+                                   disabled={!canGenerateTitle}
+                                   aria-label={isGeneratingTitle ? 'Generating title and description' : canGenerateTitle ? 'Generate title and description with AI' : `Capture a ${mode} first, or type a description, to enable AI generation`}
+                                   title={isGeneratingTitle ? 'Generating…' : canGenerateTitle ? 'Generate title and description with AI' : `Capture a ${mode} first, or type a description`}
+                                   className="p-4 bg-purple-600 text-white rounded-2xl disabled:bg-gray-700 shadow-lg active:scale-95 transition-all"
+                               >
                                    {isGeneratingTitle ? <Loader2Icon className="w-6 h-6 animate-spin"/> : <BrainCircuitIcon className="w-6 h-6"/>}
                                </button>
                             </div>
