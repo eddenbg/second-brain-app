@@ -12,7 +12,7 @@ import ConfirmationModal from './components/ConfirmationModal';
 import OfflineBanner from './components/OfflineBanner';
 import { useRecordings } from './hooks/useRecordings';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
-import { fetchMoodleEvents } from './services/moodleService';
+import { fetchMoodleEvents, parseMoodleSsoCallback } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { extractUrlContent } from './services/urlContentService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
@@ -229,9 +229,12 @@ function App() {
           client_secret: getStoredNotionClientSecret(),
         }),
       })
-        .then(r => r.json())
-        .then(data => {
-          if (data.access_token) {
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          return { ok: r.ok, status: r.status, data };
+        })
+        .then(({ ok, status, data }) => {
+          if (ok && data.access_token) {
             saveNotionToken(data.access_token);
             syncNotionToken(data.access_token);
             // If this is running in a popup opened by the main app, send the
@@ -248,14 +251,51 @@ function App() {
             }
             showToast('Notion connected!', 4000);
           } else {
-            showToast('Notion connection failed. Try again.', 5000);
+            // Surface the real reason instead of a dead-end generic message —
+            // this previously failed silently (from the user's perspective)
+            // when the client_id used to build the auth URL didn't match the
+            // one this exchange used, and only a vague toast was shown.
+            const detail = typeof data?.error === 'string'
+              ? data.error
+              : data?.error
+                ? JSON.stringify(data.error)
+                : `HTTP ${status}`;
+            console.error('Notion OAuth exchange failed:', status, data);
+            showToast(`Notion connection failed: ${detail}`, 8000);
           }
         })
-        .catch(() => {
-          showToast('Notion connection failed. Try again.', 5000);
+        .catch((err) => {
+          console.error('Notion OAuth exchange error:', err);
+          showToast(`Notion connection failed: ${err?.message || 'network error'}`, 8000);
         });
     }
   }, []);
+
+  // Moodle "Sign in with Moodle" SSO callback: ?moodle_sso=<encoded web+secondbrain://token=... URI>
+  //
+  // Unlike the Notion/Google flows above, this app never talks to a Moodle
+  // OAuth-style exchange endpoint — the token arrives already baked into the
+  // redirect URL by Moodle's own admin/tool/mobile/launch.php. The PWA
+  // registers `web+secondbrain` as a Protocol Handler (see
+  // public/manifest.json's `protocol_handlers`), which is what turns that
+  // custom-scheme redirect into this `?moodle_sso=...` query param landing
+  // back on this app. See services/moodleService.ts (buildMoodleSsoLaunchUrl /
+  // parseMoodleSsoCallback) and SettingsModal's Moodle section for the rest
+  // of the flow.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('moodle_sso');
+    if (!raw) return;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    const token = parseMoodleSsoCallback(raw);
+    if (token) {
+      saveMoodleToken(token);
+      showToast('Moodle connected!', 4000);
+    } else {
+      console.error('Moodle SSO callback did not contain a usable token:', raw);
+      showToast('Moodle sign-in failed. Please try again from Settings.', 6000);
+    }
+  }, [saveMoodleToken, showToast]);
 
   // Step 1: capture share params immediately on mount and clear the URL
   // (must run before auth resolves so params aren't lost when handleProcessShare re-renders)

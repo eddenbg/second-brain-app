@@ -4,7 +4,7 @@ import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon, PlusCircleIcon
 } from './Icons';
 import { Calendar } from 'lucide-react';
-import { testMoodleConnection, loginWithCredentials } from '../services/moodleService';
+import { testMoodleConnection, buildMoodleSsoLaunchUrl, parseMoodleSsoCallback } from '../services/moodleService';
 import {
     disconnectGoogleCalendar,
     getStoredToken,
@@ -106,10 +106,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         return () => document.removeEventListener('visibilitychange', onVisible);
     }, []);
     const [signInError, setSignInError] = useState<string | null>(null);
-    const [moodleUsername, setMoodleUsername] = useState('');
-    const [moodlePassword, setMoodlePassword] = useState('');
-    const [isLoggingIn, setIsLoggingIn] = useState(false);
-    const [moodleLoginError, setMoodleLoginError] = useState<string | null>(null);
+    const [isRedirectingToMoodle, setIsRedirectingToMoodle] = useState(false);
+    // Fallback for when the automatic web+secondbrain:// handoff doesn't fire
+    // (browser/OS without Protocol Handler support, or the PWA wasn't
+    // installed from Chrome — see public/manifest.json's protocol_handlers
+    // and services/moodleService.ts for the full flow). Lets someone paste
+    // the URL Moodle tried to redirect to by hand instead of retyping a
+    // password into this app.
+    const [showMoodleManualPaste, setShowMoodleManualPaste] = useState(false);
+    const [moodleManualInput, setMoodleManualInput] = useState('');
+    const [moodleManualError, setMoodleManualError] = useState<string | null>(null);
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
     const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
@@ -186,22 +192,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         return () => clearTimeout(timer);
     }, [isGoogleConnected, isSigningIn, onClose]);
 
-    const handleMoodleLogin = async () => {
-        const u = moodleUsername.trim();
-        const p = moodlePassword.trim();
-        if (!u || !p) { setMoodleLoginError('Enter your Moodle username and password.'); return; }
-        setIsLoggingIn(true);
-        setMoodleLoginError(null);
-        try {
-            const token = await loginWithCredentials(u, p);
-            onSaveMoodleToken(token);
-            setMoodleUsername('');
-            setMoodlePassword('');
-        } catch (e: any) {
-            setMoodleLoginError(e.message || 'Login failed. Check your username and password.');
-        } finally {
-            setIsLoggingIn(false);
+    // Sends the whole window to Moodle's own real login page — this has to be
+    // a full top-level navigation (not a fetch/popup/iframe) so Moodle's own
+    // auth method actually runs. Moodle redirects back to
+    // `web+secondbrain://token=...` when done, which the PWA's registered
+    // Protocol Handler hands to App.tsx's Moodle SSO callback effect as
+    // `?moodle_sso=...` — that's what actually calls onSaveMoodleToken, not
+    // this handler (this component doesn't survive the navigation away).
+    const handleMoodleSsoSignIn = () => {
+        setIsRedirectingToMoodle(true);
+        window.location.href = buildMoodleSsoLaunchUrl();
+    };
+
+    const handleMoodleManualPaste = () => {
+        const val = moodleManualInput.trim();
+        if (!val) return;
+        const token = parseMoodleSsoCallback(val);
+        if (!token) {
+            setMoodleManualError("That doesn't look like the link Moodle redirected to.");
+            return;
         }
+        onSaveMoodleToken(token);
+        setMoodleManualInput('');
+        setMoodleManualError(null);
+        setShowMoodleManualPaste(false);
     };
 
     const handleDisconnectGoogle = () => {
@@ -284,11 +298,36 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const driveState: GoogleServiceState =
         isDriveConnected ? 'connected' : isSignedIn ? 'needs-refresh' : 'signed-out';
 
-    // Recomputed when credentials are saved (notionCredsSaved), since the stored
-    // value lives in localStorage and would not otherwise trigger a re-render.
+    // The app's default Notion client ID (used when the user hasn't manually
+    // entered their own in "Set up Notion sign-in"). This used to come from
+    // process.env.NOTION_CLIENT_ID, a value Vite bakes into the client bundle
+    // at BUILD time — a completely different resolution context than the
+    // Netlify function's own process.env.NOTION_CLIENT_ID read live at
+    // invocation time, which is what actually performs the token exchange in
+    // App.tsx. Those two could silently drift (e.g. the env var rotated in
+    // the Netlify dashboard without a fresh deploy), so the auth URL got built
+    // with one client_id while the exchange used another — Notion silently
+    // rejects that. Fetching it from notionOAuth's own GET here makes the
+    // function's live env var the single source of truth for both steps.
+    const [serverNotionClientId, setServerNotionClientId] = useState<string | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/.netlify/functions/notionOAuth')
+            .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+            .then(data => { if (!cancelled) setServerNotionClientId(data.clientId || ''); })
+            .catch(() => { if (!cancelled) setServerNotionClientId(null); });
+        return () => { cancelled = true; };
+    }, []);
+
+    // Recomputed when credentials are saved (notionCredsSaved) or the live
+    // server value arrives, since getStoredNotionClientId() reads localStorage
+    // directly and would not otherwise trigger a re-render. process.env
+    // remains only as a last-resort fallback if the GET above fails (e.g.
+    // offline) — falling back keeps the button available, at the cost of
+    // reintroducing the build/runtime skew this is meant to avoid.
     const effectiveNotionClientId = useMemo(
-        () => getStoredNotionClientId() || process.env.NOTION_CLIENT_ID || '',
-        [notionCredsSaved]
+        () => getStoredNotionClientId() || serverNotionClientId || process.env.NOTION_CLIENT_ID || '',
+        [notionCredsSaved, serverNotionClientId]
     );
 
     // Torn down when the popup finishes, gives up, or this modal unmounts.
@@ -903,34 +942,54 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </button>
                             ) : (
                                 <div className="space-y-3 mt-3">
-                                    <input
-                                        type="text"
-                                        value={moodleUsername}
-                                        onChange={e => setMoodleUsername(e.target.value)}
-                                        placeholder="שם משתמש במודל"
-                                        autoComplete="username"
-                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white text-sm"
-                                        aria-label="Moodle username"
-                                    />
-                                    <input
-                                        type="password"
-                                        value={moodlePassword}
-                                        onChange={e => setMoodlePassword(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && handleMoodleLogin()}
-                                        placeholder="סיסמה"
-                                        autoComplete="current-password"
-                                        className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white text-sm"
-                                        aria-label="Moodle password"
-                                    />
-                                    {moodleLoginError && <p className="text-red-400 text-xs text-center font-bold">{moodleLoginError}</p>}
                                     <button
-                                        onClick={handleMoodleLogin}
-                                        disabled={isLoggingIn}
-                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase flex items-center justify-center gap-2 ${isLoggingIn ? 'bg-gray-600' : 'bg-green-600'} text-white`}
+                                        onClick={handleMoodleSsoSignIn}
+                                        disabled={isRedirectingToMoodle}
+                                        className={`w-full py-3 rounded-lg font-bold text-xs uppercase flex items-center justify-center gap-2 ${isRedirectingToMoodle ? 'bg-gray-600' : 'bg-green-600'} text-white`}
                                     >
-                                        {isLoggingIn && <Loader2Icon className="w-4 h-4 animate-spin" />}
-                                        {isLoggingIn ? 'Connecting...' : 'Connect with Moodle Login'}
+                                        {isRedirectingToMoodle && <Loader2Icon className="w-4 h-4 animate-spin" />}
+                                        {isRedirectingToMoodle ? 'Opening Moodle…' : 'Sign in with Moodle'}
                                     </button>
+                                    <p className="text-gray-500 font-bold text-[10px] text-center leading-relaxed">
+                                        Opens Moodle's own dyellin sign-in page. Your password never passes through this app.
+                                    </p>
+
+                                    {!showMoodleManualPaste ? (
+                                        <button
+                                            onClick={() => setShowMoodleManualPaste(true)}
+                                            className="w-full py-3 rounded-2xl font-black text-xs uppercase text-gray-400 border-2 border-gray-700 active:scale-95"
+                                        >
+                                            Didn't come back to the app automatically?
+                                        </button>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <p className="text-gray-500 font-bold text-[10px] leading-relaxed">
+                                                Paste the link Moodle tried to redirect to (starts with web+secondbrain://) below.
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={moodleManualInput}
+                                                    onChange={e => setMoodleManualInput(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && handleMoodleManualPaste()}
+                                                    placeholder="web+secondbrain://token=..."
+                                                    className="flex-grow bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
+                                                    style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
+                                                    aria-label="Moodle SSO redirect link"
+                                                    autoFocus
+                                                />
+                                                <button
+                                                    onClick={handleMoodleManualPaste}
+                                                    disabled={!moodleManualInput.trim()}
+                                                    className="px-5 py-3 bg-green-600 text-white rounded-2xl font-black text-xs uppercase disabled:opacity-40 active:scale-95 whitespace-nowrap"
+                                                    style={{ minHeight: 'unset' }}
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                            {moodleManualError && <p className="text-red-400 text-xs text-center font-bold">{moodleManualError}</p>}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
