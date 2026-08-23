@@ -5,12 +5,12 @@ import { PenToolIcon, EraserIcon, FilePlusIcon, TrashIcon, XIcon, CheckIcon, Loa
 import ConfirmationModal from './ConfirmationModal';
 import { extractHandwritingFromImage } from '../services/geminiService';
 
-/** A dashed lasso loop with a hanging rope end. The circle tool renders '⭕',
- *  so the lasso must not read as "a round outline" at a glance. */
+/** A dashed lasso loop with a hanging rope end, distinct from a plain round
+ *  outline at a glance. */
 const LassoGlyph: React.FC = () => (
     <svg
-        width="36"
-        height="36"
+        width="44"
+        height="44"
         viewBox="0 0 20 20"
         fill="none"
         stroke="currentColor"
@@ -28,15 +28,36 @@ const LassoGlyph: React.FC = () => (
 /** Shared sizing for every toolbar button: a large square tap target with a
  *  large glyph inside it. The user is legally blind and reported the previous
  *  small square buttons (~32px) as much too hard to see — this roughly
- *  quadruples the tap target and glyph size. There is plenty of unused
- *  horizontal room above the canvas on a tablet, so this does not risk
- *  wrapping to a second row or overflowing a ~2000px-wide landscape screen. */
-const TOOLBAR_BUTTON_SIZE = 'w-20 h-20 flex items-center justify-center text-4xl shrink-0';
+ *  quadruples the tap target. There is plenty of unused horizontal room above
+ *  the canvas on a tablet, so this does not risk wrapping to a second row or
+ *  overflowing a ~2000px-wide landscape screen.
+ *
+ *  `text-5xl` sizes the text/emoji glyphs (Undo/Redo's ↶ ↷); it was bumped up
+ *  from `text-4xl` (36px -> 48px) after further feedback that the button
+ *  backgrounds were big enough but the glyph drawn on top of them still read
+ *  too small. The SVG tool icons (pen, eraser, lasso) are sized directly via
+ *  their own width/height props instead, since an SVG's size isn't driven by
+ *  font-size. */
+const TOOLBAR_BUTTON_SIZE = 'w-20 h-20 flex items-center justify-center text-5xl shrink-0';
+/** Explicit pixel size for the SVG tool icons inside a TOOLBAR_BUTTON_SIZE
+ *  button — deliberately close to the button's own 80px so the glyph reads
+ *  as bold and unmissable rather than lost in the middle of the tap target. */
+const TOOLBAR_SVG_ICON_SIZE = 44;
 
 type Point2D = { x: number; y: number };
 
 const HOLD_SNAP_MS = 200;
 const HOLD_MOVE_TOLERANCE = 5; // CSS px the pen may drift and still count as "held"
+
+/**
+ * The CSS spec's own reference-pixel definition: 96px = 1 real inch,
+ * regardless of the device's actual physical density. Every coordinate this
+ * file works with — stroke points, the hold-tolerance above, shape geometry
+ * below — is already in that same CSS-pixel space (see getPos()'s note on
+ * why devicePixelRatio must NOT be reapplied to it), so this conversion is a
+ * real cm-to-px estimate with no extra dpr factor needed.
+ */
+const CSS_PX_PER_CM = 96 / 2.54; // ~37.8 CSS px per centimeter
 
 /** extractHandwritingFromImage resolves with a sentinel string instead of
  *  throwing, so a failure has to be recognised from the returned text. */
@@ -119,7 +140,17 @@ const recognizeShape = (points: Point2D[]): Point2D[] | null => {
     const gap = Math.hypot(last.x - first.x, last.y - first.y);
     const traced = pathLength(points);
 
-    if (gap > diagonal * 0.25) {
+    // How far the stroke's end point may land from its start and still count
+    // as "closed". A quarter of the shape's own diagonal is generous for a
+    // large shape, but for a smaller one (e.g. a hand-sized triangle) that
+    // quarter-diagonal can shrink to well under a centimeter, which is what
+    // user testing reported as needing near-pixel-perfect precision to close.
+    // Flooring it at ~1cm guarantees a real fingertip's worth of slack no
+    // matter how small the shape is, while the relative term still grows the
+    // allowance further for bigger shapes.
+    const closeTolerance = Math.max(diagonal * 0.25, CSS_PX_PER_CM);
+
+    if (gap > closeTolerance) {
         // Open stroke: only a straight line qualifies, and it must not wander
         // off its own chord or double back on itself.
         const deviation = points.reduce((worst, p) => Math.max(worst, perpendicularDistance(p, first, last)), 0);
@@ -190,7 +221,7 @@ interface LectureNotebookProps {
 
 const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData, startTime, isRecording, courseMaterials }) => {
     const [strokes, setStrokes] = useState<DrawingStroke[]>(initialData?.strokes || []);
-    const [tool, setTool] = useState<'pen' | 'eraser' | 'lasso' | 'rectangle' | 'circle' | 'line'>('pen');
+    const [tool, setTool] = useState<'pen' | 'eraser' | 'lasso'>('pen');
     const [showMaterialPicker, setShowMaterialPicker] = useState(false);
     const [bgImage, setBgImage] = useState<string | undefined>(initialData?.backgroundImageUrl);
     const [extractedText, setExtractedText] = useState<string | null>(null);
@@ -210,26 +241,18 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const currentStrokeRef = useRef<DrawingStroke | null>(null);
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
     const eraserPositionsRef = useRef<{ x: number; y: number }[]>([]);
-    const shapeStartRef = useRef<{ x: number; y: number } | null>(null);
     const holdTimerRef = useRef<number | null>(null);
     const holdAnchorRef = useRef<{ x: number; y: number } | null>(null);
     const dprRef = useRef(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
     const cssSizeRef = useRef({ width: 0, height: 0 });
     // Lets the resize handler repaint without depending on state it cannot see.
     const redrawAllRef = useRef<(() => void) | null>(null);
-    const SNAP_GRID = 10; // Snap to 10px grid
 
     // Fixed white color for better contrast against blue background
     const PEN_COLOR = '#FFFFFF';
     const PEN_WIDTH = 3;
     const ERASER_WIDTH = 20;
     const LASSO_COLOR = '#FBBF24';
-    const SHAPE_COLOR = '#FFFFFF';
-    const SHAPE_WIDTH = 2;
-
-    const snapToGrid = (value: number, gridSize: number = SNAP_GRID): number => {
-        return Math.round(value / gridSize) * gridSize;
-    };
 
     // Sync notebook data with parent
     useEffect(() => {
@@ -440,8 +463,6 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             lassoPointsRef.current = [pos];
         } else if (tool === 'eraser') {
             eraserPositionsRef.current = [pos];
-        } else if (['rectangle', 'circle', 'line'].includes(tool)) {
-            shapeStartRef.current = { x: snapToGrid(pos.x), y: snapToGrid(pos.y) };
         } else {
             currentStrokeRef.current = {
                 color: PEN_COLOR,
@@ -460,55 +481,6 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             }
 
             armHoldSnap(pos);
-        }
-    };
-
-    const drawShapePreview = (startPos: { x: number; y: number }, endPos: { x: number; y: number }, shapeType: string) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Redraw everything first. Clear in device space so the whole backing
-        // store is wiped, then return to the CSS-pixel transform used for drawing.
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.setTransform(dprRef.current, 0, 0, dprRef.current, 0, 0);
-        strokes.forEach(stroke => {
-            ctx.beginPath();
-            ctx.strokeStyle = stroke.color;
-            ctx.lineWidth = stroke.width;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            stroke.points.forEach((p, i) => {
-                if (i === 0) ctx.moveTo(p.x, p.y);
-                else ctx.lineTo(p.x, p.y);
-            });
-            ctx.stroke();
-        });
-
-        // Draw shape preview
-        const snapX = snapToGrid(endPos.x);
-        const snapY = snapToGrid(endPos.y);
-        const width = snapX - startPos.x;
-        const height = snapY - startPos.y;
-
-        ctx.strokeStyle = SHAPE_COLOR;
-        ctx.lineWidth = SHAPE_WIDTH;
-
-        if (shapeType === 'rectangle') {
-            ctx.strokeRect(startPos.x, startPos.y, width, height);
-        } else if (shapeType === 'circle') {
-            const radius = Math.sqrt(width * width + height * height) / 2;
-            ctx.beginPath();
-            ctx.arc(startPos.x + width / 2, startPos.y + height / 2, radius, 0, 2 * Math.PI);
-            ctx.stroke();
-        } else if (shapeType === 'line') {
-            ctx.beginPath();
-            ctx.moveTo(startPos.x, startPos.y);
-            ctx.lineTo(snapX, snapY);
-            ctx.stroke();
         }
     };
 
@@ -535,8 +507,6 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             }
         } else if (tool === 'eraser') {
             eraserPositionsRef.current.push(pos);
-        } else if (['rectangle', 'circle', 'line'].includes(tool) && shapeStartRef.current) {
-            drawShapePreview(shapeStartRef.current, pos, tool);
         } else if (currentStrokeRef.current) {
             currentStrokeRef.current.points.push({ ...pos, t: timestamp });
             const ctx = canvasRef.current.getContext('2d');
@@ -589,63 +559,6 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 return updated;
             });
             eraserPositionsRef.current = [];
-        } else if (['rectangle', 'circle', 'line'].includes(tool) && shapeStartRef.current && e) {
-            // Create shape stroke
-            const endPos = getPos(e);
-            const snapX = snapToGrid(endPos.x);
-            const snapY = snapToGrid(endPos.y);
-            const startPos = shapeStartRef.current;
-            const timestamp = Date.now() - startTime;
-
-            let shapePoints: StrokePoint[] = [];
-
-            if (tool === 'rectangle') {
-                // Create rectangle outline as points
-                shapePoints = [
-                    { x: startPos.x, y: startPos.y, t: timestamp },
-                    { x: snapX, y: startPos.y, t: timestamp },
-                    { x: snapX, y: snapY, t: timestamp },
-                    { x: startPos.x, y: snapY, t: timestamp },
-                    { x: startPos.x, y: startPos.y, t: timestamp }
-                ];
-            } else if (tool === 'circle') {
-                // Create circle as points
-                const centerX = startPos.x + (snapX - startPos.x) / 2;
-                const centerY = startPos.y + (snapY - startPos.y) / 2;
-                const radius = Math.sqrt(
-                    Math.pow(snapX - startPos.x, 2) + Math.pow(snapY - startPos.y, 2)
-                ) / 2;
-                for (let i = 0; i <= 360; i += 10) {
-                    const angle = (i * Math.PI) / 180;
-                    shapePoints.push({
-                        x: centerX + radius * Math.cos(angle),
-                        y: centerY + radius * Math.sin(angle),
-                        t: timestamp
-                    });
-                }
-            } else if (tool === 'line') {
-                shapePoints = [
-                    { x: startPos.x, y: startPos.y, t: timestamp },
-                    { x: snapX, y: snapY, t: timestamp }
-                ];
-            }
-
-            if (shapePoints.length > 0) {
-                const newStroke: DrawingStroke = {
-                    color: SHAPE_COLOR,
-                    width: SHAPE_WIDTH,
-                    points: shapePoints
-                };
-
-                setStrokes(prev => {
-                    const newStrokes = [...prev, newStroke];
-                    setRedoStack([]);
-                    setUndoStack(undoStack => [...undoStack, prev]);
-                    return newStrokes;
-                });
-            }
-
-            shapeStartRef.current = null;
         } else if (currentStrokeRef.current) {
             setStrokes(prev => {
                 const newStrokes = [...prev, currentStrokeRef.current!];
@@ -785,17 +698,32 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 return;
             }
 
-            // Add text annotation at the selected area (replace handwriting)
+            // Place the converted text clear of the original handwriting rather
+            // than on top of it. This used to sit at minX / vertical-mid-selection
+            // — squarely inside the selection box, i.e. directly over the ink it
+            // was converted from, which read as overlapping garble rather than a
+            // new line of text. Prefer just below the selection (a fixed 30px gap,
+            // matching the same convention already used by convertLastStrokeToText
+            // above); if there isn't room below on this page, place it just above
+            // instead so it never lands off-canvas and invisible.
+            const TEXT_GAP = 30;
+            const belowFits = maxY + TEXT_GAP <= cssHeight - 10;
+            const textY = belowFits ? maxY + TEXT_GAP : Math.max(minY - TEXT_GAP, 10);
+
             setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
                 text,
                 x: minX,
-                y: minY + (maxY - minY) / 2,
+                y: textY,
                 id: Date.now().toString()
             }]);
 
-            // Clear the selected area and reset selection
+            // Clear the selected area and reset selection, and hand control back
+            // to the pen: staying on the lasso tool after a successful conversion
+            // was reported as a real usability problem — the user kept trying to
+            // write while still in select-mode because nothing switched them back.
             setHasLassoSelection(false);
             setLastLassoSelection(null);
+            setTool('pen');
         } catch (error) {
             console.error('Lasso conversion error:', error);
             alert(`Could not convert that selection: ${error instanceof Error ? error.message : 'unexpected error'}`);
@@ -852,7 +780,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     aria-label="Pen Tool"
                     title="Draw with pen"
                 >
-                    ✏️
+                    <PenToolIcon width={TOOLBAR_SVG_ICON_SIZE} height={TOOLBAR_SVG_ICON_SIZE} strokeWidth={2.25} />
                 </button>
                 <button
                     onClick={() => { setTool('eraser'); setHasLassoSelection(false); }}
@@ -862,54 +790,58 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     aria-label="Eraser Tool"
                     title="Erase"
                 >
-                    🧹
+                    {/* A broom emoji (🧹) previously sat here and read as "sweeping",
+                        not "erasing", to the user. This is the app's own established
+                        eraser icon (already used elsewhere, e.g. FilesView/StudyHub),
+                        so it also matches the rest of the app's icon style. */}
+                    <EraserIcon width={TOOLBAR_SVG_ICON_SIZE} height={TOOLBAR_SVG_ICON_SIZE} strokeWidth={2.25} />
                 </button>
 
-                {/* Shape Tools */}
-                <button
-                    onClick={() => { setTool('rectangle'); setHasLassoSelection(false); }}
-                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
-                        tool === 'rectangle' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                    }`}
-                    aria-label="Rectangle Tool"
-                    title="Draw rectangle (snaps to grid)"
-                >
-                    ⬜
-                </button>
-                <button
-                    onClick={() => { setTool('circle'); setHasLassoSelection(false); }}
-                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
-                        tool === 'circle' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                    }`}
-                    aria-label="Circle Tool"
-                    title="Draw circle (snaps to grid)"
-                >
-                    ⭕
-                </button>
-                <button
-                    onClick={() => { setTool('line'); setHasLassoSelection(false); }}
-                    className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
-                        tool === 'line' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                    }`}
-                    aria-label="Line Tool"
-                    title="Draw line (snaps to grid)"
-                >
-                    📏
-                </button>
+                {/* Shape tools (rectangle/circle/line) were removed: the hold-to-snap
+                    auto-detection above already recognises hand-drawn shapes, and the
+                    user asked for the extra dedicated buttons to go away entirely. */}
 
                 <button
-                    onClick={() => setTool('lasso')}
+                    onClick={() => {
+                        // While a lasso selection is active, tapping this same button
+                        // again performs the conversion — matching what its icon/label
+                        // now say. Previously this button's onClick was just
+                        // `setTool('lasso')` even in the "selected" state, so tapping it
+                        // silently did nothing while its own tooltip claimed it would
+                        // convert to text — a real source of the confusion reported.
+                        if (hasLassoSelection) {
+                            convertLassoAreaToText();
+                        } else {
+                            setTool('lasso');
+                        }
+                    }}
+                    disabled={hasLassoSelection && isExtracting}
                     className={`${TOOLBAR_BUTTON_SIZE} rounded-2xl transition-all ${
                         tool === 'lasso'
                             ? hasLassoSelection
                                 ? 'bg-green-600 text-white shadow-lg ring-2 ring-green-400'
                                 : 'bg-yellow-600 text-white shadow-lg ring-2 ring-yellow-400'
                             : 'bg-gray-700 text-gray-300 hover:bg-yellow-600/30 hover:text-yellow-400'
-                    }`}
+                    } disabled:opacity-60`}
                     aria-label={hasLassoSelection ? "Convert selection to text" : "Lasso Selection Tool - Convert handwriting to text"}
                     title={hasLassoSelection ? "Tap to convert selected handwriting to text" : "Draw lasso around handwriting to select"}
                 >
-                    {hasLassoSelection && tool === 'lasso' ? '📝' : <LassoGlyph />}
+                    {hasLassoSelection && tool === 'lasso' ? (
+                        // Replaces a bare 📝 emoji ("what does this note icon mean?")
+                        // with an icon + short readable label, per this user's vision
+                        // needs — a checkmark reads as "selection made", and the label
+                        // spells out what tapping again will do.
+                        isExtracting ? (
+                            <Loader2Icon className="w-9 h-9 animate-spin" />
+                        ) : (
+                            <span className="flex flex-col items-center justify-center gap-0.5 leading-none">
+                                <CheckIcon className="w-8 h-8" />
+                                <span className="text-[10px] font-black tracking-wide">TO TEXT</span>
+                            </span>
+                        )
+                    ) : (
+                        <LassoGlyph />
+                    )}
                 </button>
 
                 {/* Divider */}

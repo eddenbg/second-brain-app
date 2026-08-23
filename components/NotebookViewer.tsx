@@ -4,6 +4,21 @@ import type { NotebookData } from '../types';
 /** Fraction of the canvas kept clear on each side so nothing touches the edge. */
 const FIT_MARGIN = 0.04;
 
+/**
+ * Radius (rendered CSS px, i.e. what actually shows on screen — see the note
+ * at each call site on why dividing by `s.k` first cancels back out to this)
+ * a tap must land within to count as hitting a stroke.
+ *
+ * This used to be a bare `12`, which is a reasonable *mouse* click tolerance
+ * but reported as simply not registering taps on a real tablet: a 12px radius
+ * is a 24px-diameter target, well under the ~44-48px minimum most touch
+ * target guidelines call for, and this app's own reviewer already had to
+ * quadruple its toolbar buttons for the same reason. ~1cm (the CSS spec's own
+ * 96px-per-inch reference pixel, independent of devicePixelRatio) is a
+ * generous, well-justified stand-in for a fingertip's contact patch.
+ */
+const TOUCH_HIT_RADIUS_CSS_PX = 96 / 2.54; // ~37.8 CSS px (~1cm)
+
 interface NotebookViewerProps {
     notebook: NotebookData;
     /** Recorded audio for this notebook. Given this, the viewer renders its own
@@ -384,7 +399,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
     const detectHitStroke = (
         canvasX: number,
         canvasY: number,
-        hitDistance: number = 12
+        hitDistance: number = TOUCH_HIT_RADIUS_CSS_PX
     ): { timestamp: number; x: number; y: number } | null => {
         if (!notebook.strokes) return null;
 
@@ -421,7 +436,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
         const canvasX = ((e.clientX - rect.left) - s.dx) / s.k;
         const canvasY = ((e.clientY - rect.top) - s.dy) / s.k;
 
-        const hit = detectHitStroke(canvasX, canvasY, 12 / (s.k || 1));
+        const hit = detectHitStroke(canvasX, canvasY, TOUCH_HIT_RADIUS_CSS_PX / (s.k || 1));
 
         if (hit) {
             // Convert milliseconds to seconds for audio element
@@ -468,7 +483,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
         const canvasX = ((e.clientX - rect.left) - s.dx) / s.k;
         const canvasY = ((e.clientY - rect.top) - s.dy) / s.k;
 
-        const hit = detectHitStroke(canvasX, canvasY, 12 / (s.k || 1));
+        const hit = detectHitStroke(canvasX, canvasY, TOUCH_HIT_RADIUS_CSS_PX / (s.k || 1));
         canvas.style.cursor = hit ? 'pointer' : 'default';
     };
 

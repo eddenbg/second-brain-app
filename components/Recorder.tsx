@@ -283,13 +283,40 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     systemInstruction: `You are a real-time transcription assistant for a visually impaired student.
 
                     LANGUAGE: Hebrew is the default and primary language — when a word or sound is ambiguous, transcribe it as Hebrew. Only transcribe a word as English when it clearly cannot be Hebrew (e.g. a technical term, product name, acronym, or a stretch of speech that is unmistakably English). Do not let English be the default guess for unclear audio. The speaker does mix Hebrew and English, switching mid-sentence and back — transcribe each word in the language it was actually spoken in, never translate between them, and never force the whole transcript into one language. Keep English technical terms, product names and acronyms in Latin script exactly as spoken, even inside a Hebrew sentence. Write numbers as digits. Preserve the speaker's order of words so a mixed sentence reads the way it was said.
-                    IN ADDITION, you will receive video frames from the lecture. Analyze these frames for key visual information. 
-                    When you see something important, like a math equation on a whiteboard, a diagram, code on a screen, or a specific action the professor is demonstrating, you MUST insert a descriptive note into the transcript. 
+                    IN ADDITION, you will receive video frames from the lecture. Analyze these frames for key visual information.
+                    When you see something important, like a math equation on a whiteboard, a diagram, code on a screen, or a specific action the professor is demonstrating, you MUST insert a descriptive note into the transcript.
                     Prefix these notes with "VISUAL NOTE:". For example: "VISUAL NOTE: The professor just wrote the quadratic formula, x = [-b ± sqrt(b^2-4ac)]/2a, on the board." or "VISUAL NOTE: A diagram of a plant cell is now on the screen, showing the nucleus and chloroplasts."
                     Do not describe every minor gesture. Focus on information that is critical for understanding and cannot be understood from audio alone.
                     Continue transcribing the spoken words seamlessly around these visual notes.`
                 },
+            }).catch((err) => {
+                // ai.live.connect() rejects the promise it returns on a handshake
+                // failure (invalid/expired API key, key without Gemini Live access,
+                // network failure reaching the Live endpoint, etc). That is a
+                // DIFFERENT failure path from the `onerror` callback above, which
+                // only ever fires for a session that already finished opening.
+                // Every other consumer of sessionPromiseRef only does
+                // `.then(...).catch(err => console.error(...))` on it (see
+                // onaudioprocess and the frame-capture interval above), so a
+                // rejection here previously vanished into the console: recording
+                // and audio capture continued completely normally, the user reached
+                // the save screen with no error shown at all, and the transcript
+                // was simply empty with nothing explaining why. Surface it exactly
+                // like a live onerror does, then rethrow so sessionPromiseRef stays
+                // a rejected promise for its other .catch() consumers.
+                console.error('Gemini Live session failed to open:', err);
+                setError(`Live transcription could not start (${err instanceof Error ? err.message : 'could not connect to Gemini Live'}). Your audio and any handwritten notes will still be saved — check your Gemini API key under Settings → AI Features.`);
+                throw err;
             });
+            // The rethrow above keeps sessionPromiseRef rejected for its other
+            // .then().catch() consumers (which only attach once the mic/frame
+            // pipeline is actually running, inside `onopen` — which never fires on
+            // a connect failure). Mark it handled right away too, purely so a
+            // connect failure doesn't also print a spurious "Uncaught (in
+            // promise)" browser warning between now and whenever stopRecording (or
+            // one of those other consumers) gets around to observing it — the
+            // failure itself is already fully handled above.
+            sessionPromiseRef.current.catch(() => {});
         } catch (err) {
             console.error(err);
             const denied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
@@ -607,6 +634,16 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         <span className="block w-4 h-4 bg-white rounded-[2px]" />
                     </button>
                 </div>
+
+                {/* Surfaced as soon as it happens — e.g. the Gemini Live session
+                    failing to open — rather than only after Stop. Recording (audio
+                    + notes) keeps going regardless; this just warns that live
+                    transcription specifically is not working. */}
+                {error && (
+                    <p role="alert" className="shrink-0 bg-red-900/40 border-b-2 border-red-700 text-red-200 font-bold text-xs px-3 py-2">
+                        {error}
+                    </p>
+                )}
 
                 {/* Black notebook page filling every remaining pixel */}
                 <div className="flex-1 min-h-0 overflow-hidden">
