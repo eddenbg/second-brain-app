@@ -61,9 +61,29 @@ export default async (req: Request, _context: Context) => {
     return new Response(JSON.stringify(parsed), { status: 200, headers });
   } catch (error: any) {
     console.error("Claude API error:", error);
+    // The Anthropic SDK throws a typed APIError with `.status` (HTTP status),
+    // `.error` (the raw parsed JSON error body), and `.message` (already
+    // "<status> <api message>" via the SDK's own formatting). The client
+    // (components/ClaudeResearchPanel.tsx) only reads the `error` field of
+    // this response, not `message` — so the real cause has to live there, or
+    // it never reaches the user and every failure looks like the same dead-end
+    // "Failed to query Claude".
+    const status: number | undefined = typeof error?.status === "number" ? error.status : undefined;
+    const apiMessage: string =
+      (typeof error?.error?.error?.message === "string" && error.error.error.message) ||
+      (typeof error?.error?.message === "string" && error.error.message) ||
+      (typeof error?.message === "string" && error.message) ||
+      String(error);
+    const detail = status
+      ? `Claude API request failed (HTTP ${status}): ${apiMessage}`
+      : `Claude API request failed: ${apiMessage}`;
+    // Forward Anthropic's own 4xx (bad key, bad request, rate limit, etc.) as
+    // the same status so it's distinguishable from this function's own
+    // failures; anything else (network errors, 5xx) is reported as 502.
+    const responseStatus = status && status >= 400 && status < 500 ? status : 502;
     return new Response(
-      JSON.stringify({ error: "Failed to query Claude", message: error.message }),
-      { status: 502, headers }
+      JSON.stringify({ error: detail, status, raw: error?.error ?? null }),
+      { status: responseStatus, headers }
     );
   }
 };

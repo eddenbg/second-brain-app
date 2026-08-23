@@ -5,11 +5,27 @@ export default async (req: Request, _context: Context) => {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     };
 
     if (req.method === "OPTIONS") {
         return new Response(null, { status: 204, headers });
+    }
+
+    // Lets the client ask this function's own live runtime what client_id it
+    // will use, instead of relying on a value Vite baked into the client
+    // bundle at build time (see components/SettingsModal.tsx). Those two used
+    // to be resolved independently — a Vite build-time constant vs. this
+    // function's env var read at invocation time — and could silently drift
+    // out of sync (e.g. the env var rotated in the Netlify dashboard without a
+    // fresh deploy), which made Notion reject the token exchange below with no
+    // visible explanation. Reading it from here for both steps means there is
+    // exactly one source of truth.
+    if (req.method === "GET") {
+        return new Response(
+            JSON.stringify({ clientId: process.env.NOTION_CLIENT_ID || null }),
+            { status: 200, headers }
+        );
     }
 
     if (req.method !== "POST") {
