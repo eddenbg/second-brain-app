@@ -115,7 +115,39 @@ export interface FileMemory extends BaseMemory {
   summary?: string;
 }
 
-export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory | FileMemory;
+export interface PodcastSnipMemory extends BaseMemory {
+  type: 'podcast';
+  showName: string;
+  episodeTitle: string;
+  /** Canonical Spotify episode URL, e.g. https://open.spotify.com/episode/<id>
+   *  (si/t query params stripped — see netlify/functions/podcastSnip.ts). */
+  episodeUrl: string;
+  /** Playback position (seconds) the user's Spotify "Share Timestamp" link pointed at. */
+  timestampSeconds: number;
+  /** Transcript of just the audio window around timestampSeconds, NOT the
+   *  full episode — see netlify/functions/podcastSnip.ts for how that window
+   *  is chosen. */
+  transcript: string;
+  /** Actual transcribed window, in seconds from the start of the episode. */
+  audioWindowStartSeconds: number;
+  audioWindowEndSeconds: number;
+  /** Whether the audio host honored our HTTP Range request for just this
+   *  window, or fell back to a whole-file download (see fetchAudioWindow in
+   *  the function) — false means the transcript may cover more (or, if the
+   *  file exceeded the size ceiling, could not be produced at all). */
+  rangeSupported: boolean;
+  /** True when the byte-range window was computed from an assumed typical
+   *  podcast bitrate rather than this episode's actual declared size+duration
+   *  (see estimateBitrate in the function) — window boundaries are less
+   *  precise when true. */
+  bitrateEstimated: boolean;
+  /** Direct audio (RSS enclosure) URL the transcript was actually generated
+   *  from, kept for transparency/debugging — not necessarily still valid
+   *  long-term (podcast hosts do rotate CDN URLs). */
+  audioSourceUrl: string;
+}
+
+export type AnyMemory = VoiceMemory | WebMemory | PhysicalItemMemory | VideoItemMemory | DocumentMemory | FileMemory | PodcastSnipMemory;
 
 export type TaskStatus = 'idea' | 'todo' | 'in-progress' | 'done';
 

@@ -61,7 +61,13 @@ const MediaPreviewDrawer: React.FC<{
                 textToRead = `Article: ${memory.title}. ` + ((memory as FileMemory).summary || 'Article content available via link.');
             }
         } else {
-            textToRead = (memory as VoiceMemory).transcript || (memory as DocumentMemory).extractedText || (memory as FileMemory).summary || memory.title;
+            // `as any` here (not `as FileMemory`, which used to be the cast but
+            // no longer typechecks now that AnyMemory includes PodcastSnipMemory
+            // — a member with no meaningful overlap with FileMemory): this
+            // branch already runs for every non-'file' memory type, so casting
+            // to any ONE specific sibling type was always just borrowing its
+            // shape to probe for an optional `summary` field it may not have.
+            textToRead = (memory as VoiceMemory).transcript || (memory as DocumentMemory).extractedText || (memory as any).summary || memory.title;
         }
 
         if (!textToRead) return;
