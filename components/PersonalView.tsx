@@ -3,9 +3,9 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
     Volume2, Loader2, X, Package, Camera, FileText,
-    ListTodo, StopCircle, Play, Tag
+    ListTodo, StopCircle, Play, Tag, Headphones
 } from 'lucide-react';
-import type { AnyMemory, VoiceMemory, DocumentMemory, Task, PhysicalItemMemory, WebMemory } from '../types';
+import type { AnyMemory, VoiceMemory, DocumentMemory, Task, PhysicalItemMemory, WebMemory, PodcastSnipMemory } from '../types';
 import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
@@ -25,6 +25,7 @@ import { getLocationName } from '../utils/location';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { PlusCircleIcon } from './Icons';
 import TopicsBrowserModal from './TopicsBrowserModal';
+import { PODCAST_NO_TIMESTAMP_TAG, formatPodcastTimestamp } from '../utils/podcastFormat';
 
 interface PersonalViewProps {
     memories: AnyMemory[];
@@ -49,6 +50,7 @@ type SubView =
   | 'addItem'
   | 'webClips'
   | 'addWebClip'
+  | 'podcastSnips'
   | 'documents'
   | 'scanning'
   | 'transcribe'
@@ -126,23 +128,25 @@ const LOADING_STAGE_LABEL: Record<LoadingStage, string> = {
 };
 
 /**
- * Listen controls for a saved web clip: "Play" reads the clip's full text,
- * "Play Gist" summarizes that same full text into a short spoken gist so the
- * two are genuinely different lengths, not near-duplicates of each other.
+ * Shared "Play" / "Play Gist" listen controls: "Play" reads the source text
+ * in full, "Play Gist" summarizes that same text into a short spoken gist so
+ * the two are genuinely different lengths, not near-duplicates of each
+ * other. Generalized out of what used to be a Web-Clips-only component so
+ * Podcast Snips can reuse the exact same TTS/gist/timeout machinery instead
+ * of a second copy of it (this logic has been hardened across several
+ * bug-fix passes this session — staged loading labels, an overall backstop
+ * timeout, stale-run guarding, a visible error state).
  *
- * "Full text" means `memory.fullText` — the real article/page body fetched
- * server-side at save time — when present. Clips saved before that existed
- * (or by a save path that didn't fetch it) only have the short `content`
- * stub; the first time either button is pressed on one of those, this
- * lazily fetches and caches the full text via onUpdateMemory so the clip is
- * upgraded for good, not stuck re-reading the same short stub forever. If
- * that fetch fails (or there's no URL to fetch), it falls back to `content`
- * and says so, rather than silently pretending it's the full article.
+ * `getSourceText` is called fresh on every tap so a caller can lazily fetch
+ * (and cache) richer text on first use — see WebClipListenButtons below —
+ * while a caller with the full text already in hand (PodcastListenButtons)
+ * can just resolve it immediately.
  */
-const WebClipListenButtons: React.FC<{
-    memory: WebMemory;
-    onUpdateMemory: (id: string, updates: Partial<AnyMemory>) => void;
-}> = ({ memory, onUpdateMemory }) => {
+const ListenButtons: React.FC<{
+    getSourceText: () => Promise<{ text: string; isFallback: boolean }>;
+    /** Shown under the buttons while something using a fallback text source is playing. */
+    fallbackNote?: string;
+}> = ({ getSourceText, fallbackNote }) => {
     const [playingMode, setPlayingMode] = useState<'full' | 'gist' | null>(null);
     const [loadingMode, setLoadingMode] = useState<'full' | 'gist' | null>(null);
     const [loadingStage, setLoadingStage] = useState<LoadingStage | null>(null);
@@ -155,14 +159,12 @@ const WebClipListenButtons: React.FC<{
     const audioCtxRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<AudioBufferSourceNode | null>(null);
     const gistCacheRef = useRef<string | null>(null);
-    const fullTextRef = useRef<string | null>(memory.fullText ?? null);
     // Bumped on every toggle() call so a stale run (e.g. the overall timeout
     // firing after the user already tapped again, or a resolved promise from
     // a run that's no longer the current one) can recognize it's stale and
     // skip touching state instead of clobbering a newer run's result.
     const runIdRef = useRef(0);
 
-    useEffect(() => { fullTextRef.current = memory.fullText ?? null; }, [memory.fullText]);
     useEffect(() => () => { sourceRef.current?.stop(); audioCtxRef.current?.close(); }, []);
 
     const stop = () => {
@@ -185,21 +187,6 @@ const WebClipListenButtons: React.FC<{
         return true;
     };
 
-    /** The richest text available, fetching-and-caching the real page body
-     *  on first use for legacy/unwired clips that only have the short stub. */
-    const resolveSourceText = async (): Promise<{ text: string; isFallback: boolean }> => {
-        if (fullTextRef.current) return { text: fullTextRef.current, isFallback: false };
-        if (memory.url) {
-            const extracted = await extractUrlContent(memory.url);
-            if (extracted?.text) {
-                fullTextRef.current = extracted.text;
-                onUpdateMemory(memory.id, { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() } as Partial<WebMemory>);
-                return { text: extracted.text, isFallback: false };
-            }
-        }
-        return { text: memory.content, isFallback: true };
-    };
-
     const toggle = async (mode: 'full' | 'gist') => {
         if (playingMode === mode) { stop(); return; }
         if (playingMode) stop();
@@ -214,7 +201,7 @@ const WebClipListenButtons: React.FC<{
 
         let timedOut = false;
         const run = (async () => {
-            const { text: sourceText, isFallback } = await resolveSourceText();
+            const { text: sourceText, isFallback } = await getSourceText();
             if (isStale()) return;
             setUsingFallback(isFallback);
             let text = sourceText;
@@ -266,8 +253,6 @@ const WebClipListenButtons: React.FC<{
         }
     };
 
-    if (!memory.content.trim() && !memory.fullText?.trim()) return null;
-
     const renderButton = (mode: 'full' | 'gist', label: string, playingLabel: string) => {
         const isPlaying = playingMode === mode;
         const isLoading = loadingMode === mode;
@@ -299,9 +284,9 @@ const WebClipListenButtons: React.FC<{
                 {renderButton('full', 'Play', 'playback')}
                 {renderButton('gist', 'Play Gist', 'the gist')}
             </div>
-            {usingFallback && playingMode && (
+            {usingFallback && playingMode && fallbackNote && (
                 <p className="text-[10px] text-white/40 font-bold uppercase tracking-wide text-center">
-                    Couldn't fetch the full article — playing the saved note instead
+                    {fallbackNote}
                 </p>
             )}
             {errorMode && errorMessage && (
@@ -311,6 +296,64 @@ const WebClipListenButtons: React.FC<{
             )}
         </div>
     );
+};
+
+/**
+ * Listen controls for a saved web clip. "Full text" means `memory.fullText`
+ * — the real article/page body fetched server-side at save time — when
+ * present. Clips saved before that existed (or by a save path that didn't
+ * fetch it) only have the short `content` stub; the first time either
+ * button is pressed on one of those, this lazily fetches and caches the
+ * full text via onUpdateMemory so the clip is upgraded for good, not stuck
+ * re-reading the same short stub forever. If that fetch fails (or there's
+ * no URL to fetch), it falls back to `content` and says so, rather than
+ * silently pretending it's the full article.
+ */
+const WebClipListenButtons: React.FC<{
+    memory: WebMemory;
+    onUpdateMemory: (id: string, updates: Partial<AnyMemory>) => void;
+}> = ({ memory, onUpdateMemory }) => {
+    const fullTextRef = useRef<string | null>(memory.fullText ?? null);
+    useEffect(() => { fullTextRef.current = memory.fullText ?? null; }, [memory.fullText]);
+
+    const getSourceText = useCallback(async (): Promise<{ text: string; isFallback: boolean }> => {
+        if (fullTextRef.current) return { text: fullTextRef.current, isFallback: false };
+        if (memory.url) {
+            const extracted = await extractUrlContent(memory.url);
+            if (extracted?.text) {
+                fullTextRef.current = extracted.text;
+                onUpdateMemory(memory.id, { fullText: extracted.text, fullTextFetchedAt: new Date().toISOString() } as Partial<WebMemory>);
+                return { text: extracted.text, isFallback: false };
+            }
+        }
+        return { text: memory.content, isFallback: true };
+    }, [memory, onUpdateMemory]);
+
+    if (!memory.content.trim() && !memory.fullText?.trim()) return null;
+
+    return (
+        <ListenButtons
+            getSourceText={getSourceText}
+            fallbackNote="Couldn't fetch the full article — playing the saved note instead"
+        />
+    );
+};
+
+/**
+ * Listen controls for a saved podcast snip. Unlike web clips, the transcript
+ * saved on the memory IS already the full text of the captured window (see
+ * netlify/functions/podcastSnip.ts) — no lazy fetch needed — so this just
+ * wires it straight into the same shared TTS/gist/timeout machinery.
+ */
+const PodcastListenButtons: React.FC<{ memory: PodcastSnipMemory }> = ({ memory }) => {
+    const getSourceText = useCallback(
+        async (): Promise<{ text: string; isFallback: boolean }> => ({ text: memory.transcript, isFallback: false }),
+        [memory.transcript]
+    );
+
+    if (!memory.transcript.trim()) return null;
+
+    return <ListenButtons getSourceText={getSourceText} />;
 };
 
 // --- Main Component ---
@@ -344,6 +387,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
     const voiceNotes = useMemo(() => memories.filter(m => m.type === 'voice'), [memories]);
     const physicalItems = useMemo(() => memories.filter(m => m.type === 'item' || m.type === 'video'), [memories]);
     const webClips = useMemo(() => memories.filter(m => m.type === 'web'), [memories]);
+    const podcastSnips = useMemo(() => memories.filter(m => m.type === 'podcast') as PodcastSnipMemory[], [memories]);
     const documents = useMemo(() => memories.filter(m => m.type === 'document'), [memories]);
     const personalTasks = useMemo(() => tasks.filter(t => t.category === 'personal'), [tasks]);
 
@@ -537,6 +581,19 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
 
                 </div>
+
+                {/* Podcast Snips – full width */}
+                <button
+                    onClick={() => navigateTo('podcastSnips')}
+                    aria-label={`Podcast Snips – ${podcastSnips.length} saved`}
+                    className="w-full h-28 bg-[#DB2777] text-white rounded-3xl flex items-center justify-center gap-4"
+                >
+                    <Headphones className="w-14 h-14" strokeWidth={3} />
+                    <div className="text-left">
+                        <div className="text-xl font-black uppercase">Podcast Snips</div>
+                        <div className="text-sm opacity-75">{podcastSnips.length} saved • Share a moment from Spotify</div>
+                    </div>
+                </button>
 
                 {/* Scan Document – full width */}
                 <button
@@ -981,6 +1038,82 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         );
     }
 
+    // ── Podcast Snips list ─────────────────────────────────────────
+    // ── Podcast Snips list ─────────────────────────────────────────────────────────
+    if (subView === 'podcastSnips') {
+        const sortedSnips = [...podcastSnips].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        return (
+            <div className="flex flex-col gap-4">
+                <header className="flex items-center gap-3">
+                    <button onClick={goBack} aria-label="Back" className="btn-outline w-20 h-14">
+                        <ArrowLeft size={32} strokeWidth={3} />
+                    </button>
+                    <h2 className="text-2xl font-black uppercase flex-grow">Podcast Snips</h2>
+                </header>
+                <p className="text-white/50 text-sm font-bold">
+                    Use Spotify's Share menu on an episode → Second Brain to save a moment here.
+                </p>
+                <div className="flex flex-col gap-4">
+                    {sortedSnips.map(mem => {
+                        const fromStart = mem.tags?.includes(PODCAST_NO_TIMESTAMP_TAG);
+                        return (
+                            <div key={mem.id} className="card-brutal flex flex-col gap-3">
+                                <div className="flex items-start gap-4">
+                                    <Headphones size={32} strokeWidth={3} className="text-[#DB2777] flex-shrink-0 mt-1" />
+                                    <div className="flex-grow overflow-hidden">
+                                        <p className="text-xs text-[#F472B6] uppercase tracking-widest font-black truncate">{mem.showName}</p>
+                                        <p className="text-lg font-black leading-tight">{mem.episodeTitle}</p>
+                                        <p className="text-xs text-[#60A5FA] uppercase tracking-widest mt-0.5">
+                                            {fromStart ? 'From the start (no timestamp shared)' : `At ${formatPodcastTimestamp(mem.timestampSeconds)}`}
+                                            {' · '}
+                                            {new Date(mem.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => onDeleteMemory(mem.id)}
+                                        aria-label={`Delete podcast snip: ${mem.episodeTitle}`}
+                                        className="p-3 bg-white/10 rounded-xl flex-shrink-0"
+                                    >
+                                        <Trash2 size={20} strokeWidth={3} />
+                                    </button>
+                                </div>
+                                {mem.transcript && (
+                                    <p className="text-sm text-white/70 line-clamp-2">{mem.transcript}</p>
+                                )}
+                                <PodcastListenButtons memory={mem} />
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => openDetail(mem)}
+                                        aria-label={`View full transcript and ask AI about ${mem.episodeTitle}`}
+                                        className="flex-1 h-12 bg-white/10 text-white rounded-2xl flex items-center justify-center font-black text-xs uppercase tracking-wide"
+                                    >
+                                        View & Ask AI
+                                    </button>
+                                    <a
+                                        href={mem.episodeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        aria-label={`Open ${mem.episodeTitle} on Spotify`}
+                                        className="flex-1 h-12 bg-[#DB2777] text-white rounded-2xl flex items-center justify-center font-black text-xs uppercase tracking-wide"
+                                    >
+                                        Open Episode
+                                    </a>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {sortedSnips.length === 0 && (
+                        <div className="py-20 text-center opacity-40">
+                            <Headphones size={64} className="mx-auto mb-4" strokeWidth={2} />
+                            <p className="text-xl uppercase">No podcast snips yet</p>
+                            <p className="text-sm mt-2 max-w-xs mx-auto">Share a moment from Spotify's Share menu to save it here.</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     // ── Documents list ───────────────────────────────────────────
     // ── Documents list ───────────────────────────────────────────────────────────
     if (subView === 'documents') {
@@ -1081,6 +1214,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
             selectedItem.type === 'voice' ? 'voiceNotes' :
             selectedItem.type === 'item' || selectedItem.type === 'video' ? 'physicalItems' :
             selectedItem.type === 'web' ? 'webClips' :
+            selectedItem.type === 'podcast' ? 'podcastSnips' :
             selectedItem.type === 'document' ? 'documents' : 'hub';
 
         return (
@@ -1202,6 +1336,41 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                             <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
                         </div>
                     )}
+                    {selectedItem.type === 'podcast' && (() => {
+                        const p = selectedItem as PodcastSnipMemory;
+                        const fromStart = p.tags?.includes(PODCAST_NO_TIMESTAMP_TAG);
+                        return (
+                            <div className="space-y-5">
+                                <div className="space-y-1">
+                                    <p className="text-xs text-[#F472B6] uppercase tracking-widest font-black">{p.showName}</p>
+                                    <p className="text-sm text-[#60A5FA] uppercase tracking-widest font-bold">
+                                        {fromStart
+                                            ? 'Captured from the start — the shared link had no specific timestamp'
+                                            : `Captured around ${formatPodcastTimestamp(p.timestampSeconds)}`}
+                                    </p>
+                                    <p className="text-xs text-white/40 uppercase tracking-widest">
+                                        Transcribed window: {formatPodcastTimestamp(p.audioWindowStartSeconds)}–{formatPodcastTimestamp(p.audioWindowEndSeconds)}
+                                        {p.bitrateEstimated ? ' (approximate)' : ''}
+                                    </p>
+                                </div>
+                                {!p.rangeSupported && (
+                                    <p className="text-xs text-yellow-300/80 font-bold bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-3">
+                                        The audio host didn't support fetching just this window, so this transcript may cover more of the episode than just this moment.
+                                    </p>
+                                )}
+                                <p className="text-xl leading-relaxed whitespace-pre-wrap">{p.transcript}</p>
+                                <PodcastListenButtons memory={p} />
+                                <a
+                                    href={p.episodeUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="block w-full h-14 bg-[#DB2777] text-white rounded-2xl flex items-center justify-center font-black text-lg uppercase"
+                                >
+                                    Open Episode
+                                </a>
+                            </div>
+                        );
+                    })()}
                 </div>
 
                 <div className="h-[40vh] card-brutal p-0 overflow-hidden">

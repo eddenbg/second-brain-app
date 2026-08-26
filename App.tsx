@@ -15,11 +15,13 @@ import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { fetchMoodleEvents, parseMoodleSsoCallback } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { extractUrlContent } from './services/urlContentService';
+import { fetchPodcastSnip } from './services/podcastService';
+import { SPOTIFY_EPISODE_URL_RE, PODCAST_NO_TIMESTAMP_TAG, hasExplicitPodcastTimestamp } from './utils/podcastFormat';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents, GOOGLE_TOKEN_CHANGE_EVENT } from './services/googleCalendarService';
 import { getStoredDriveToken } from './services/googleDriveService';
 import { updateService } from './services/updateService';
-import type { AnyMemory, WebMemory, CalendarEvent, Task } from './types';
+import type { AnyMemory, WebMemory, PodcastSnipMemory, CalendarEvent, Task } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
 const viewTitles: Record<View, string> = {
@@ -48,6 +50,12 @@ function App() {
   const [googleCalendarNeedsReconnect, setGoogleCalendarNeedsReconnect] = useState(false);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
+  // Which flow the processing-share overlay below is showing progress for —
+  // podcast snips take up to 45s (Spotify lookup -> RSS -> audio fetch ->
+  // transcription), long enough that a bare "Saving Link..." spinner with no
+  // explanation would read as a hang, per this app's established silent-wait
+  // problem. Lets the overlay show an honest, flow-specific message.
+  const [shareKind, setShareKind] = useState<'web' | 'podcast' | null>(null);
   const [isSavingSharedLink, setIsSavingSharedLink] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -183,6 +191,61 @@ function App() {
 
   const handleProcessShare = useCallback(async (url: string, title: string, text: string) => {
     setIsProcessingShare(true);
+
+    // Spotify episode link ("Share" -> Second Brain from Spotify's episode
+    // share sheet) routes to the podcast-snip pipeline instead of the
+    // generic web-clip save below — see services/podcastService.ts.
+    if (SPOTIFY_EPISODE_URL_RE.test(url)) {
+      setShareKind('podcast');
+      try {
+        const outcome = await fetchPodcastSnip(url);
+        if (!outcome.ok) {
+          // Established convention across this app's share/connect flows
+          // (Web Clips, Claude, Notion, Moodle): show the real, specific
+          // reason rather than a generic failure message.
+          showToast(outcome.reason, 8000);
+          return;
+        }
+        const data = outcome.data;
+        // Spotify's timestamp-sharing may only work for video podcasts —
+        // a plain "Share Episode" link (no ?t=) can arrive for an
+        // audio-only show. The backend already defaults timestampSeconds to
+        // 0 in that case, but that's indistinguishable from a genuine t=0
+        // share, so check the original URL directly and tag the memory so
+        // the UI never claims a precisely-captured moment that isn't real.
+        const fromStart = !hasExplicitPodcastTimestamp(url);
+        const saveResult = await addMemory({
+          type: 'podcast',
+          category: 'personal',
+          title: data.episodeTitle,
+          showName: data.showName || data.episodeTitle || 'Unknown show',
+          episodeTitle: data.episodeTitle,
+          episodeUrl: data.episodeUrl,
+          timestampSeconds: data.timestampSeconds,
+          transcript: data.transcript,
+          audioWindowStartSeconds: data.audioWindowStartSeconds,
+          audioWindowEndSeconds: data.audioWindowEndSeconds,
+          rangeSupported: data.rangeSupported,
+          bitrateEstimated: data.bitrateEstimated,
+          audioSourceUrl: data.audioSourceUrl,
+          ...(fromStart && { tags: [PODCAST_NO_TIMESTAMP_TAG] }),
+        } as Omit<PodcastSnipMemory, 'id' | 'date'>);
+        if (saveResult && saveResult.ok === false) {
+          showToast(saveResult.reason || 'Could not save that podcast moment.', 8000);
+          return;
+        }
+        setView('personal');
+      } catch (error: any) {
+        console.error('Podcast snip share failed', error);
+        showToast(error?.message || 'Something went wrong saving that podcast moment — please try again.', 8000);
+      } finally {
+        setIsProcessingShare(false);
+        setShareKind(null);
+      }
+      return;
+    }
+
+    setShareKind('web');
     try {
       // Analysis gives a short AI summary for `content`; separately fetch the
       // real page text server-side so "Play" has the whole article to read,
@@ -208,8 +271,9 @@ function App() {
       window.history.pushState({ modal: 'share' }, '');
     } finally {
       setIsProcessingShare(false);
+      setShareKind(null);
     }
-  }, [addMemory]);
+  }, [addMemory, showToast]);
 
   // Notion OAuth callback: ?code=XXX&state=notion_oauth
   useEffect(() => {
@@ -523,9 +587,20 @@ function App() {
 
       {/* Processing share overlay */}
       {isProcessingShare && (
-        <div className="fixed inset-0 bg-[#001F3F]/90 z-50 flex flex-col items-center justify-center gap-6">
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 bg-[#001F3F]/90 z-50 flex flex-col items-center justify-center gap-6 px-10 text-center"
+        >
           <Loader2 className="animate-spin text-white" size={64} strokeWidth={2} />
-          <p className="text-white font-black text-2xl uppercase tracking-widest">Saving Link…</p>
+          <p className="text-white font-black text-2xl uppercase tracking-widest">
+            {shareKind === 'podcast' ? 'Transcribing Podcast Moment…' : 'Saving Link…'}
+          </p>
+          {shareKind === 'podcast' && (
+            <p className="text-white/70 font-bold text-base max-w-sm">
+              Fetching and transcribing that moment — this can take up to a minute.
+            </p>
+          )}
         </div>
       )}
 
