@@ -502,16 +502,6 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     onMouseMove={handleCanvasMouseMove}
                 />
 
-                {audioElement && (
-                    <button
-                        onClick={handlePlay}
-                        className="notebook-play-button"
-                        aria-label={isPlaying ? 'Pause notes' : 'Play notes'}
-                    >
-                        {isPlaying ? '⏸ STOP' : '▶ PLAY NOTES'}
-                    </button>
-                )}
-
                 {noAudioProvided && (
                     <div className="notebook-no-audio" role="status">
                         {noAudioMessage}
@@ -531,22 +521,32 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
 
             {audioElement && (
                 <div className="notebook-controls">
-                    <div
-                        className="notebook-progress"
-                        onClick={handleProgressClick}
-                        onKeyDown={handleProgressKeyDown}
-                        role="slider"
-                        tabIndex={0}
-                        aria-label="Seek notes"
-                        aria-valuemin={0}
-                        aria-valuemax={duration}
-                        aria-valuenow={currentTime}
-                        aria-valuetext={`${describeTimeForScreenReader(currentTime)} of ${describeTimeForScreenReader(duration)}`}
-                    >
+                    <div className="notebook-transport-row">
+                        <button
+                            onClick={handlePlay}
+                            className="notebook-play-icon-button"
+                            aria-label={isPlaying ? 'Pause notes' : 'Play notes'}
+                        >
+                            {isPlaying ? '⏸' : '▶'}
+                        </button>
+
                         <div
-                            className="notebook-progress-bar"
-                            style={{ width: `${progressPercent}%` }}
-                        />
+                            className="notebook-progress"
+                            onClick={handleProgressClick}
+                            onKeyDown={handleProgressKeyDown}
+                            role="slider"
+                            tabIndex={0}
+                            aria-label="Seek notes"
+                            aria-valuemin={0}
+                            aria-valuemax={duration}
+                            aria-valuenow={currentTime}
+                            aria-valuetext={`${describeTimeForScreenReader(currentTime)} of ${describeTimeForScreenReader(duration)}`}
+                        >
+                            <div
+                                className="notebook-progress-bar"
+                                style={{ width: `${progressPercent}%` }}
+                            />
+                        </div>
                     </div>
 
                     <div className="notebook-time">
@@ -589,30 +589,42 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     height: 100%;
                 }
 
-                .notebook-play-button {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    padding: 12px 24px;
-                    font-size: 14px;
-                    font-weight: 600;
+                .notebook-transport-row {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+
+                /*
+                 * Moved off the canvas entirely — it used to sit centered on top of
+                 * the drawing (a big "PLAY NOTES" button), covering handwriting right
+                 * where notes are now shown in full by default. A small icon next to
+                 * the timeline, matching the request, but still a real touch target
+                 * (44px) rather than shrunk to the point of being hard to tap.
+                 */
+                .notebook-play-icon-button {
+                    flex-shrink: 0;
+                    width: 44px;
+                    height: 44px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 18px;
                     background-color: #4CAF50;
                     color: white;
                     border: none;
-                    border-radius: 8px;
+                    border-radius: 50%;
                     cursor: pointer;
-                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-                    transition: all 0.2s ease;
+                    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                    transition: all 0.15s ease;
                 }
 
-                .notebook-play-button:hover {
+                .notebook-play-icon-button:hover {
                     background-color: #45a049;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
                 }
 
-                .notebook-play-button:active {
-                    transform: translate(-50%, -50%) scale(0.95);
+                .notebook-play-icon-button:active {
+                    transform: scale(0.92);
                 }
 
                 .notebook-no-audio {
@@ -654,7 +666,8 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                 }
 
                 .notebook-progress {
-                    width: 100%;
+                    flex: 1;
+                    min-width: 0;
                     height: 4px;
                     background-color: #e0e0e0;
                     border-radius: 2px;
