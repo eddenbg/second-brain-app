@@ -96,38 +96,51 @@ const LectureSplitView: React.FC<LectureSplitViewProps> = ({ memory }) => {
             <div className="h-[60vh] min-h-[360px] flex flex-row bg-black rounded-2xl overflow-hidden border border-white/10">
                 {/* Transcript */}
                 <div className="w-1/2 min-w-0 overflow-y-auto p-5 border-r border-white/10">
-                    <h4 className="text-sm font-black text-yellow-400 uppercase tracking-widest mb-3">Transcript</h4>
-                    <div className="flex flex-col gap-2">
+                    <h4 className="text-sm font-black text-yellow-400 uppercase tracking-widest mb-1">Transcript</h4>
+                    <p className="text-[11px] font-bold text-white/40 uppercase tracking-wide mb-3">
+                        Tap any word to jump the notes and audio there
+                    </p>
+                    {/* One continuous, readable paragraph — not a stack of boxed
+                        segments — with each segment an inline tappable span. Reads
+                        naturally like text, not like a list of separate controls;
+                        the active segment is picked out by color/underline instead
+                        of a background box, so nothing but the words themselves
+                        change. */}
+                    <p className="text-base leading-loose">
                         {transcript.map((segment, idx) => {
                             const isActive = idx === activeIndex;
+                            const prevSpeaker = idx > 0 ? transcript[idx - 1].speakerId : undefined;
+                            const showSpeaker = segment.speakerId !== undefined && segment.speakerId !== prevSpeaker;
                             return (
-                                <button
-                                    key={idx}
-                                    ref={el => { segmentRefs.current[idx] = el; }}
-                                    onClick={() => {
-                                        const audio = audioRef.current;
-                                        if (!audio) return;
-                                        audio.currentTime = segment.timestamp;
-                                        setCurrentTime(segment.timestamp);
-                                    }}
-                                    aria-current={isActive ? 'true' : undefined}
-                                    aria-label={`Jump to ${describeTimeForScreenReader(segment.timestamp)}: ${segment.text}`}
-                                    className={`text-left px-3 py-2 rounded-xl border-l-4 transition-colors ${
-                                        isActive
-                                            ? 'bg-yellow-400/20 border-yellow-400 text-white font-bold'
-                                            : 'border-transparent text-white/70 hover:bg-white/5'
-                                    }`}
-                                >
-                                    {segment.speakerId !== undefined && (
-                                        <span className="block text-[10px] font-black text-blue-300 uppercase tracking-widest">
+                                <React.Fragment key={idx}>
+                                    {showSpeaker && (
+                                        <span className="block text-[10px] font-black text-blue-300 uppercase tracking-widest mt-2">
                                             Speaker {segment.speakerId}
                                         </span>
                                     )}
-                                    <span className="text-base leading-relaxed">{segment.text}</span>
-                                </button>
+                                    <button
+                                        ref={el => { segmentRefs.current[idx] = el; }}
+                                        onClick={() => {
+                                            const audio = audioRef.current;
+                                            if (!audio) return;
+                                            audio.currentTime = segment.timestamp;
+                                            setCurrentTime(segment.timestamp);
+                                        }}
+                                        aria-current={isActive ? 'true' : undefined}
+                                        aria-label={`Jump to ${describeTimeForScreenReader(segment.timestamp)}: ${segment.text}`}
+                                        className={`inline rounded px-0.5 transition-colors active:bg-white/20 ${
+                                            isActive
+                                                ? 'bg-yellow-400/25 text-yellow-300 font-bold underline decoration-2 underline-offset-2'
+                                                : 'text-white/80 hover:text-white hover:bg-white/10'
+                                        }`}
+                                    >
+                                        {segment.text}
+                                    </button>
+                                    {' '}
+                                </React.Fragment>
                             );
                         })}
-                    </div>
+                    </p>
                 </div>
 
                 {/* Notes exactly as drawn, synced to the same audio clock */}
