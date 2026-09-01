@@ -1,8 +1,8 @@
-// Bumped because manifest.json is now also network-first (see the fetch
+// Bumped because version.json is now also network-first (see the fetch
 // handler below) — this bump is what actually delivers that fix to devices
 // that already have a service worker installed, since without it nothing
 // tells an existing worker to re-run its install/activate step at all.
-const CACHE_NAME = 'second-brain-v47';
+const CACHE_NAME = 'second-brain-v48';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -98,7 +98,19 @@ self.addEventListener('fetch', (event) => {
   // not in the shortcut/WebAPK wrapper. A "remove icon, reinstall" on the
   // same browser therefore reran the install against the exact same stale
   // cache, silently carrying the old manifest forward every time.
-  if (url.pathname.endsWith('/manifest.json')) {
+  // version.json, network-first, same reasoning as manifest.json above —
+  // and this one is what actually broke: services/updateService.ts polls
+  // this exact file every 5 minutes (fetch with {cache: 'no-cache'}) to
+  // detect a new deploy and auto-reload. But {cache: 'no-cache'} only
+  // controls the BROWSER's own HTTP cache — it has no effect on a service
+  // worker's Cache Storage, which intercepts the request first. Once this
+  // file was fetched and cache-first-cached one single time, every
+  // subsequent poll compared against that same frozen snapshot forever,
+  // so a deploy could never look "new" and the auto-reload never fired —
+  // on any device with an active service worker, which is exactly why
+  // updates only ever showed up in a plain browser tab and never in the
+  // installed app.
+  if (url.pathname.endsWith('/manifest.json') || url.pathname.endsWith('/version.json')) {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
