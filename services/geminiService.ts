@@ -170,7 +170,7 @@ export async function extractTextFromImage(base64Data: string, mimeType: string)
             contents: { 
                 parts: [
                     { inlineData: { mimeType, data: base64Data } }, 
-                    { text: `Extract all text from this image exactly as written. Hebrew is the default and primary language — when a mark or word is ambiguous or unclear, read it as Hebrew rather than English. Only read a word as English when it clearly cannot be Hebrew. Support both printed and handwritten text. Preserve line breaks and original layout. Return text in the language it was written.` }
+                    { text: `Extract all text from this image exactly as written. Hebrew and English are the ONLY two languages you may ever transcribe in — never Arabic or any other language, even if a mark resembles one (Arabic script and handwriting share visual similarity with Hebrew that can make ambiguous marks look Arabic; when that happens, read it as Hebrew). Hebrew is the default and primary language — when a mark or word is ambiguous or unclear, read it as Hebrew rather than English. Only read a word as English when it clearly cannot be Hebrew. Support both printed and handwritten text. Preserve line breaks and original layout. Return text in the language it was written.` }
                 ] 
             },
         });
@@ -187,7 +187,7 @@ export async function generateItemDetailsFromImage(base64Data: string, mimeType:
             contents: {
                 parts: [
                     { inlineData: { mimeType, data: base64Data } },
-                    { text: `Look at this photo/video frame of a physical object or item. Return a short, descriptive title (max 8 words) and a one-to-two sentence description covering what it is, notable features (color, brand, condition), and its location if visible or inferable. Hebrew is the default and primary language for any visible text — when text is ambiguous, read it as Hebrew rather than English.` }
+                    { text: `Look at this photo/video frame of a physical object or item. Return a short, descriptive title (max 8 words) and a one-to-two sentence description covering what it is, notable features (color, brand, condition), and its location if visible or inferable. Hebrew and English are the ONLY two languages you may use for any visible text — never Arabic or any other language, even if text resembles one. Hebrew is the default and primary language for any visible text — when text is ambiguous, read it as Hebrew rather than English.` }
                 ]
             },
             config: {
