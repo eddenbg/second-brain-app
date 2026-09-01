@@ -236,10 +236,20 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
               onerror: (e) => { console.error(e); setError('Transcription error.'); },
               onclose: () => {},
             },
-            // 'language' is not a real field on AudioTranscriptionConfig — it was
-            // silently ignored, so this recorder never actually got the Hebrew-first
-            // bias the rest of the app's transcription paths use (see Recorder.tsx).
-            config: { responseModalities: [Modality.AUDIO], inputAudioTranscription: { languageCodes: ['he-IL'] } },
+            // languageCodes is rejected outright by Gemini Live for a plain Developer
+            // API key ("languageCodes parameter is only supported in Gemini Enterprise
+            // Agent Platform mode, not in Gemini Developer API mode") — confirmed by a
+            // real runtime error in Recorder.tsx, which uses the same API tier. This
+            // app never runs in Enterprise mode, so the field can never be used here
+            // either. A systemInstruction is the only lever available at this tier —
+            // added below, mirroring the wording already used in Recorder.tsx.
+            config: {
+                responseModalities: [Modality.AUDIO],
+                inputAudioTranscription: {},
+                systemInstruction: `You are a real-time transcription assistant for a visually impaired student describing a physical item.
+
+                LANGUAGE: Hebrew is the default and primary language — when a word or sound is ambiguous, transcribe it as Hebrew. Only transcribe a word as English when it clearly cannot be Hebrew (e.g. a technical term, product name, acronym, or a stretch of speech that is unmistakably English). Do not let English be the default guess for unclear audio. The speaker may mix Hebrew and English, switching mid-sentence and back — transcribe each word in the language it was actually spoken in, never translate between them. Keep English technical terms, product names and acronyms in Latin script exactly as spoken, even inside a Hebrew sentence. Write numbers as digits.`,
+            },
         });
     };
 

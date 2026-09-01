@@ -275,11 +275,15 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 },
                 config: {
                     responseModalities: [Modality.AUDIO],
-                    // A hint, not a hard constraint (per the SDK's own doc comment on
-                    // languageCodes) — biases ambiguous audio toward Hebrew without
-                    // blocking genuine English speech, which the prompt below still
-                    // explicitly asks for mid-sentence.
-                    inputAudioTranscription: { languageCodes: ['he-IL'] },
+                    // No languageCodes here: Gemini Live rejects it outright for a plain
+                    // Developer API key ("languageCodes parameter is only supported in
+                    // Gemini Enterprise Agent Platform mode, not in Gemini Developer API
+                    // mode") — confirmed by a real runtime error, not a guess. This app
+                    // only ever runs in Developer API mode (a personal Gemini API key),
+                    // so the field can never be used here. The Hebrew-first bias below,
+                    // in the prompt itself, is the only lever available at this API tier
+                    // and is what was actually in effect the whole time this worked.
+                    inputAudioTranscription: {},
                     systemInstruction: `You are a real-time transcription assistant for a visually impaired student.
 
                     LANGUAGE: Hebrew is the default and primary language — when a word or sound is ambiguous, transcribe it as Hebrew. Only transcribe a word as English when it clearly cannot be Hebrew (e.g. a technical term, product name, acronym, or a stretch of speech that is unmistakably English). Do not let English be the default guess for unclear audio. The speaker does mix Hebrew and English, switching mid-sentence and back — transcribe each word in the language it was actually spoken in, never translate between them, and never force the whole transcript into one language. Keep English technical terms, product names and acronyms in Latin script exactly as spoken, even inside a Hebrew sentence. Write numbers as digits. Preserve the speaker's order of words so a mixed sentence reads the way it was said.
