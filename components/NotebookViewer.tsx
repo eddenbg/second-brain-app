@@ -19,6 +19,16 @@ const FIT_MARGIN = 0.04;
  */
 const TOUCH_HIT_RADIUS_CSS_PX = 96 / 2.54; // ~37.8 CSS px (~1cm)
 
+/**
+ * Color for whichever stroke was last tapped while browsing (not actively
+ * playing) — a bright, saturated amber chosen for strong contrast against
+ * both the black page and the plain white ink, for a user with a visual
+ * impairment. Deliberately does NOT dim the rest of the notes: the point is
+ * to make the selected stroke unmistakable while keeping everything else at
+ * full, normal legibility.
+ */
+const SELECTED_STROKE_COLOR = '#FFD600';
+
 interface NotebookViewerProps {
     notebook: NotebookData;
     /** Recorded audio for this notebook. Given this, the viewer renders its own
@@ -49,8 +59,12 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const animationFrameRef = useRef<number | null>(null);
-    const [highlightedPoint, setHighlightedPoint] = useState<{ x: number; y: number; alpha: number } | null>(null);
-    const highlightFadeRef = useRef<number | null>(null);
+    // Index into notebook.strokes for whichever stroke the user last tapped
+    // while browsing (paused). Persistent — unlike the old fading dot marker,
+    // this stays lit until a different stroke is tapped or playback starts,
+    // so it's actually usable as a "you selected this" indicator rather than
+    // a blink-and-you-miss-it flash.
+    const [selectedStrokeIndex, setSelectedStrokeIndex] = useState<number | null>(null);
     const currentTimeRef = useRef(0);
     const repaintRef = useRef<() => void>(() => {});
 
@@ -159,12 +173,10 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                 const s = fitScale();
                 ctx.drawImage(img, s.sx * s.k + s.dx, s.sy * s.k + s.dy, s.sw * s.k, s.sh * s.k);
                 drawStrokesUpToTime(upToTime);
-                drawHighlight();
             };
             img.src = notebook.backgroundImageUrl;
         } else {
             drawStrokesUpToTime(upToTime);
-            drawHighlight();
         }
 
         function drawStrokesUpToTime(time: number) {
@@ -176,56 +188,49 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
             // preserving aspect ratio so handwriting is not distorted.
             const s = fitScale();
 
-            notebook.strokes.forEach(stroke => {
-                // Stroke timestamps are milliseconds since recording started, while
-                // the audio clock is in seconds. Comparing them directly meant
-                // virtually nothing was drawn until the very end of playback.
-                const pointsUpToTime = stroke.points.filter(p => p.t <= time * 1000);
-                if (pointsUpToTime.length === 0) return;
+            // While actively playing, reveal strokes progressively in sync with
+            // the audio, same as always. While paused/browsing (the default —
+            // including the very first render, before Play has ever been
+            // tapped), show the WHOLE set of notes immediately rather than a
+            // blank canvas the user has to press Play to fill in: "I want to
+            // see my whole notes before hitting play so I can choose which
+            // part... to jump to."
+            const showEverything = !isPlaying;
 
-                ctx!.strokeStyle = stroke.color;
-                ctx!.lineWidth = Math.max(1, stroke.width * s.k);
+            const drawOneStroke = (stroke: typeof notebook.strokes[number], isSelected: boolean, time: number) => {
+                const points = showEverything ? stroke.points : stroke.points.filter(p => p.t <= time * 1000);
+                if (points.length === 0) return;
+
+                ctx!.strokeStyle = isSelected ? SELECTED_STROKE_COLOR : stroke.color;
+                // A little thicker too, so the color change isn't the only cue —
+                // matters for anyone who has trouble distinguishing colors, not
+                // just low vision generally.
+                ctx!.lineWidth = Math.max(1, stroke.width * s.k) * (isSelected ? 1.6 : 1);
                 ctx!.lineCap = 'round';
                 ctx!.lineJoin = 'round';
 
                 ctx!.beginPath();
-                ctx!.moveTo(pointsUpToTime[0].x * s.k + s.dx, pointsUpToTime[0].y * s.k + s.dy);
+                ctx!.moveTo(points[0].x * s.k + s.dx, points[0].y * s.k + s.dy);
 
-                for (let i = 1; i < pointsUpToTime.length; i++) {
-                    ctx!.lineTo(pointsUpToTime[i].x * s.k + s.dx, pointsUpToTime[i].y * s.k + s.dy);
+                for (let i = 1; i < points.length; i++) {
+                    ctx!.lineTo(points[i].x * s.k + s.dx, points[i].y * s.k + s.dy);
                 }
 
                 ctx!.stroke();
+            };
+
+            // Draw the selected stroke last (on top) in a second pass, so it can
+            // never end up visually buried under a stroke drawn after it in the
+            // original recording order.
+            notebook.strokes.forEach((stroke, strokeIndex) => {
+                if (showEverything && strokeIndex === selectedStrokeIndex) return;
+                drawOneStroke(stroke, false, time);
             });
+            if (showEverything && selectedStrokeIndex !== null && notebook.strokes[selectedStrokeIndex]) {
+                drawOneStroke(notebook.strokes[selectedStrokeIndex], true, time);
+            }
         }
-
-        function drawHighlight() {
-            if (!highlightedPoint) return;
-
-            const radius = 8;
-            const s = fitScale();
-            const hx = highlightedPoint.x * s.k + s.dx;
-            const hy = highlightedPoint.y * s.k + s.dy;
-
-            // Draw outer glow circle with fade
-            ctx!.fillStyle = `rgba(76, 175, 80, ${highlightedPoint.alpha * 0.3})`;
-            ctx!.beginPath();
-            ctx!.arc(hx, hy, radius * 1.8, 0, Math.PI * 2);
-            ctx!.fill();
-
-            // Draw inner highlight circle
-            ctx!.fillStyle = `rgba(76, 175, 80, ${highlightedPoint.alpha * 0.8})`;
-            ctx!.beginPath();
-            ctx!.arc(hx, hy, radius, 0, Math.PI * 2);
-            ctx!.fill();
-
-            // Draw white center
-            ctx!.fillStyle = '#ffffff';
-            ctx!.beginPath();
-            ctx!.arc(hx, hy, radius * 0.5, 0, Math.PI * 2);
-            ctx!.fill();
-        }
-    }, [notebook.backgroundImageUrl, notebook.strokes, highlightedPoint, fitScale]);
+    }, [notebook.backgroundImageUrl, notebook.strokes, isPlaying, selectedStrokeIndex, fitScale]);
 
     // Repaint at the playhead rather than at 0: a tap seeks and then changes the
     // highlight, and rewinding to 0 on that re-render wiped the notes off screen.
@@ -295,6 +300,10 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
             audioElement.currentTime = currentTime;
             audioElement.play();
             setIsPlaying(true);
+            // Progressive-reveal playback and the paused "show everything, one
+            // stroke picked out" browse mode are different visual languages —
+            // carrying a stale selection into playback would be confusing.
+            setSelectedStrokeIndex(null);
 
             const syncPlayback = () => {
                 if (!audioElement || audioElement.paused) {
@@ -400,29 +409,30 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
         canvasX: number,
         canvasY: number,
         hitDistance: number = TOUCH_HIT_RADIUS_CSS_PX
-    ): { timestamp: number; x: number; y: number } | null => {
+    ): { timestamp: number; strokeIndex: number } | null => {
         if (!notebook.strokes) return null;
 
-        type Candidate = { timestamp: number; x: number; y: number; distance: number };
+        type Candidate = { timestamp: number; strokeIndex: number; distance: number };
 
         const candidates: Candidate[] = [];
 
-        for (const stroke of notebook.strokes) {
+        notebook.strokes.forEach((stroke, strokeIndex) => {
             for (const point of stroke.points) {
                 const distance = Math.hypot(canvasX - point.x, canvasY - point.y);
                 if (distance < hitDistance) {
-                    candidates.push({ timestamp: point.t, x: point.x, y: point.y, distance });
+                    candidates.push({ timestamp: point.t, strokeIndex, distance });
                 }
             }
-        }
+        });
 
         if (candidates.length === 0) return null;
 
         const closest = candidates.reduce((best, c) => (c.distance < best.distance ? c : best));
-        return { timestamp: closest.timestamp, x: closest.x, y: closest.y };
+        return { timestamp: closest.timestamp, strokeIndex: closest.strokeIndex };
     };
 
-    // Handle canvas click to jump to audio timestamp
+    // Handle canvas click to jump to audio timestamp and mark that stroke as
+    // the selected one — see SELECTED_STROKE_COLOR above.
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (!audioElement || !canvasRef.current) return;
 
@@ -443,32 +453,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
             const timeInSeconds = hit.timestamp / 1000;
             setCurrentTime(timeInSeconds);
             audioElement.currentTime = timeInSeconds;
-            redrawStrokes(timeInSeconds);
-
-            // Show visual feedback: highlight the clicked point
-            setHighlightedPoint({ x: hit.x, y: hit.y, alpha: 1 });
-
-            // Clear any existing fade animation
-            if (highlightFadeRef.current) {
-                cancelAnimationFrame(highlightFadeRef.current);
-            }
-
-            // Fade out the highlight over 300ms
-            const startTime = Date.now();
-            const fadeOut = () => {
-                const elapsed = Date.now() - startTime;
-                const alpha = Math.max(0, 1 - elapsed / 300);
-
-                if (alpha > 0) {
-                    setHighlightedPoint(prev => prev ? { ...prev, alpha } : null);
-                    highlightFadeRef.current = requestAnimationFrame(fadeOut);
-                } else {
-                    setHighlightedPoint(null);
-                    highlightFadeRef.current = null;
-                }
-            };
-
-            highlightFadeRef.current = requestAnimationFrame(fadeOut);
+            setSelectedStrokeIndex(hit.strokeIndex);
         }
     };
 
@@ -530,6 +515,16 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                 {noAudioProvided && (
                     <div className="notebook-no-audio" role="status">
                         {noAudioMessage}
+                    </div>
+                )}
+
+                {!isPlaying && selectedStrokeIndex !== null && (
+                    <div
+                        className="notebook-selection-badge"
+                        role="status"
+                        aria-label={`Selected: ${describeTimeForScreenReader(currentTime)} — tap Play to resume from here`}
+                    >
+                        Selected: {formatTime(currentTime)} — tap Play to resume from here
                     </div>
                 )}
             </div>
@@ -634,6 +629,22 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioSrc, aud
                     background-color: rgba(120, 53, 15, 0.55);
                     border: 1px solid rgba(253, 230, 138, 0.4);
                     border-radius: 10px;
+                }
+
+                .notebook-selection-badge {
+                    position: absolute;
+                    bottom: 10px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    max-width: 90%;
+                    padding: 8px 16px;
+                    font-size: 14px;
+                    font-weight: 800;
+                    text-align: center;
+                    color: #000;
+                    background-color: #FFD600;
+                    border-radius: 999px;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
                 }
 
                 .notebook-controls {
