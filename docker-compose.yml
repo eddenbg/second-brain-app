@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Existing services would go here (Nextcloud, Vaultwarden)
+  # This is the new PostgreSQL service to add to your existing stack
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: second_brain_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_INITDB_ARGS: "-c max_connections=200"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./init-user-db.sh:/docker-entrypoint-initdb.d/02-init-user-db.sh
+    ports:
+      # DO NOT expose to 0.0.0.0 — only internal Docker network
+      - "127.0.0.1:5432:5432"
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
