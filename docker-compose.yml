@@ -13,8 +13,6 @@ services:
       POSTGRES_INITDB_ARGS: "-c max_connections=200"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./init-user-db.sh:/docker-entrypoint-initdb.d/02-init-user-db.sh
     ports:
       # DO NOT expose to 0.0.0.0 — only internal Docker network
       - "127.0.0.1:5432:5432"
