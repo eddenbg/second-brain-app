@@ -551,6 +551,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </button>
                                 {signInError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{signInError}</p>}
 
+                                {/* Offered up front, not just after a failure: Google's
+                                    redirect-based sign-in is unreliable in an installed
+                                    standalone PWA on Android (storage partitioning breaks
+                                    the cross-origin round trip), so give the working path
+                                    right away instead of waiting for the user to hit that
+                                    failure first. */}
+                                {isStandalone && !lastAuthError && (
+                                    <div className="mt-3 flex flex-col gap-2">
+                                        <p className="text-gray-500 text-[11px] font-bold text-center leading-relaxed">
+                                            Sign-in sometimes fails inside the installed app. If it doesn't work above:
+                                        </p>
+                                        <a
+                                            href={window.location.origin}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="w-full py-3 bg-white/10 text-white rounded-xl font-black text-xs uppercase text-center block border-2 border-white/20"
+                                        >
+                                            Sign in using the browser instead
+                                        </a>
+                                    </div>
+                                )}
+
                                 {/* Whatever went wrong on the way back from Google.
                                     Recorded during startup, so it survives the redirect. */}
                                 {lastAuthError && (
