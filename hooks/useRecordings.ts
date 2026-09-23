@@ -13,6 +13,7 @@ import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWi
 import { saveGoogleToken } from '../services/googleCalendarService';
 import { saveDriveToken } from '../services/googleDriveService';
 import { googleProvider } from '../utils/firebase';
+import { safeSetItem, isNearQuota, stripMediaForCache } from '../utils/safeStorage';
 
 export interface StoredData {
     memories: AnyMemory[];
@@ -35,23 +36,24 @@ export const useRecordings = () => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [syncError, setSyncError] = useState<string | null>(null);
+    const [storageWarning, setStorageWarning] = useState<string | null>(null);
 
     const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingTaskIdsRef = useRef<Set<string>>(new Set());
 
     // 1. Initial Load from LocalStorage (for speed)
     useEffect(() => {
-        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (stored) {
-            try {
+        try {
+            const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+            if (stored) {
                 const data = JSON.parse(stored);
                 setMemories(data.memories || []);
                 setTasks(data.tasks || []);
                 setSavedCourses(data.courses || []);
                 setMoodleToken(data.moodleToken || null);
-            } catch (e) {
-                console.error("Failed to parse local storage", e);
             }
+        } catch (e) {
+            console.error("Failed to read local storage", e);
         }
     }, []);
 
@@ -174,10 +176,32 @@ export const useRecordings = () => {
         setCourses(uniqueCourses);
     }, [memories, savedCourses]);
 
-    // 5. Save to local storage for offline persistent cache
+    // 5. Save to local storage for offline persistent cache.
+    // Media (images/audio/video) is stripped — it lives in Firestore only.
+    // If the cache would come near the quota, the oldest memories are dropped
+    // from the local copy (they remain in Firestore). A failed write never throws.
     useEffect(() => {
-        const data = { memories, tasks, courses: savedCourses, moodleToken };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
+        const serialize = (mems: AnyMemory[]) =>
+            JSON.stringify({ memories: mems, tasks, courses: savedCourses, moodleToken });
+
+        // Newest first, so trimming from the end drops the oldest entries
+        let cached = memories
+            .map(m => stripMediaForCache(m))
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        let payload = serialize(cached);
+
+        while (cached.length > 0 && isNearQuota(LOCAL_STORAGE_KEY, payload)) {
+            cached = cached.slice(0, Math.floor(cached.length * 0.75));
+            payload = serialize(cached);
+        }
+
+        let saved = safeSetItem(LOCAL_STORAGE_KEY, payload);
+        while (!saved && cached.length > 0) {
+            cached = cached.slice(0, Math.floor(cached.length / 2));
+            saved = safeSetItem(LOCAL_STORAGE_KEY, serialize(cached));
+        }
+
+        setStorageWarning(saved ? null : 'Offline storage is full. Your data is still saved to the cloud.');
     }, [memories, tasks, savedCourses, moodleToken]);
 
     // --- Cloud Sync Action ---
@@ -377,7 +401,7 @@ export const useRecordings = () => {
         memories, tasks, courses, moodleToken,
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
-        user, loading, isSyncing, hasUnsavedChanges, syncError, performSync,
+        user, loading, isSyncing, hasUnsavedChanges, syncError, storageWarning, performSync,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,
         isAnonymous: user?.isAnonymous ?? true,

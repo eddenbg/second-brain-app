@@ -12,6 +12,7 @@ import AddDocumentModal from './AddDocumentModal';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import { safeSetItem } from '../utils/safeStorage';
 
 interface CollegeViewProps {
     lectures: AnyMemory[];
@@ -169,7 +170,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const handleSelectCourse = (course: string) => {
         const updated = { ...recentAccess, [course]: Date.now() };
         setRecentAccess(updated);
-        localStorage.setItem('college_recent_access', JSON.stringify(updated));
+        safeSetItem('college_recent_access', JSON.stringify(updated));
         window.history.pushState({ collegeView: 'dashboard' }, '');
         setSelectedCourse(course);
         setView('dashboard');

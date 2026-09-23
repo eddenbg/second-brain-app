@@ -81,7 +81,7 @@ export interface VideoItemMemory extends BaseMemory {
 export interface DocumentMemory extends BaseMemory {
   type: 'document';
   extractedText: string;
-  imageDataUrl: string;
+  imageDataUrl?: string; // legacy only — new OCR scans don't keep the image
 }
 
 export interface FileMemory extends BaseMemory {

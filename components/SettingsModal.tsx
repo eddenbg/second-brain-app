@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { User } from 'firebase/auth';
 import {
-    XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon, PlusCircleIcon
+    XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
 } from './Icons';
 import { Calendar } from 'lucide-react';
 import { testMoodleConnection, loginWithCredentials } from '../services/moodleService';
@@ -18,7 +18,6 @@ import {
     getStoredNotionClientId,
 } from '../services/notionService';
 import { auth } from '../utils/firebase';
-import { useInstallPrompt } from '../hooks/useInstallPrompt';
 
 declare const __BUILD_DATE__: string;
 
@@ -78,8 +77,6 @@ const GOOGLE_LOGO = (
 );
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize }) => {
-    const { isInstallable, installApp } = useInstallPrompt();
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches;
 
     const [isSigningIn, setIsSigningIn] = useState(false);
     const [signInError, setSignInError] = useState<string | null>(null);
@@ -340,67 +337,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     {isSigningIn ? 'Signing in…' : 'Sign in with Google'}
                                 </button>
                                 {signInError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{signInError}</p>}
-                            </>
-                        )}
-                    </div>
-
-                    {/* Install / Fullscreen */}
-                    <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 ${isStandalone ? 'bg-green-900/20 border-green-700' : 'bg-blue-900/30 border-blue-600'}`}>
-                        <div className="flex items-center gap-3 mb-3">
-                            <PlusCircleIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${isStandalone ? 'text-green-400' : 'text-blue-400'}`} />
-                            <p className="text-base sm:text-lg font-black text-white uppercase">Install App</p>
-                            {isStandalone && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Installed ✓</div>}
-                        </div>
-                        {isStandalone ? (
-                            <>
-                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                    App is installed. Tap below to go fullscreen (hides the status bar).
-                                </p>
-                                <button
-                                    onClick={() => {
-                                        document.documentElement.requestFullscreen?.().catch(() => {});
-                                        onClose();
-                                    }}
-                                    className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-green-700 text-white"
-                                >
-                                    Enter Fullscreen
-                                </button>
-                                <p className="text-gray-500 font-bold text-[10px] mt-3 leading-relaxed text-center">
-                                    Not in the share menu? Remove the app from your home screen, open in Chrome, and tap Install below to get a proper PWA install.
-                                </p>
-                            </>
-                        ) : isInstallable ? (
-                            <>
-                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                    Install for fullscreen, share target (save links from Chrome), and offline use.
-                                </p>
-                                <button
-                                    onClick={installApp}
-                                    className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3 bg-blue-600 text-white"
-                                >
-                                    <PlusCircleIcon className="w-6 h-6" />
-                                    Install App
-                                </button>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-gray-400 font-bold text-xs mb-3 leading-relaxed">
-                                    Install for fullscreen, share target (save links from Chrome), and offline use.
-                                </p>
-                                <div className="bg-gray-800 rounded-xl p-4 border border-gray-600 space-y-3">
-                                    <p className="text-yellow-400 font-black text-xs uppercase tracking-widest">Install button not showing?</p>
-                                    <p className="text-gray-300 text-xs leading-relaxed">
-                                        Chrome hides the install button once you've added this site to your home screen. To reset:
-                                    </p>
-                                    <ol className="text-gray-300 text-xs space-y-1.5 list-decimal list-inside leading-relaxed">
-                                        <li>Long-press "Second Brain" on your home screen → <strong className="text-white">Remove</strong></li>
-                                        <li>In Chrome tap <strong className="text-white">⋮</strong> → Settings → Site settings → find this site → <strong className="text-white">Clear &amp; reset</strong></li>
-                                        <li>Reload this page — the blue Install button will appear here</li>
-                                    </ol>
-                                    <p className="text-gray-500 text-[10px] leading-relaxed">
-                                        Only a proper install (not "Add to Home Screen") registers the app in Android's share menu.
-                                    </p>
-                                </div>
                             </>
                         )}
                     </div>

@@ -7,8 +7,8 @@ import PersonalView from './components/PersonalView';
 import ScheduleView from './components/ScheduleView';
 import FilesView from './components/FilesView';
 import SettingsModal from './components/SettingsModal';
-import TopInstallBanner from './components/TopInstallBanner';
 import { useRecordings } from './hooks/useRecordings';
+import { safeSetItem } from './utils/safeStorage';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
@@ -47,7 +47,7 @@ function App() {
   });
   const updateWebCategories = useCallback((cats: string[]) => {
     setWebCategories(cats);
-    localStorage.setItem('web_categories', JSON.stringify(cats));
+    safeSetItem('web_categories', JSON.stringify(cats));
   }, []);
 
   const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
@@ -60,7 +60,7 @@ function App() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    localStorage.setItem('dark_mode', isDarkMode ? '1' : '0');
+    safeSetItem('dark_mode', isDarkMode ? '1' : '0');
   }, [isDarkMode]);
 
   // High contrast mode effect
@@ -70,7 +70,7 @@ function App() {
     } else {
       document.documentElement.classList.remove('high-contrast');
     }
-    localStorage.setItem('high_contrast', isHighContrast ? '1' : '0');
+    safeSetItem('high_contrast', isHighContrast ? '1' : '0');
   }, [isHighContrast]);
 
   // Font size effect
@@ -81,7 +81,7 @@ function App() {
     } else if (fontSize === 'xlarge') {
       document.documentElement.classList.add('font-xlarge');
     }
-    localStorage.setItem('font_size', fontSize);
+    safeSetItem('font_size', fontSize);
   }, [fontSize]);
 
   const toggleDarkMode = useCallback(() => {
@@ -106,7 +106,16 @@ function App() {
     courses, addCourse, deleteCourse, user, loading,
     moodleToken, saveMoodleToken,
     signInWithGoogle, signOut: signOutUser,
+    storageWarning,
   } = useRecordings();
+
+  // Non-blocking notice when the offline cache can't be written
+  useEffect(() => {
+    if (!storageWarning) return;
+    setToast(storageWarning);
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [storageWarning]);
 
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const personalMemories = useMemo(() => memories.filter(m => m.category === 'personal'), [memories]);
@@ -391,7 +400,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#001F3F] flex flex-col text-white overflow-hidden" style={{ height: '100dvh' }}>
-      <TopInstallBanner />
 
       {/* Processing share overlay */}
       {isProcessingShare && (
@@ -481,13 +489,14 @@ function App() {
       )}
 
       {/* Toast notifications */}
-      {toast && (
-        <div className="fixed bottom-24 left-0 right-0 flex justify-center z-[300] pointer-events-none">
+      {/* Live region stays mounted so screen readers announce new messages */}
+      <div role="status" aria-live="polite" className="fixed bottom-24 left-0 right-0 flex justify-center z-[300] pointer-events-none">
+        {toast && (
           <div className="bg-gray-900 text-white px-6 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-2xl border-2 border-white/20 animate-fade-in">
             {toast}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

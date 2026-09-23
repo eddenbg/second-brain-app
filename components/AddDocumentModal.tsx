@@ -88,10 +88,11 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
             setStatusMessage('Generating title…');
             const title = await generateTitleForContent(text || `Document – ${new Date().toLocaleDateString()}`);
 
+            // Only the extracted text is kept — the raw image is discarded
+            // after OCR so it never ends up in storage.
             onSave({
                 type: 'document',
                 title,
-                imageDataUrl,
                 extractedText: text || '',
                 category: course ? 'college' : 'personal',
                 course,
@@ -109,6 +110,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
 
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        e.target.value = ''; // release the file reference
         if (!file) return;
 
         const reader = new FileReader();
