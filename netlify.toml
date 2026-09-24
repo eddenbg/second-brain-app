@@ -33,6 +33,21 @@
   for = "/icon-512.png"
   [headers.values]
     Cache-Control = "public, max-age=86400"
+# Firebase Auth helper pages served from this site's own domain, so the
+# Google sign-in redirect stays same-origin (browsers that block third-party
+# storage otherwise lose the result). Must stay above the SPA fallback.
+[[redirects]]
+from = "/__/auth/*"
+to = "https://my-second-brain-app-10dfe.firebaseapp.com/__/auth/:splat"
+status = 200
+force = true
+
+[[redirects]]
+from = "/__/firebase/*"
+to = "https://my-second-brain-app-10dfe.firebaseapp.com/__/firebase/:splat"
+status = 200
+force = true
+
 # API routes → Netlify Functions
 [[redirects]]
 from = "/api/*"

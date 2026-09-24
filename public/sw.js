@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v44';
+const CACHE_NAME = 'second-brain-v45';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -45,6 +45,8 @@ self.addEventListener('fetch', (event) => {
 
   if (event.request.method !== 'GET') return;
   if (url.pathname.startsWith('/.netlify/')) return;
+  // Firebase Auth helper pages (Google sign-in redirect) must hit the network
+  if (url.pathname.startsWith('/__/')) return;
 
   // Navigation requests (page loads, share target activations) — serve index.html
   // so query params (title, url, text) are preserved for the React app to read.

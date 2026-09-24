@@ -18,6 +18,15 @@ const DEFAULT_CONFIG = {
   appId: "1:845654285559:web:163b8d9bd10da97f7a47f2"
 };
 
+// On the production site, run Firebase Auth's helper pages from our own domain
+// (proxied to firebaseapp.com in netlify.toml). Keeps the Google redirect
+// sign-in same-origin so it works in installed PWAs. Other hosts (localhost,
+// deploy previews) keep the default firebaseapp.com domain.
+const PRODUCTION_HOST = 'eddenbg-second-brain.netlify.app';
+if (typeof window !== 'undefined' && window.location.hostname === PRODUCTION_HOST) {
+  DEFAULT_CONFIG.authDomain = PRODUCTION_HOST;
+}
+
 const LOCAL_STORAGE_CONFIG_KEY = 'second_brain_firebase_config';
 
 const getEnv = (key: string) => {
