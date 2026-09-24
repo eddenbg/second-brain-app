@@ -13,11 +13,8 @@ import {
     disconnectGoogleDrive,
     getStoredDriveToken
 } from '../services/googleDriveService';
-import {
-    getStoredNotionToken, saveNotionToken, clearNotionToken,
-    getStoredNotionClientId,
-} from '../services/notionService';
 import { auth } from '../utils/firebase';
+import { refreshGoogleToken, GOOGLE_TOKEN_REFRESHED_EVENT } from '../services/googleAuthService';
 
 declare const __BUILD_DATE__: string;
 
@@ -86,9 +83,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [moodleLoginError, setMoodleLoginError] = useState<string | null>(null);
     const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
     const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
-    const [notionToken, setNotionToken] = useState(getStoredNotionToken() || '');
-    const [showManualNotion, setShowManualNotion] = useState(false);
-    const [notionInput, setNotionInput] = useState('');
+    const [isRefreshing, setIsRefreshing] = useState<'calendar' | 'drive' | null>(null);
+    const [refreshError, setRefreshError] = useState<string | null>(null);
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
@@ -106,7 +102,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 setRefreshToken(rt);
             }
         });
-        return () => unsubscribe?.();
+        const onRefreshed = () => {
+            setIsGoogleConnected(!!getStoredToken());
+            setIsDriveConnected(!!getStoredDriveToken());
+        };
+        window.addEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
+        return () => {
+            unsubscribe?.();
+            window.removeEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
+        };
     }, []);
 
     const handleMoodleLogin = async () => {
@@ -137,21 +141,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setIsDriveConnected(false);
     };
 
-    const handleSaveNotionToken = () => {
-        const t = notionInput.trim();
-        if (!t) return;
-        saveNotionToken(t);
-        setNotionToken(t);
-        setNotionInput('');
-        setShowManualNotion(false);
-    };
-
-    const handleClearNotionToken = () => {
-        clearNotionToken();
-        setNotionToken('');
-        setNotionInput('');
-    };
-
     const handleSignIn = async () => {
         if (!onSignIn) return;
         setIsSigningIn(true);
@@ -172,34 +161,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
-    const effectiveNotionClientId = getStoredNotionClientId() || process.env.NOTION_CLIENT_ID || '';
-
-    const handleSignInWithNotion = () => {
-        if (!effectiveNotionClientId) return;
-        const redirectUri = `${window.location.origin}/`;
-        const url = `https://api.notion.com/v1/oauth/authorize?client_id=${effectiveNotionClientId}&response_type=code&owner=user&redirect_uri=${encodeURIComponent(redirectUri)}&state=notion_oauth`;
-
-        // Try popup so the user never leaves the app
-        const popup = window.open(url, 'notion-oauth', 'width=520,height=700,scrollbars=yes,resizable=yes');
-        if (!popup) {
-            // Popup blocked (e.g. in strict standalone PWA mode) — fall back to redirect
-            window.location.href = url;
-            return;
-        }
-
-        // Listen for the token that the popup posts back after the OAuth exchange
-        const handler = (event: MessageEvent) => {
-            if (event.origin !== window.location.origin) return;
-            if (event.data?.type === 'NOTION_TOKEN') {
-                const token = event.data.token as string;
-                if (token) {
-                    saveNotionToken(token);
-                    setNotionToken(token);
-                }
-                window.removeEventListener('message', handler);
+    // Refresh the Google access token for the signed-in account (no sign-out needed)
+    const handleRefreshGoogle = async (which: 'calendar' | 'drive') => {
+        setIsRefreshing(which);
+        setRefreshError(null);
+        try {
+            await refreshGoogleToken(true);
+        } catch (e: any) {
+            if (e?.code !== 'auth/popup-closed-by-user') {
+                setRefreshError(e?.message || 'Could not refresh the Google connection. Please try again.');
             }
-        };
-        window.addEventListener('message', handler);
+        } finally {
+            setIsGoogleConnected(!!getStoredToken());
+            setIsDriveConnected(!!getStoredDriveToken());
+            setIsRefreshing(null);
+        }
     };
 
     const mcpConfigSnippet = `{
@@ -361,15 +337,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </button>
                             ) : user?.isAnonymous === false ? (
                                 <>
-                                    <p className="text-yellow-400 font-bold text-xs mb-3">Token expired. Sign in again to refresh the connection.</p>
+                                    <p className="text-yellow-400 font-bold text-xs mb-3">Connection expired. Tap below to refresh it — no need to sign out.</p>
                                     <button
-                                        onClick={handleSignIn}
-                                        disabled={isSigningIn}
+                                        onClick={() => handleRefreshGoogle('calendar')}
+                                        disabled={isRefreshing !== null}
                                         className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
                                     >
-                                        {isSigningIn ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
-                                        {isSigningIn ? 'Reconnecting…' : 'Reconnect Calendar'}
+                                        {isRefreshing === 'calendar' ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
+                                        {isRefreshing === 'calendar' ? 'Refreshing…' : 'Refresh Calendar'}
                                     </button>
+                                    {refreshError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{refreshError}</p>}
                                 </>
                             ) : (
                                 <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Calendar automatically.</p>
@@ -393,85 +370,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 </button>
                             ) : user?.isAnonymous === false ? (
                                 <>
-                                    <p className="text-yellow-400 font-bold text-xs mb-3">Token expired. Sign in again to refresh the connection.</p>
+                                    <p className="text-yellow-400 font-bold text-xs mb-3">Connection expired. Tap below to refresh it — no need to sign out.</p>
                                     <button
-                                        onClick={handleSignIn}
-                                        disabled={isSigningIn}
+                                        onClick={() => handleRefreshGoogle('drive')}
+                                        disabled={isRefreshing !== null}
                                         className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
                                     >
-                                        {isSigningIn ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
-                                        {isSigningIn ? 'Reconnecting…' : 'Reconnect Drive'}
+                                        {isRefreshing === 'drive' ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
+                                        {isRefreshing === 'drive' ? 'Refreshing…' : 'Refresh Drive'}
                                     </button>
+                                    {refreshError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{refreshError}</p>}
                                 </>
                             ) : (
                                 <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Drive automatically.</p>
-                            )}
-                        </div>
-
-                        {/* Notion */}
-                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${notionToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
-                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
-                                <div className="w-8 h-8 bg-black rounded-xl flex items-center justify-center shrink-0">
-                                    <span className="text-white font-black text-base">N</span>
-                                </div>
-                                <p className="text-base sm:text-lg font-black text-white uppercase">Notion</p>
-                                {notionToken && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
-                            </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                Connect your Notion workspace to import pages directly into Web Clips.
-                            </p>
-                            {notionToken ? (
-                                <button
-                                    onClick={handleClearNotionToken}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
-                                >
-                                    Disconnect Notion
-                                </button>
-                            ) : effectiveNotionClientId ? (
-                                <>
-                                    <button
-                                        onClick={handleSignInWithNotion}
-                                        className="w-full py-4 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-black text-white border-2 border-white/20"
-                                    >
-                                        <div className="w-5 h-5 bg-white rounded flex items-center justify-center shrink-0">
-                                            <span className="text-black font-black text-sm leading-none">N</span>
-                                        </div>
-                                        Sign in with Notion
-                                    </button>
-                                </>
-                            ) : (
-                                <>
-                                    {!showManualNotion ? (
-                                        <button
-                                            onClick={() => setShowManualNotion(true)}
-                                            className="w-full py-3 rounded-2xl font-black text-xs uppercase text-gray-400 border-2 border-gray-700 active:scale-95"
-                                        >
-                                            Connect with API token instead
-                                        </button>
-                                    ) : (
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="password"
-                                                value={notionInput}
-                                                onChange={e => setNotionInput(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && handleSaveNotionToken()}
-                                                placeholder="Paste Notion token (secret_...)"
-                                                className="flex-grow bg-gray-700 rounded-xl text-xs text-white font-mono placeholder:text-gray-500"
-                                                style={{ border: '1px solid #4B5563', padding: '10px 12px' }}
-                                                aria-label="Notion integration token"
-                                                autoFocus
-                                            />
-                                            <button
-                                                onClick={handleSaveNotionToken}
-                                                disabled={!notionInput.trim()}
-                                                className="px-5 py-3 bg-purple-600 text-white rounded-2xl font-black text-xs uppercase disabled:opacity-40 active:scale-95 whitespace-nowrap"
-                                                style={{ minHeight: 'unset' }}
-                                            >
-                                                Save
-                                            </button>
-                                        </div>
-                                    )}
-                                </>
                             )}
                         </div>
 

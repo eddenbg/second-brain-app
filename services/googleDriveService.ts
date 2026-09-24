@@ -1,4 +1,6 @@
 import { loadGIS, getStoredGoogleClientId } from './googleCalendarService';
+import { safeSetItem, safeRemoveItem } from '../utils/safeStorage';
+import { notifyGoogleAuthExpired } from './googleAuthEvents';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -25,17 +27,17 @@ export const getStoredDriveToken = (): string | null => {
     const token = localStorage.getItem(DRIVE_TOKEN_KEY);
     const expiry = localStorage.getItem(DRIVE_TOKEN_EXPIRY_KEY);
     if (token && expiry && Date.now() < parseInt(expiry)) return token;
-    localStorage.removeItem(DRIVE_TOKEN_KEY);
-    localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+    safeRemoveItem(DRIVE_TOKEN_KEY);
+    safeRemoveItem(DRIVE_TOKEN_EXPIRY_KEY);
     return null;
 };
 
 export const saveDriveToken = (token: string, expiresInSeconds = 3600): void => {
     const expiry = Date.now() + (expiresInSeconds - 60) * 1000;
-    localStorage.setItem(DRIVE_TOKEN_KEY, token);
-    localStorage.setItem(DRIVE_TOKEN_EXPIRY_KEY, expiry.toString());
-    localStorage.setItem(DRIVE_UPLOAD_TOKEN_KEY, token);
-    localStorage.setItem(DRIVE_UPLOAD_EXPIRY_KEY, expiry.toString());
+    safeSetItem(DRIVE_TOKEN_KEY, token);
+    safeSetItem(DRIVE_TOKEN_EXPIRY_KEY, expiry.toString());
+    safeSetItem(DRIVE_UPLOAD_TOKEN_KEY, token);
+    safeSetItem(DRIVE_UPLOAD_EXPIRY_KEY, expiry.toString());
 };
 
 export const connectGoogleDrive = (): Promise<string> => {
@@ -49,8 +51,8 @@ export const connectGoogleDrive = (): Promise<string> => {
                 if (response.error) { reject(new Error(response.error)); return; }
                 const token = response.access_token;
                 const expiry = Date.now() + (response.expires_in - 60) * 1000;
-                localStorage.setItem(DRIVE_TOKEN_KEY, token);
-                localStorage.setItem(DRIVE_TOKEN_EXPIRY_KEY, expiry.toString());
+                safeSetItem(DRIVE_TOKEN_KEY, token);
+                safeSetItem(DRIVE_TOKEN_EXPIRY_KEY, expiry.toString());
                 resolve(token);
             }
         });
@@ -63,8 +65,8 @@ export const disconnectGoogleDrive = () => {
     if (token && window.google?.accounts?.oauth2) {
         window.google.accounts.oauth2.revoke(token);
     }
-    localStorage.removeItem(DRIVE_TOKEN_KEY);
-    localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+    safeRemoveItem(DRIVE_TOKEN_KEY);
+    safeRemoveItem(DRIVE_TOKEN_EXPIRY_KEY);
 };
 
 export const listDriveFolder = async (token: string, folderId = 'root'): Promise<DriveItem[]> => {
@@ -89,8 +91,9 @@ export const listDriveFolder = async (token: string, folderId = 'root'): Promise
 
     if (!response.ok) {
         if (response.status === 401) {
-            localStorage.removeItem(DRIVE_TOKEN_KEY);
-            localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+            notifyGoogleAuthExpired();
+            safeRemoveItem(DRIVE_TOKEN_KEY);
+            safeRemoveItem(DRIVE_TOKEN_EXPIRY_KEY);
         }
         throw new Error(`Drive API error: ${response.status}`);
     }
@@ -122,8 +125,9 @@ export const listDriveFiles = async (token: string, query = ''): Promise<DriveFi
 
     if (!response.ok) {
         if (response.status === 401) {
-            localStorage.removeItem(DRIVE_TOKEN_KEY);
-            localStorage.removeItem(DRIVE_TOKEN_EXPIRY_KEY);
+            notifyGoogleAuthExpired();
+            safeRemoveItem(DRIVE_TOKEN_KEY);
+            safeRemoveItem(DRIVE_TOKEN_EXPIRY_KEY);
         }
         throw new Error(`Drive API error: ${response.status}`);
     }
@@ -136,8 +140,8 @@ export const getStoredDriveUploadToken = (): string | null => {
     const token = localStorage.getItem(DRIVE_UPLOAD_TOKEN_KEY);
     const expiry = localStorage.getItem(DRIVE_UPLOAD_EXPIRY_KEY);
     if (token && expiry && Date.now() < parseInt(expiry)) return token;
-    localStorage.removeItem(DRIVE_UPLOAD_TOKEN_KEY);
-    localStorage.removeItem(DRIVE_UPLOAD_EXPIRY_KEY);
+    safeRemoveItem(DRIVE_UPLOAD_TOKEN_KEY);
+    safeRemoveItem(DRIVE_UPLOAD_EXPIRY_KEY);
     return null;
 };
 
@@ -152,8 +156,8 @@ export const connectGoogleDriveUpload = (): Promise<string> => {
                 if (response.error) { reject(new Error(response.error)); return; }
                 const token = response.access_token;
                 const expiry = Date.now() + (response.expires_in - 60) * 1000;
-                localStorage.setItem(DRIVE_UPLOAD_TOKEN_KEY, token);
-                localStorage.setItem(DRIVE_UPLOAD_EXPIRY_KEY, expiry.toString());
+                safeSetItem(DRIVE_UPLOAD_TOKEN_KEY, token);
+                safeSetItem(DRIVE_UPLOAD_EXPIRY_KEY, expiry.toString());
                 resolve(token);
             }
         });
@@ -174,8 +178,9 @@ export const uploadFileToDrive = async (token: string, filename: string, blob: B
 
     if (!response.ok) {
         if (response.status === 401) {
-            localStorage.removeItem(DRIVE_UPLOAD_TOKEN_KEY);
-            localStorage.removeItem(DRIVE_UPLOAD_EXPIRY_KEY);
+            notifyGoogleAuthExpired();
+            safeRemoveItem(DRIVE_UPLOAD_TOKEN_KEY);
+            safeRemoveItem(DRIVE_UPLOAD_EXPIRY_KEY);
         }
         throw new Error(`Drive upload failed (${response.status}). Please try again.`);
     }

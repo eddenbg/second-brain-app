@@ -1,3 +1,4 @@
+import { safeSetItem } from './safeStorage';
 export interface Location {
     latitude: number;
     longitude: number;
@@ -31,7 +32,7 @@ export function saveNamedLocation(loc: NamedLocation): void {
     const idx = locations.findIndex(l => l.name === loc.name);
     if (idx >= 0) locations[idx] = loc;
     else locations.push(loc);
-    localStorage.setItem(SAVED_LOCATIONS_KEY, JSON.stringify(locations));
+    safeSetItem(SAVED_LOCATIONS_KEY, JSON.stringify(locations));
 }
 
 /** Haversine distance in meters between two coords */

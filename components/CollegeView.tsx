@@ -9,6 +9,7 @@ import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
+import ReadAloudButton from './ReadAloudButton';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
@@ -31,57 +32,6 @@ interface CollegeViewProps {
     backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
 }
 
-// Read-aloud button reused here
-const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const audioCtxRef = useRef<AudioContext | null>(null);
-    const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-
-    useEffect(() => () => { sourceRef.current?.stop(); audioCtxRef.current?.close(); }, []);
-
-    const toggle = async () => {
-        if (isPlaying) {
-            sourceRef.current?.stop();
-            setIsPlaying(false);
-            return;
-        }
-        setIsLoading(true);
-        try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-            audioCtxRef.current = ctx;
-            const b64 = await generateSpeechFromText(text);
-            if (b64) {
-                const buf = await decodeAudioData(decode(b64), ctx, 24000, 1);
-                const src = ctx.createBufferSource();
-                src.buffer = buf;
-                src.connect(ctx.destination);
-                src.onended = () => setIsPlaying(false);
-                src.start(0);
-                sourceRef.current = src;
-                setIsPlaying(true);
-            }
-        } catch (e) { console.error(e); }
-        finally { setIsLoading(false); }
-    };
-
-    return (
-        <button
-            onClick={toggle}
-            disabled={isLoading}
-            aria-label={isPlaying ? 'Stop reading' : 'Read aloud'}
-            className={`flex items-center gap-3 px-6 py-4 rounded-2xl font-black text-lg uppercase ${
-                isPlaying ? 'bg-red-600 text-white' : 'bg-white text-[#001F3F]'
-            }`}
-        >
-            {isLoading ? <Loader2 className="w-7 h-7 animate-spin" /> :
-             isPlaying ? <StopCircle className="w-7 h-7" /> :
-             <Volume2 className="w-7 h-7" />}
-            {isPlaying ? 'Stop' : 'Read Aloud'}
-        </button>
-    );
-};
-
 const CollegeView: React.FC<CollegeViewProps> = ({
     lectures, onSave, onDelete, onUpdate, bulkDelete,
     courses, addCourse, deleteCourse, tasks, addTask, updateTask, deleteTask, moodleToken,
@@ -95,6 +45,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({
     const [courseViewMode, setCourseViewMode] = useState<'list' | 'grid'>(() =>
         (localStorage.getItem('college_view_mode') as 'list' | 'grid') || 'list'
     );
+    // TODO(deferred): Course sorting — finish manual drag-to-reorder, alphabetical and last-access modes.
+    // TODO(deferred): Semester splitting for courses (group courses by semester).
     const [courseSortBy, setCourseSortBy] = useState<'alpha' | 'manual' | 'recent'>(() =>
         (localStorage.getItem('college_sort_by') as 'alpha' | 'manual' | 'recent') || 'alpha'
     );
@@ -278,7 +230,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                 {(['alpha', 'recent', 'manual'] as const).map(s => (
                                     <button
                                         key={s}
-                                        onClick={() => { setCourseSortBy(s); localStorage.setItem('college_sort_by', s); }}
+                                        onClick={() => { setCourseSortBy(s); safeSetItem('college_sort_by', s); }}
                                         className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest transition-colors ${courseSortBy === s ? 'bg-white text-[#001F3F]' : 'text-white/40 hover:text-white/70'}`}
                                     >
                                         {s === 'alpha' ? 'A–Z' : s === 'recent' ? 'Recent' : 'Manual'}
@@ -288,14 +240,14 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             {/* View mode */}
                             <div className="flex gap-1">
                                 <button
-                                    onClick={() => { setCourseViewMode('list'); localStorage.setItem('college_view_mode', 'list'); }}
+                                    onClick={() => { setCourseViewMode('list'); safeSetItem('college_view_mode', 'list'); }}
                                     className={`p-2 rounded-xl transition-colors ${courseViewMode === 'list' ? 'bg-white/20 text-white' : 'text-white/30 hover:text-white/60'}`}
                                     aria-label="List view"
                                 >
                                     <List size={18} strokeWidth={3} />
                                 </button>
                                 <button
-                                    onClick={() => { setCourseViewMode('grid'); localStorage.setItem('college_view_mode', 'grid'); }}
+                                    onClick={() => { setCourseViewMode('grid'); safeSetItem('college_view_mode', 'grid'); }}
                                     className={`p-2 rounded-xl transition-colors ${courseViewMode === 'grid' ? 'bg-white/20 text-white' : 'text-white/30 hover:text-white/60'}`}
                                     aria-label="Grid view"
                                 >

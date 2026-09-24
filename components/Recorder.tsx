@@ -6,6 +6,10 @@ import LectureNotebook from './LectureNotebook';
 import { getCurrentLocation } from '../utils/location';
 import { getGeminiInstance } from '../utils/gemini';
 import { analyzeVoiceNote, summarizeLectureTranscript } from '../services/geminiService';
+import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
+
+const TITLE_TIMEOUT_MS = 15_000;
+const SUMMARY_TIMEOUT_MS = 20_000;
 import { encode, downsampleTo16k } from '../utils/audio';
 
 interface RecorderProps {
@@ -271,31 +275,36 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // TODO(deferred): Tasks auto-generation from recordings (turn action items into Kanban tasks).
     const handleSave = async () => {
         setIsProcessing(true);
+        // AI calls are bounded so "Saving..." can never hang: title falls back
+        // to the first words of the transcript (or "Recording <date>").
+        const defaultTitle = fallbackTitle(transcript, 'Recording');
         try {
-            const analysis = await analyzeVoiceNote(transcript);
-            const location = await getCurrentLocation();
+            const [analysis, location, lectureAnalysis] = await Promise.all([
+                withTimeout(analyzeVoiceNote(transcript), TITLE_TIMEOUT_MS)
+                    .catch(() => ({ title: defaultTitle, actionItems: [] as string[] })),
+                getCurrentLocation(),
+                withTimeout(summarizeLectureTranscript(transcript), SUMMARY_TIMEOUT_MS)
+                    .catch((summaryError) => {
+                        console.warn('Could not generate lecture summary', summaryError);
+                        return { summary: '', actionItems: [] as Array<{ text: string; done: boolean }> };
+                    }),
+            ]);
 
-            let summary = '';
-            let lectureActionItems: Array<{ text: string; done: boolean }> = [];
-
-            try {
-                const lectureAnalysis = await summarizeLectureTranscript(transcript);
-                summary = lectureAnalysis.summary;
-                lectureActionItems = lectureAnalysis.actionItems;
-            } catch (summaryError) {
-                console.warn('Could not generate lecture summary', summaryError);
-            }
+            const summary = lectureAnalysis.summary;
+            const lectureActionItems = lectureAnalysis.actionItems;
+            const analysisItems = Array.isArray(analysis.actionItems) ? analysis.actionItems : [];
 
             const newMemory: Omit<VoiceMemory, 'id' | 'date' | 'category'> = {
                 type: 'voice',
-                title: analysis.title || title,
+                title: isPlaceholderTitle(analysis.title) ? defaultTitle : analysis.title,
                 transcript,
                 structuredTranscript,
                 videoDataUrl: videoDataUrl || undefined,
                 summary: summary || undefined,
-                actionItems: lectureActionItems.length > 0 ? lectureActionItems : analysis.actionItems.map(text => ({ text, done: false })),
+                actionItems: lectureActionItems.length > 0 ? lectureActionItems : analysisItems.map(text => ({ text, done: false })),
                 ...(location && { location }),
                 ...(notebookData && { notebook: notebookData }),
             };
@@ -303,7 +312,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         } catch(e) {
             console.error("Save failed", e);
             setError("Failed to analyze note. Saved with basic info.");
-             onSave({ type: 'voice', title, transcript, videoDataUrl: videoDataUrl || undefined });
+             onSave({ type: 'voice', title: defaultTitle, transcript, videoDataUrl: videoDataUrl || undefined });
         } finally {
             setIsProcessing(false);
         }

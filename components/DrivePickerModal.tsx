@@ -7,6 +7,7 @@ interface DrivePickerModalProps {
     onClose: () => void;
     onImport: (file: DriveFile) => void;
     importedIds: Set<string>;
+    onReconnect?: () => void;
 }
 
 const mimeLabel = (mimeType: string): string => {
@@ -37,7 +38,7 @@ const DRIVE_LOGO = (
     </svg>
 );
 
-const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, importedIds }) => {
+const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, importedIds, onReconnect }) => {
     const [token] = useState<string | null>(() => getStoredDriveToken());
     const [folderStack, setFolderStack] = useState<Array<{ id: string; name: string }>>(
         [{ id: 'root', name: 'My Drive' }]
@@ -59,7 +60,7 @@ const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, 
             setItems(results);
         } catch (e: any) {
             if (e.message?.includes('401')) {
-                setError('Session expired. Go to Settings → Account & Sync, sign out and sign back in.');
+                setError('Session expired. Tap Reconnect in the banner at the top to refresh your Google connection.');
             } else {
                 setError('Could not load folder. Please try again.');
             }
@@ -117,9 +118,18 @@ const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, 
                         <p className="text-gray-300 font-bold text-sm leading-relaxed">
                             Your Google Drive session has expired or isn't connected yet.
                         </p>
-                        <p className="text-gray-500 text-sm leading-relaxed">
-                            Go to <strong className="text-white">Settings → Account & Sync</strong>, sign out, then sign back in with Google to get a fresh session.
-                        </p>
+                        {onReconnect ? (
+                            <button
+                                onClick={() => { onReconnect(); onClose(); }}
+                                className="px-8 py-4 bg-blue-600 text-white font-black rounded-2xl uppercase text-sm"
+                            >
+                                Reconnect Google
+                            </button>
+                        ) : (
+                            <p className="text-gray-500 text-sm leading-relaxed">
+                                Go to <strong className="text-white">Settings → Account & Sync</strong> and sign in with Google.
+                            </p>
+                        )}
                         <button onClick={onClose} className="px-8 py-4 bg-gray-700 text-white font-black rounded-2xl uppercase text-sm">
                             Close
                         </button>

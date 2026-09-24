@@ -1,4 +1,6 @@
 import type { CalendarEvent } from '../types';
+import { safeSetItem, safeRemoveItem } from '../utils/safeStorage';
+import { notifyGoogleAuthExpired } from './googleAuthEvents';
 
 const CLIENT_ID_STORAGE_KEY = 'google_oauth_client_id';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
@@ -9,7 +11,7 @@ const getClientId = (): string =>
     localStorage.getItem(CLIENT_ID_STORAGE_KEY) || process.env.GOOGLE_CLIENT_ID || '';
 
 export const saveGoogleClientId = (id: string): void => {
-    localStorage.setItem(CLIENT_ID_STORAGE_KEY, id.trim());
+    safeSetItem(CLIENT_ID_STORAGE_KEY, id.trim());
 };
 
 export const getStoredGoogleClientId = (): string =>
@@ -41,8 +43,8 @@ export const getStoredToken = (): string | null => {
     const token = localStorage.getItem(TOKEN_KEY);
     const expiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
     if (token && expiry && Date.now() < parseInt(expiry)) return token;
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    safeRemoveItem(TOKEN_KEY);
+    safeRemoveItem(TOKEN_EXPIRY_KEY);
     return null;
 };
 
@@ -57,8 +59,8 @@ export const connectGoogleCalendar = (): Promise<string> => {
                 if (response.error) { reject(new Error(response.error)); return; }
                 const token = response.access_token;
                 const expiry = Date.now() + (response.expires_in - 60) * 1000;
-                localStorage.setItem(TOKEN_KEY, token);
-                localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+                safeSetItem(TOKEN_KEY, token);
+                safeSetItem(TOKEN_EXPIRY_KEY, expiry.toString());
                 resolve(token);
             }
         });
@@ -68,8 +70,8 @@ export const connectGoogleCalendar = (): Promise<string> => {
 
 export const saveGoogleToken = (token: string, expiresInSeconds = 3600): void => {
     const expiry = Date.now() + (expiresInSeconds - 60) * 1000;
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(TOKEN_EXPIRY_KEY, expiry.toString());
+    safeSetItem(TOKEN_KEY, token);
+    safeSetItem(TOKEN_EXPIRY_KEY, expiry.toString());
 };
 
 export const disconnectGoogleCalendar = () => {
@@ -77,8 +79,8 @@ export const disconnectGoogleCalendar = () => {
     if (token && window.google?.accounts?.oauth2) {
         window.google.accounts.oauth2.revoke(token);
     }
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+    safeRemoveItem(TOKEN_KEY);
+    safeRemoveItem(TOKEN_EXPIRY_KEY);
 };
 
 export const fetchGoogleCalendarEvents = async (token: string): Promise<CalendarEvent[]> => {
@@ -91,8 +93,9 @@ export const fetchGoogleCalendarEvents = async (token: string): Promise<Calendar
 
     if (!response.ok) {
         if (response.status === 401) {
-            localStorage.removeItem(TOKEN_KEY);
-            localStorage.removeItem(TOKEN_EXPIRY_KEY);
+            notifyGoogleAuthExpired();
+            safeRemoveItem(TOKEN_KEY);
+            safeRemoveItem(TOKEN_EXPIRY_KEY);
         }
         throw new Error(`Calendar API error: ${response.status}`);
     }

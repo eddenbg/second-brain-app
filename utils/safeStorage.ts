@@ -46,6 +46,29 @@ export const safeSetItem = (key: string, value: string): boolean => {
     }
 };
 
+/** removeItem that never throws. */
+export const safeRemoveItem = (key: string): void => {
+    try {
+        localStorage.removeItem(key);
+    } catch {
+        // Storage inaccessible — nothing to remove
+    }
+};
+
+export const STORAGE_FULL_MESSAGE = 'Storage full — oldest items cleared to make room';
+let storageFullAlerted = false;
+
+/** Tell the user (once per session) that old cached items were evicted. */
+export const alertStorageFull = (): void => {
+    if (storageFullAlerted) return;
+    storageFullAlerted = true;
+    try {
+        window.alert(STORAGE_FULL_MESSAGE);
+    } catch {
+        // alert unavailable (e.g. embedded webview) — ignore
+    }
+};
+
 // Fields that can hold base64 / blob media. Never cached locally — Firestore
 // stays the source of truth for them.
 const MEDIA_FIELDS = ['imageDataUrl', 'audioDataUrl', 'videoDataUrl'];

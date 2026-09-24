@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import BottomNavBar from './components/BottomNavBar';
 import type { View } from './components/BottomNavBar';
 import CollegeView from './components/CollegeView';
-import AskAIView from './components/AskAIView';
+import AskAIView, { ASK_AI_GREETING } from './components/AskAIView';
+import type { AskAIMessage } from './components/AskAIView';
 import PersonalView from './components/PersonalView';
 import ScheduleView from './components/ScheduleView';
 import FilesView from './components/FilesView';
@@ -13,9 +14,21 @@ import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './se
 import { processSharedUrl } from './services/geminiService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
-import { getStoredDriveToken } from './services/googleDriveService';
+import { refreshGoogleToken, watchGoogleTokenExpiry, GOOGLE_AUTH_EXPIRED_EVENT, GOOGLE_TOKEN_REFRESHED_EVENT } from './services/googleAuthService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
+
+const ASK_AI_SESSION_KEY = 'ask_ai_conversation';
+
+const loadAskAiSession = (): AskAIMessage[] | null => {
+  try {
+    const raw = sessionStorage.getItem(ASK_AI_SESSION_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.length > 1 ? parsed : null;
+  } catch {
+    return null;
+  }
+};
 
 const viewTitles: Record<View, string> = {
     personal: 'Personal Hub',
@@ -48,6 +61,21 @@ function App() {
   const updateWebCategories = useCallback((cats: string[]) => {
     setWebCategories(cats);
     safeSetItem('web_categories', JSON.stringify(cats));
+  }, []);
+
+  // Ask AI conversation is kept here (and in sessionStorage) so switching
+  // tabs doesn't reset it. Only "New Conversation" clears it.
+  const [askAiRestored] = useState(() => loadAskAiSession() !== null);
+  const [askAiMessages, setAskAiMessages] = useState<AskAIMessage[]>(() => loadAskAiSession() || [ASK_AI_GREETING]);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(ASK_AI_SESSION_KEY, JSON.stringify(askAiMessages));
+    } catch {
+      // sessionStorage full or unavailable — the in-memory copy still persists across tabs
+    }
+  }, [askAiMessages]);
+  const startNewAskAiConversation = useCallback(() => {
+    setAskAiMessages([ASK_AI_GREETING]);
   }, []);
 
   const collegeBackHandlerRef = useRef<(() => boolean) | null>(null);
@@ -120,6 +148,7 @@ function App() {
   const collegeMemories = useMemo(() => memories.filter(m => m.category === 'college'), [memories]);
   const personalMemories = useMemo(() => memories.filter(m => m.category === 'personal'), [memories]);
 
+  // TODO(deferred): Moodle full integration (assignments, grades, two-way sync).
   // Moodle sync
   useEffect(() => {
     const syncMoodle = async () => {
@@ -142,6 +171,8 @@ function App() {
                 course: mc.fullname,
                 fileUrl: item.fileurl,
                 mimeType: item.mimetype,
+                sourceType: 'moodle',
+                moodleId: String(item.id),
               } as Omit<FileMemory, 'id' | 'date'>);
             }
           }
@@ -292,28 +323,63 @@ function App() {
       }
   };
 
-  // Load Google Calendar events
+  // Google API token (Calendar/Drive) expiry: detected via onAuthStateChanged,
+  // visibility changes, a 1-minute check, and 401 responses from API calls.
+  const [googleExpired, setGoogleExpired] = useState(false);
+  const [googleTokenVersion, setGoogleTokenVersion] = useState(0);
+  const [isReconnectingGoogle, setIsReconnectingGoogle] = useState(false);
+  const autoRefreshTriedRef = useRef(false);
+
+  useEffect(() => watchGoogleTokenExpiry(setGoogleExpired), []);
+
+  // When a Drive/Calendar call returns 401, try to refresh the token right
+  // away (once per session). Browsers often block popups that aren't
+  // triggered by a tap — then the banner's Reconnect button does it.
+  useEffect(() => {
+    const onApiAuthError = () => {
+      if (autoRefreshTriedRef.current) return;
+      autoRefreshTriedRef.current = true;
+      refreshGoogleToken(false).catch(() => { /* banner stays visible */ });
+    };
+    window.addEventListener(GOOGLE_AUTH_EXPIRED_EVENT, onApiAuthError);
+    return () => window.removeEventListener(GOOGLE_AUTH_EXPIRED_EVENT, onApiAuthError);
+  }, []);
+
+  useEffect(() => {
+    const onRefreshed = () => {
+      setGoogleExpired(false);
+      setGoogleTokenVersion(v => v + 1);
+    };
+    window.addEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
+    return () => window.removeEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
+  }, []);
+
+  const reconnectGoogle = useCallback(async () => {
+    setIsReconnectingGoogle(true);
+    try {
+      const ok = await refreshGoogleToken(true);
+      if (ok) {
+        setToast('Google reconnected');
+        setTimeout(() => setToast(null), 3000);
+      }
+    } catch (e: any) {
+      if (e?.code !== 'auth/popup-closed-by-user') {
+        setToast('Could not reconnect Google. Try again.');
+        setTimeout(() => setToast(null), 5000);
+      }
+    } finally {
+      setIsReconnectingGoogle(false);
+    }
+  }, []);
+
+  // Load Google Calendar events (again after every token refresh)
   useEffect(() => {
     const token = getStoredToken();
     if (!token) return;
     fetchGoogleCalendarEvents(token)
       .then(events => setGoogleEvents(events))
       .catch(() => setGoogleEvents([]));
-  }, []);
-
-  // Notify user when Google token expires so they know to reconnect
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!user || user.isAnonymous) return;
-      if (!getStoredToken() && !getStoredDriveToken()) {
-        setToast('Google connection expired. Open Settings to reconnect.');
-        setTimeout(() => setToast(null), 6000);
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [user]);
+  }, [googleTokenVersion]);
 
   const allCalendarEvents = useMemo(() => {
     const seen = new Set<string>();
@@ -376,7 +442,15 @@ function App() {
           />
         );
       case 'askai':
-        return <AskAIView memories={memories} />;
+        return (
+          <AskAIView
+            memories={memories}
+            messages={askAiMessages}
+            setMessages={setAskAiMessages}
+            restoredFromEarlier={askAiRestored}
+            onNewConversation={startNewAskAiConversation}
+          />
+        );
       case 'files':
         return (
           <FilesView
@@ -385,6 +459,11 @@ function App() {
             onDelete={deleteMemory}
             onUpdate={updateMemory}
             backHandlerRef={filesBackHandlerRef}
+            moodleToken={moodleToken}
+            isGoogleUser={!!user && !user.isAnonymous}
+            googleExpired={googleExpired}
+            googleTokenVersion={googleTokenVersion}
+            onReconnectGoogle={reconnectGoogle}
           />
         );
       default:
@@ -453,6 +532,22 @@ function App() {
           </button>
         </div>
       </header>
+
+      {/* Google token expired banner */}
+      {googleExpired && (
+        <div role="alert" className="flex-shrink-0 bg-yellow-500 text-[#001F3F] px-4 py-2 flex items-center justify-between gap-3 z-10">
+          <p className="font-black text-xs uppercase tracking-widest">Google connection expired.</p>
+          <button
+            onClick={reconnectGoogle}
+            disabled={isReconnectingGoogle}
+            className="flex items-center gap-2 px-4 py-2 bg-[#001F3F] text-white rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-60"
+            style={{ minHeight: 'unset' }}
+          >
+            {isReconnectingGoogle && <Loader2 className="animate-spin" size={14} strokeWidth={3} />}
+            {isReconnectingGoogle ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+        </div>
+      )}
 
       {/* Main content */}
       <main className="flex-grow overflow-hidden relative">

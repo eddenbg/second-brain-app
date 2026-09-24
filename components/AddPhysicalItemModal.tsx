@@ -9,6 +9,13 @@ import { getCurrentLocation } from '../utils/location';
 import { Modality, Session } from '@google/genai';
 import { getGeminiInstance } from '../utils/gemini';
 import { downsampleTo16k } from '../utils/audio';
+import { resizeImage, createThumbnail } from '../utils/image';
+import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
+
+// Belongings keep a viewable photo, compressed so it stays well under the
+// Firestore 1 MB document limit.
+const ITEM_PHOTO_MAX_DIM = 1024;
+const ITEM_PHOTO_QUALITY = 0.6;
 
 
 interface AddPhysicalItemModalProps {
@@ -90,14 +97,26 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             canvas.getContext('2d')?.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-            const dataUrl = canvas.toDataURL('image/jpeg');
-            setImageDataUrl(dataUrl);
+            // Store a compressed photo, never the full-resolution capture
+            // (Firestore documents are capped at 1 MB).
+            resizeImage(canvas.toDataURL('image/jpeg', 0.85), ITEM_PHOTO_MAX_DIM, ITEM_PHOTO_QUALITY)
+                .then(setImageDataUrl)
+                .catch(() => setError('Could not process the photo. Please try again.'));
             stopCamera();
         }
     };
     
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
+        event.target.value = '';
+        if (file && mode === 'photo') {
+            // Decode via object URL and compress — the raw gallery file is
+            // never converted to base64.
+            resizeImage(file, ITEM_PHOTO_MAX_DIM, ITEM_PHOTO_QUALITY)
+                .then(url => { setImageDataUrl(url); stopCamera(); })
+                .catch(() => setError('Could not read this image. Please choose a different photo.'));
+            return;
+        }
         if (file) {
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -189,7 +208,10 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
         const content = description || transcript;
         if (!content.trim()) return;
         setIsGeneratingTitle(true);
-        setTitle(await generateTitleForContent(content));
+        const generated = await withTimeout(generateTitleForContent(content), 15_000)
+            .then(t => (isPlaceholderTitle(t) ? fallbackTitle(content, 'Item') : t))
+            .catch(() => fallbackTitle(content, 'Item'));
+        setTitle(generated);
         setIsGeneratingTitle(false);
     }
 
@@ -207,9 +229,12 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
             };
             onSave(newMemory);
         } else if (mode === 'photo' && imageDataUrl) {
+            const thumbnailDataUrl = await createThumbnail(imageDataUrl).catch(() => undefined);
             const newMemory: Omit<PhysicalItemMemory, 'id' | 'date' | 'category'> = {
                 type: 'item', title, description,
-                imageDataUrl, ...(location && { location }),
+                imageDataUrl, fileType: 'image',
+                ...(thumbnailDataUrl && { thumbnailDataUrl }),
+                ...(location && { location }),
                 ...(voiceNote.trim() && { 
                     voiceNote: { 
                         transcript: voiceNote.trim(),

@@ -10,6 +10,7 @@ import Recorder from './Recorder';
 import QASession from './QASession';
 import KanbanBoard from './KanbanBoard';
 import AddDocumentModal from './AddDocumentModal';
+import ReadAloudButton from './ReadAloudButton';
 import AddPhysicalItemModal from './AddPhysicalItemModal';
 import AddWebMemoryModal from './AddWebMemoryModal';
 import NotionPickerModal from './NotionPickerModal';
@@ -52,57 +53,6 @@ type SubView =
   | 'detail'
   | 'search'
   | 'favorites';
-
-// --- Read-Aloud Button ---
-const ReadAloudButton: React.FC<{ text: string }> = ({ text }) => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const audioCtxRef = useRef<AudioContext | null>(null);
-    const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-
-    useEffect(() => () => { sourceRef.current?.stop(); audioCtxRef.current?.close(); }, []);
-
-    const toggle = async () => {
-        if (isPlaying) {
-            sourceRef.current?.stop();
-            setIsPlaying(false);
-            return;
-        }
-        setIsLoading(true);
-        try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-            audioCtxRef.current = ctx;
-            const b64 = await generateSpeechFromText(text);
-            if (b64) {
-                const buf = await decodeAudioData(decode(b64), ctx, 24000, 1);
-                const src = ctx.createBufferSource();
-                src.buffer = buf;
-                src.connect(ctx.destination);
-                src.onended = () => setIsPlaying(false);
-                src.start(0);
-                sourceRef.current = src;
-                setIsPlaying(true);
-            }
-        } catch (e) { console.error(e); }
-        finally { setIsLoading(false); }
-    };
-
-    return (
-        <button
-            onClick={toggle}
-            disabled={isLoading}
-            aria-label={isPlaying ? 'Stop reading' : 'Read aloud'}
-            className={`flex items-center gap-3 px-6 py-4 rounded-2xl font-black text-lg uppercase ${
-                isPlaying ? 'bg-red-600 text-white' : 'bg-white text-[#001F3F]'
-            }`}
-        >
-            {isLoading ? <Loader2 className="w-7 h-7 animate-spin" /> :
-             isPlaying ? <StopCircle className="w-7 h-7" /> :
-             <Volume2 className="w-7 h-7" />}
-            {isPlaying ? 'Stop' : 'Read Aloud'}
-        </button>
-    );
-};
 
 // --- Main Component ---
 const PersonalView: React.FC<PersonalViewProps> = ({

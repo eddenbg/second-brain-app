@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { AnyMemory, DocumentMemory, VoiceMemory, FileMemory } from '../types';
+import type { AnyMemory, DocumentMemory, VoiceMemory, FileMemory, PhysicalItemMemory } from '../types';
 import {
     FolderIcon, MicIcon, CameraIcon, FileTextIcon,
     XIcon, Loader2Icon, SearchIcon, Volume2Icon, StopCircleIcon,
@@ -9,9 +9,13 @@ import AddDocumentModal from './AddDocumentModal';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import { AlertCircle } from 'lucide-react';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import DrivePickerModal from './DrivePickerModal';
 import MoodlePickerModal from './MoodlePickerModal';
 import type { DriveFile } from '../services/googleDriveService';
+import { getStoredDriveToken, listDriveFiles } from '../services/googleDriveService';
+import { testMoodleConnection } from '../services/moodleService';
 import type { MoodleContent } from '../types';
 
 interface FilesViewProps {
@@ -21,7 +25,42 @@ interface FilesViewProps {
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
     moodleToken?: string | null;
+    isGoogleUser?: boolean;
+    googleExpired?: boolean;
+    googleTokenVersion?: number;
+    onReconnectGoogle?: () => void;
 }
+
+// TODO(deferred): AI semantic search in Files (search currently matches titles only).
+
+type VaultFilter = 'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'drive' | 'hidden';
+
+/** Stored preview image for a memory, if any (thumbnail preferred over full photo). */
+const getPreviewImage = (m: AnyMemory): string | undefined => {
+    const legacyImage = (m as PhysicalItemMemory | DocumentMemory).imageDataUrl;
+    const notebookBg = (m as VoiceMemory).notebook?.backgroundImageUrl;
+    return m.thumbnailDataUrl
+        || (legacyImage && legacyImage.startsWith('data:image') ? legacyImage : undefined)
+        || (notebookBg && notebookBg.startsWith('data:image') ? notebookBg : undefined);
+};
+
+/** True when a memory contains a photo anywhere in the app (OCR scan, belonging, attachment). */
+const hasPhoto = (m: AnyMemory): boolean =>
+    m.fileType === 'image'
+    || m.type === 'item'
+    || (m.type === 'document' && !!(m as DocumentMemory).imageDataUrl)
+    || !!getPreviewImage(m);
+
+/** Files imported from Moodle (older auto-synced files have no sourceType but a Moodle file URL). */
+const isMoodleFile = (m: AnyMemory): boolean => {
+    if (m.type !== 'file') return false;
+    const f = m as FileMemory;
+    return f.sourceType === 'moodle' || (!f.sourceType && /pluginfile\.php|moodle/i.test(f.fileUrl || ''));
+};
+
+/** Documents come from the OCR scanner (photo → text). */
+const isScannedDoc = (m: AnyMemory): boolean =>
+    m.type === 'document' && ((m as DocumentMemory).source === 'ocr' || !(m as DocumentMemory).source);
 
 // ── Media Preview Drawer ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const MediaPreviewDrawer: React.FC<{
@@ -29,43 +68,14 @@ const MediaPreviewDrawer: React.FC<{
     onClose: () => void;
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
 }> = ({ memory, onClose, onUpdate }) => {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isGenerating, setIsGenerating] = useState(false);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const tts = useTextToSpeech();
+    const isPlaying = tts.status === 'playing';
+    const isGenerating = tts.status === 'loading';
 
-    useEffect(() => {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        return () => {
-            audioSourceRef.current?.stop();
-            audioContextRef.current?.close();
-        };
-    }, []);
-
-    const toggleAudio = async () => {
-        if (isPlaying) {
-            audioSourceRef.current?.stop();
-            setIsPlaying(false);
-            return;
-        }
+    const toggleAudio = () => {
         const textToRead = (memory as VoiceMemory).transcript || (memory as DocumentMemory).extractedText || (memory as FileMemory).summary || memory.title;
         if (!textToRead) return;
-        setIsGenerating(true);
-        try {
-            const audioB64 = await generateSpeechFromText(textToRead);
-            if (audioB64 && audioContextRef.current) {
-                const audioData = decode(audioB64);
-                const audioBuffer = await decodeAudioData(audioData, audioContextRef.current, 24000, 1);
-                const source = audioContextRef.current.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContextRef.current.destination);
-                source.onended = () => setIsPlaying(false);
-                source.start(0);
-                audioSourceRef.current = source;
-                setIsPlaying(true);
-            }
-        } catch (e) { console.error('Playback error', e); }
-        finally { setIsGenerating(false); }
+        tts.toggle(textToRead);
     };
 
     return (
@@ -96,10 +106,11 @@ const MediaPreviewDrawer: React.FC<{
                             <div className="bg-indigo-900/30 p-10 rounded-full border-4 border-indigo-500 shadow-2xl">
                                 <FileTextIcon className="w-20 h-20 text-indigo-400" />
                             </div>
-                            <button onClick={toggleAudio} disabled={isGenerating} className="px-10 py-5 bg-teal-600 text-white font-black rounded-3xl text-xl shadow-xl flex items-center gap-4">
-                                {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <StopCircleIcon className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
-                                {isPlaying ? 'STOP READING' : 'READ SUMMARY'}
+                            <button onClick={toggleAudio} className="px-10 py-5 bg-teal-600 text-white font-black rounded-3xl text-xl shadow-xl flex items-center gap-4">
+                                {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <XIcon className="w-8 h-8" /> : tts.status === 'error' ? <AlertCircle className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
+                                {isGenerating ? 'LOADING…' : isPlaying ? 'STOP READING' : tts.status === 'error' ? 'TRY AGAIN' : 'READ SUMMARY'}
                             </button>
+                            {tts.error && <p role="alert" className="text-red-400 text-sm font-bold">{tts.error}</p>}
                             <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">
                                 {(memory as FileMemory).sourceType === 'drive' ? 'Open in Drive' : 'Download Original'}
                             </a>
@@ -149,9 +160,51 @@ const DRIVE_BUTTON_ICON = (
 );
 
 // ── Files View ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef, moodleToken }) => {
+const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef, moodleToken, isGoogleUser = false, googleExpired = false, googleTokenVersion = 0, onReconnectGoogle }) => {
     const [searchQuery, setSearchQuery] = useState('');
-    const [filter, setFilter] = useState<'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'drive' | 'hidden'>('all');
+    const [filter, setFilter] = useState<VaultFilter>('all');
+    const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
+    const [driveStatus, setDriveStatus] = useState<'idle' | 'loading' | 'loaded' | 'expired' | 'error'>('idle');
+    const [moodleStatus, setMoodleStatus] = useState<'unknown' | 'checking' | 'ok' | 'failed'>('unknown');
+
+    // A service's tab is only shown when it's connected. Drive counts as
+    // connected for Google-signed-in users even while the token is expired
+    // (the tab then offers to reconnect).
+    const isDriveConnected = isGoogleUser || !!getStoredDriveToken();
+    const isMoodleConnected = !!moodleToken;
+
+    useEffect(() => {
+        if ((filter === 'drive' && !isDriveConnected) || (filter === 'moodle' && !isMoodleConnected)) setFilter('all');
+    }, [filter, isDriveConnected, isMoodleConnected]);
+
+    // DRIVE filter: list recently modified files from the connected Drive
+    useEffect(() => {
+        if (filter !== 'drive') return;
+        const token = getStoredDriveToken();
+        if (!token) { setDriveStatus('expired'); return; }
+        let cancelled = false;
+        setDriveStatus('loading');
+        listDriveFiles(token)
+            .then(files => { if (!cancelled) { setDriveFiles(files); setDriveStatus('loaded'); } })
+            .catch((e: any) => {
+                if (cancelled) return;
+                setDriveStatus(String(e?.message || '').includes('401') ? 'expired' : 'error');
+            });
+        return () => { cancelled = true; };
+    }, [filter, googleTokenVersion]);
+
+    useEffect(() => {
+        if (googleExpired && filter === 'drive') setDriveStatus('expired');
+    }, [googleExpired, filter]);
+
+    // MOODLE filter: verify the stored token actually works
+    useEffect(() => {
+        if (filter !== 'moodle' || !moodleToken) return;
+        let cancelled = false;
+        setMoodleStatus('checking');
+        testMoodleConnection(moodleToken).then(ok => { if (!cancelled) setMoodleStatus(ok ? 'ok' : 'failed'); });
+        return () => { cancelled = true; };
+    }, [filter, moodleToken]);
     const [previewMemory, setPreviewMemory] = useState<AnyMemory | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectMode, setIsSelectMode] = useState(false);
@@ -214,9 +267,9 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
     const filteredMemories = useMemo(() => {
         let results = memories;
         if (filter === 'audio') results = results.filter(m => m.type === 'voice');
-        if (filter === 'image') results = results.filter(m => m.type === 'item' || m.type === 'video');
+        if (filter === 'image') results = results.filter(hasPhoto);
         if (filter === 'doc') results = results.filter(m => m.type === 'document');
-        if (filter === 'moodle') results = results.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'moodle');
+        if (filter === 'moodle') results = results.filter(isMoodleFile);
         if (filter === 'drive') results = results.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive');
         if (filter === 'hidden') results = results.filter(m => m.isHidden);
         else results = results.filter(m => !m.isHidden);
@@ -235,6 +288,11 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             else next.add(id);
             return next;
         });
+    };
+
+    const allVisibleSelected = filteredMemories.length > 0 && filteredMemories.every(m => selectedIds.has(m.id));
+    const toggleSelectAll = () => {
+        setSelectedIds(allVisibleSelected ? new Set() : new Set(filteredMemories.map(m => m.id)));
     };
 
     const handleMultiStudy = async (focus: string, type: 'written' | 'audio' | 'video' | 'research') => {
@@ -269,6 +327,7 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                     onClose={() => { if (window.history.state?.filesModal === 'drive') window.history.back(); setShowDrivePicker(false); }}
                     onImport={handleImportFromDrive}
                     importedIds={importedDriveIds}
+                    onReconnect={isGoogleUser ? onReconnectGoogle : undefined}
                 />
             )}
             {showMoodlePicker && moodleToken && (
@@ -321,28 +380,78 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                 </div>
             </header>
 
-            <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 scrollbar-hide">
-                {(['all', 'audio', 'image', 'doc', 'moodle', 'drive', 'hidden'] as const).map(id => (
+            <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 scrollbar-hide items-center">
+                {([
+                    'all', 'audio', 'image', 'doc',
+                    ...(isMoodleConnected ? ['moodle' as const] : []),
+                    ...(isDriveConnected ? ['drive' as const] : []),
+                ] as VaultFilter[]).map(id => (
                     <button
                         key={id}
                         onClick={() => setFilter(id)}
                         aria-label={`Filter by ${id}`}
                         className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex-shrink-0 ${filter === id ? 'bg-yellow-500 text-[#001f3f]' : 'bg-white/10 text-gray-400 hover:text-gray-200'}`}
                     >
-                        {id === 'moodle' ? 'Moodle' : id === 'hidden' ? 'Archived' : id === 'drive' ? 'Drive' : id}
+                        {id === 'moodle' ? 'Moodle' : id === 'drive' ? 'Drive' : id}
                     </button>
                 ))}
+                {/* Archived sits apart from the content filters */}
+                <div className="w-px h-6 bg-white/20 mx-1 flex-shrink-0" aria-hidden="true" />
+                <button
+                    onClick={() => setFilter('hidden')}
+                    aria-label="Filter by archived"
+                    className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex-shrink-0 ${filter === 'hidden' ? 'bg-yellow-500 text-[#001f3f]' : 'bg-white/5 text-gray-500 hover:text-gray-300'}`}
+                >
+                    Archived
+                </button>
             </div>
 
+            {isSelectMode && filteredMemories.length > 0 && (
+                <button
+                    onClick={toggleSelectAll}
+                    aria-pressed={allVisibleSelected}
+                    className="shrink-0 self-start flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-black text-[10px] uppercase tracking-widest"
+                    style={{ minHeight: 'unset' }}
+                >
+                    <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${allVisibleSelected ? 'bg-yellow-500 border-yellow-400' : 'border-white/30'}`}>
+                        {allVisibleSelected && <CheckIcon className="w-3 h-3 text-[#001f3f]" />}
+                    </span>
+                    {allVisibleSelected ? 'Deselect All' : 'Select All'} ({filteredMemories.length})
+                </button>
+            )}
+
             <main className="flex-grow overflow-y-auto space-y-3 pb-40 px-0.5">
-                {filteredMemories.length === 0 ? (
+                {filter === 'moodle' && moodleStatus === 'failed' ? (
+                    <div className="text-center py-20 bg-white/5 rounded-[2rem] border-4 border-dashed border-white/10">
+                        <FolderIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
+                        <p className="text-xs text-gray-400 font-black uppercase tracking-widest px-6">Moodle not connected — go to Settings to connect</p>
+                    </div>
+                ) : filter === 'drive' && driveStatus === 'expired' && filteredMemories.length === 0 ? (
+                    <div className="text-center py-20 bg-white/5 rounded-[2rem] border-4 border-dashed border-white/10 flex flex-col items-center gap-4 px-6">
+                        <FolderIcon className="w-16 h-16 mx-auto text-gray-600" />
+                        <p className="text-xs text-gray-400 font-black uppercase tracking-widest">Google Drive connection expired</p>
+                        {onReconnectGoogle && (
+                            <button
+                                onClick={onReconnectGoogle}
+                                className="px-6 py-3 bg-yellow-500 text-[#001f3f] rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95"
+                            >
+                                Reconnect
+                            </button>
+                        )}
+                    </div>
+                ) : filteredMemories.length === 0 && !(filter === 'drive' && (driveStatus === 'loading' || driveFiles.length > 0)) ? (
                     <div className="text-center py-20 bg-white/5 rounded-[2rem] border-4 border-dashed border-white/10 opacity-50">
                         <FolderIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-                        <p className="text-xs text-gray-500 font-black uppercase tracking-widest">Vault Empty</p>
+                        <p className="text-xs text-gray-500 font-black uppercase tracking-widest">
+                            {filter === 'drive' && driveStatus === 'error' ? 'Could not load Drive files' : 'Vault Empty'}
+                        </p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 gap-3.5">
-                        {filteredMemories.map(mem => (
+                        {filteredMemories.map(mem => {
+                            const preview = getPreviewImage(mem);
+                            const showPreviewTile = !!preview || hasPhoto(mem) || mem.type === 'document';
+                            return (
                             <div
                                 key={mem.id}
                                 onClick={() => handleItemClick(mem)}
@@ -350,23 +459,74 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                                 className={`bg-white/5 p-4 rounded-[2rem] border-4 flex flex-col gap-3 shadow-xl active:scale-95 transition-all cursor-pointer relative ${selectedIds.has(mem.id) ? 'border-yellow-500' : 'border-white/10'}`}
                             >
                                 {isSelectMode && (
-                                    <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border-2 flex items-center justify-center ${selectedIds.has(mem.id) ? 'bg-yellow-500 border-yellow-400' : 'border-white/10'}`}>
+                                    <div className={`absolute top-4 right-4 w-6 h-6 rounded-full border-2 flex items-center justify-center z-10 ${selectedIds.has(mem.id) ? 'bg-yellow-500 border-yellow-400' : 'border-white/10'}`}>
                                         {selectedIds.has(mem.id) && <CheckIcon className="w-4 h-4 text-[#001f3f]" />}
                                     </div>
                                 )}
-                                <div className="p-4 bg-black/20 rounded-2xl w-fit relative">
-                                    {mem.type === 'file' ? <FileTextIcon className="w-6 h-6 text-yellow-500" /> :
-                                     mem.type === 'voice' ? <MicIcon className="w-6 h-6 text-yellow-500" /> :
-                                     <CameraIcon className="w-6 h-6 text-yellow-500" />}
-                                    {mem.type === 'file' && (mem as FileMemory).sourceType === 'drive' && DRIVE_BADGE}
-                                </div>
+                                {showPreviewTile ? (
+                                    <div className="flex flex-col items-start gap-1">
+                                        <div className="w-20 h-20 bg-black/20 rounded-2xl overflow-hidden flex items-center justify-center relative shrink-0">
+                                            {preview
+                                                ? <img src={preview} alt="" loading="lazy" className="w-full h-full object-cover" />
+                                                : <CameraIcon className="w-6 h-6 text-yellow-500" />}
+                                        </div>
+                                        {isScannedDoc(mem) && (
+                                            <span className="text-[8px] font-black uppercase tracking-widest text-[#001f3f] bg-yellow-500 px-2 py-0.5 rounded-md">Scanned Doc</span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="p-4 bg-black/20 rounded-2xl w-fit relative">
+                                        {mem.type === 'file' ? <FileTextIcon className="w-6 h-6 text-yellow-500" /> :
+                                         mem.type === 'voice' ? <MicIcon className="w-6 h-6 text-yellow-500" /> :
+                                         <CameraIcon className="w-6 h-6 text-yellow-500" />}
+                                        {mem.type === 'file' && (mem as FileMemory).sourceType === 'drive' && DRIVE_BADGE}
+                                    </div>
+                                )}
                                 <div className="overflow-hidden">
                                     <h3 className="text-sm font-black text-white truncate uppercase tracking-tight">{mem.title}</h3>
                                     <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{mem.course || 'Personal'}</span>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
+                )}
+
+                {/* Recent files straight from the connected Google Drive */}
+                {filter === 'drive' && driveStatus !== 'expired' && (driveStatus === 'loading' || driveFiles.length > 0) && (
+                    <section className="pt-4 space-y-2">
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Recent in Google Drive</h3>
+                        {driveStatus === 'loading' ? (
+                            <div className="flex justify-center py-8"><Loader2Icon className="w-8 h-8 text-white animate-spin" /></div>
+                        ) : driveFiles.filter(f => !searchQuery.trim() || f.name.toLowerCase().includes(searchQuery.toLowerCase())).map(file => {
+                            const imported = importedDriveIds.has(file.id);
+                            return (
+                                <div key={file.id} className="bg-white/5 p-3 rounded-2xl border-2 border-white/10 flex items-center gap-3">
+                                    <div className="p-3 bg-black/20 rounded-xl relative shrink-0">
+                                        <FileTextIcon className="w-5 h-5 text-yellow-500" />
+                                        {DRIVE_BADGE}
+                                    </div>
+                                    <a
+                                        href={file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-grow min-w-0"
+                                    >
+                                        <p className="text-sm font-black text-white truncate">{file.name}</p>
+                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{new Date(file.modifiedTime).toLocaleDateString()}</p>
+                                    </a>
+                                    <button
+                                        onClick={() => handleImportFromDrive(file)}
+                                        disabled={imported}
+                                        className="px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest bg-yellow-500 text-[#001f3f] disabled:bg-white/10 disabled:text-gray-400 shrink-0"
+                                        style={{ minHeight: 'unset' }}
+                                    >
+                                        {imported ? 'Saved' : 'Save'}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </section>
                 )}
             </main>
 

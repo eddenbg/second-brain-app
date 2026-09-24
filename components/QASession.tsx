@@ -2,6 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { answerQuestionFromContext, generateSpeechFromText } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import { AlertCircle } from 'lucide-react';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { SendIcon, UserIcon, BotIcon, MicIcon, Volume2Icon, StopCircleIcon, Loader2Icon, BrainCircuitIcon, CalendarIcon } from './Icons';
 import type { AnyMemory, Task, CalendarEvent } from '../types';
 import { Modality, Session } from '@google/genai';
@@ -26,6 +28,7 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const tts = useTextToSpeech();
 
   const ttsAudioContextRef = useRef<AudioContext | null>(null);
   const ttsSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -74,26 +77,14 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
     }
   };
 
-  const handleReadResponse = async (msg: Message) => {
-      if (playingMessageId === msg.id) {
-          ttsSourceRef.current?.stop();
+  const handleReadResponse = (msg: Message) => {
+      if (playingMessageId === msg.id && (tts.status === 'playing' || tts.status === 'loading')) {
+          tts.stop();
           setPlayingMessageId(null);
           return;
       }
-      try {
-        if (!ttsAudioContextRef.current) ttsAudioContextRef.current = new AudioContext({ sampleRate: 24000 });
-        const audioB64 = await generateSpeechFromText(msg.text);
-        if (audioB64) {
-            const buffer = await decodeAudioData(decode(audioB64), ttsAudioContextRef.current, 24000, 1);
-            const source = ttsAudioContextRef.current.createBufferSource();
-            source.buffer = buffer;
-            source.connect(ttsAudioContextRef.current.destination);
-            source.onended = () => setPlayingMessageId(null);
-            source.start(0);
-            ttsSourceRef.current = source;
-            setPlayingMessageId(msg.id);
-        }
-      } catch (e) { console.error(e); }
+      setPlayingMessageId(msg.id);
+      tts.play(msg.text);
   };
 
   return (
@@ -115,7 +106,10 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
                     aria-label={playingMessageId === msg.id ? "Stop reading" : "Read response aloud"}
                     className="mt-6 p-4 bg-white/10 rounded-2xl text-yellow-500 hover:bg-white/20 transition-colors"
                   >
-                      {playingMessageId === msg.id ? <StopCircleIcon className="w-10 h-10"/> : <Volume2Icon className="w-10 h-10"/>}
+                      {playingMessageId === msg.id && tts.status === 'loading' ? <Loader2Icon className="w-10 h-10 animate-spin"/> :
+                       playingMessageId === msg.id && tts.status === 'playing' ? <StopCircleIcon className="w-10 h-10"/> :
+                       playingMessageId === msg.id && tts.status === 'error' ? <AlertCircle className="w-10 h-10 text-red-400"/> :
+                       <Volume2Icon className="w-10 h-10"/>}
                   </button>
               )}
             </div>

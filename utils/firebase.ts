@@ -3,6 +3,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider } from 'firebase/auth';
 import { initializeFirestore, CACHE_SIZE_UNLIMITED, enableMultiTabIndexedDbPersistence } from 'firebase/firestore';
+import { safeSetItem } from './safeStorage';
 
 /**
  * AUTOMATIC SYNC SETUP:
@@ -38,7 +39,7 @@ const getStoredConfig = () => {
 };
 
 export const saveFirebaseConfig = (config: any) => {
-    localStorage.setItem(LOCAL_STORAGE_CONFIG_KEY, JSON.stringify(config));
+    safeSetItem(LOCAL_STORAGE_CONFIG_KEY, JSON.stringify(config));
     window.location.reload();
 };
 

@@ -5,6 +5,12 @@ import { generateTitleForContent, extractTextFromImage } from '../services/gemin
 import { getCurrentLocation } from '../utils/location';
 import { XIcon, Loader2Icon, CheckIcon } from './Icons';
 import { Camera, SwitchCamera, Image } from 'lucide-react';
+import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl } from '../utils/image';
+import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
+
+const OCR_TIMEOUT_MS = 60_000;
+const TITLE_TIMEOUT_MS = 15_000;
+const OCR_ERROR_TEXT = 'Error extracting text.';
 
 interface AddDocumentModalProps {
     course?: string;
@@ -73,31 +79,38 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         startCamera(next);
     };
 
-    const processImage = async (imageDataUrl: string) => {
+    // `ocrImageDataUrl` is a downscaled copy that is only sent to the AI and
+    // then dropped. Only the extracted text and a tiny thumbnail are saved —
+    // never the image itself (not to Firestore, not to localStorage).
+    const processImage = async (ocrImageDataUrl: string, thumbnailDataUrl: string | null) => {
         setPhase('processing');
         setStatusMessage('Extracting text…');
 
         try {
-            const base64 = imageDataUrl.split(',')[1];
-            const mimeType = imageDataUrl.includes('png') ? 'image/png' : 'image/jpeg';
+            const { base64, mimeType } = splitDataUrl(ocrImageDataUrl);
             const [text, location] = await Promise.all([
-                extractTextFromImage(base64, mimeType),
+                withTimeout(extractTextFromImage(base64, mimeType), OCR_TIMEOUT_MS),
                 getCurrentLocation()
             ]);
+            if (text === OCR_ERROR_TEXT) throw new Error('OCR failed');
 
-            setStatusMessage('Generating title…');
-            const title = await generateTitleForContent(text || `Document – ${new Date().toLocaleDateString()}`);
+            // Title generation is bounded: if the AI is slow or fails we fall
+            // back to the first words of the text instead of hanging.
+            setStatusMessage('Saving…');
+            const title = await withTimeout(generateTitleForContent(text || ''), TITLE_TIMEOUT_MS)
+                .then(t => (isPlaceholderTitle(t) ? fallbackTitle(text, 'Document') : t))
+                .catch(() => fallbackTitle(text, 'Document'));
 
-            // Only the extracted text is kept — the raw image is discarded
-            // after OCR so it never ends up in storage.
-            onSave({
+            await Promise.resolve(onSave({
                 type: 'document',
+                source: 'ocr',
                 title,
                 extractedText: text || '',
                 category: course ? 'college' : 'personal',
                 course,
+                ...(thumbnailDataUrl && { thumbnailDataUrl, fileType: 'image' as const }),
                 ...(location && { location })
-            });
+            }) as unknown);
 
             setPhase('done');
             setStatusMessage('Saved!');
@@ -113,12 +126,21 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         e.target.value = ''; // release the file reference
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            const imageDataUrl = event.target?.result as string;
-            processImage(imageDataUrl);
-        };
-        reader.readAsDataURL(file);
+        setPhase('processing');
+        setStatusMessage('Reading image…');
+        let ocrImage: string;
+        let thumbnail: string | null = null;
+        try {
+            // Decode via an object URL and downscale — the full-resolution
+            // photo is never turned into a base64 string.
+            ocrImage = await prepareImageForOcr(file);
+            thumbnail = await createThumbnail(file).catch(() => null);
+        } catch {
+            setPhase('error');
+            setStatusMessage('Could not read this image. Please choose a different photo.');
+            return;
+        }
+        await processImage(ocrImage, thumbnail);
     };
 
     const startGalleryUpload = () => {
@@ -133,10 +155,12 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         canvas.getContext('2d')?.drawImage(video, 0, 0);
-        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        const ocrImage = canvas.toDataURL('image/jpeg', 0.85);
+        let thumbnail: string | null = null;
+        try { thumbnail = createThumbnailFromCanvas(canvas); } catch { /* preview is optional */ }
         stopCamera();
 
-        await processImage(imageDataUrl);
+        await processImage(ocrImage, thumbnail);
     };
 
     return (

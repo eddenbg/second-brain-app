@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { generateTitleForContent } from '../services/geminiService';
+import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
 import type { WebMemory } from '../types';
 import { BrainCircuitIcon, XIcon, SaveIcon, LinkIcon } from './Icons';
 import MiniRecorder from './MiniRecorder';
@@ -34,10 +35,11 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
         if (!content.trim()) return;
         setIsGeneratingTitle(true);
         try {
-            const generatedTitle = await generateTitleForContent(content);
-            setTitle(generatedTitle);
+            const generatedTitle = await withTimeout(generateTitleForContent(content), 15_000);
+            setTitle(isPlaceholderTitle(generatedTitle) ? fallbackTitle(content, 'Web Clip') : generatedTitle);
         } catch (error) {
             console.error("Title generation failed:", error);
+            setTitle(fallbackTitle(content, 'Web Clip'));
         } finally {
             setIsGeneratingTitle(false);
         }

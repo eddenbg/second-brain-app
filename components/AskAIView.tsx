@@ -1,17 +1,28 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic, MicOff, Send, Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { Mic, MicOff, Send, Loader2, Sparkles, ArrowRight, RotateCcw } from 'lucide-react';
 import type { AnyMemory } from '../types';
 import { getGeminiInstance } from '../services/geminiService';
 import { searchMemories } from '../utils/SearchLogic';
 
-interface AskAIViewProps {
-    memories: AnyMemory[];
-}
-
-interface Message {
+export interface AskAIMessage {
     role: 'user' | 'ai';
     content: string;
     links?: { title: string; id: string; type: string }[];
+}
+type Message = AskAIMessage;
+
+export const ASK_AI_GREETING: AskAIMessage = {
+    role: 'ai',
+    content: 'שלום! / Hello! Ask me anything about your notes, courses, recordings, or files. I can see everything across all your tabs.'
+};
+
+interface AskAIViewProps {
+    memories: AnyMemory[];
+    // Conversation state lives in App so it survives tab switches
+    messages: AskAIMessage[];
+    setMessages: React.Dispatch<React.SetStateAction<AskAIMessage[]>>;
+    restoredFromEarlier?: boolean;
+    onNewConversation: () => void;
 }
 
 declare global {
@@ -21,13 +32,7 @@ declare global {
     }
 }
 
-const AskAIView: React.FC<AskAIViewProps> = ({ memories }) => {
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            role: 'ai',
-            content: 'שלום! / Hello! Ask me anything about your notes, courses, recordings, or files. I can see everything across all your tabs.'
-        }
-    ]);
+const AskAIView: React.FC<AskAIViewProps> = ({ memories, messages, setMessages, restoredFromEarlier, onNewConversation }) => {
     const [input, setInput] = useState('');
     const [isTyping, setIsTyping] = useState(false);
     const [isListening, setIsListening] = useState(false);
@@ -171,14 +176,33 @@ USER QUESTION: ${query}`,
 
     return (
         <div className="flex flex-col h-full gap-4" style={{ height: 'calc(100vh - 220px)' }}>
-            {/* Memory count indicator */}
-            {memories.length > 0 && (
-                <div className="flex-shrink-0 flex items-center gap-2 px-1">
-                    <Sparkles size={12} className="text-white/40" strokeWidth={3} />
-                    <span className="text-[10px] text-white/40 font-black uppercase tracking-widest">
-                        {memories.length} memories indexed across all tabs
-                    </span>
-                </div>
+            {/* Memory count indicator + new conversation */}
+            <div className="flex-shrink-0 flex items-center gap-2 px-1">
+                {memories.length > 0 && (
+                    <>
+                        <Sparkles size={12} className="text-white/40" strokeWidth={3} />
+                        <span className="text-[10px] text-white/40 font-black uppercase tracking-widest">
+                            {memories.length} memories indexed across all tabs
+                        </span>
+                    </>
+                )}
+                {messages.length > 1 && (
+                    <button
+                        onClick={onNewConversation}
+                        disabled={isTyping}
+                        aria-label="Start a new conversation"
+                        className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-white/20 text-white/70 text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
+                        style={{ minHeight: 'unset' }}
+                    >
+                        <RotateCcw size={12} strokeWidth={3} />
+                        New Conversation
+                    </button>
+                )}
+            </div>
+            {restoredFromEarlier && messages.length > 1 && (
+                <p className="flex-shrink-0 text-center text-[10px] text-white/40 font-black uppercase tracking-widest">
+                    Conversation from earlier
+                </p>
             )}
 
             {/* Chat Area */}

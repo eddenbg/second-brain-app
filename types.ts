@@ -19,6 +19,10 @@ export interface BaseMemory {
     longitude: number;
   };
   locationName?: string;
+  // Small JPEG preview (max 200px wide, quality 0.3). Never the full image.
+  thumbnailDataUrl?: string;
+  // Set to 'image' when the memory contains a photo (drives the Files Vault IMAGE filter)
+  fileType?: 'image';
 }
 
 export interface TranscriptSegment {
@@ -82,6 +86,7 @@ export interface DocumentMemory extends BaseMemory {
   type: 'document';
   extractedText: string;
   imageDataUrl?: string; // legacy only — new OCR scans don't keep the image
+  source?: 'ocr';
 }
 
 export interface FileMemory extends BaseMemory {

@@ -13,7 +13,7 @@ import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWi
 import { saveGoogleToken } from '../services/googleCalendarService';
 import { saveDriveToken } from '../services/googleDriveService';
 import { googleProvider } from '../utils/firebase';
-import { safeSetItem, isNearQuota, stripMediaForCache } from '../utils/safeStorage';
+import { safeSetItem, isNearQuota, stripMediaForCache, alertStorageFull } from '../utils/safeStorage';
 
 export interface StoredData {
     memories: AnyMemory[];
@@ -178,8 +178,9 @@ export const useRecordings = () => {
 
     // 5. Save to local storage for offline persistent cache.
     // Media (images/audio/video) is stripped — it lives in Firestore only.
-    // If the cache would come near the quota, the oldest memories are dropped
-    // from the local copy (they remain in Firestore). A failed write never throws.
+    // If the cache is full, the oldest 3 memories are dropped from the local
+    // copy (they remain in Firestore) and the write is retried; the user is
+    // told once. A failed write never throws.
     useEffect(() => {
         const serialize = (mems: AnyMemory[]) =>
             JSON.stringify({ memories: mems, tasks, courses: savedCourses, moodleToken });
@@ -189,18 +190,27 @@ export const useRecordings = () => {
             .map(m => stripMediaForCache(m))
             .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         let payload = serialize(cached);
+        let evicted = false;
 
-        while (cached.length > 0 && isNearQuota(LOCAL_STORAGE_KEY, payload)) {
-            cached = cached.slice(0, Math.floor(cached.length * 0.75));
+        const shrink = () => {
+            // Drop the oldest 3 first; fall back to bigger cuts if still too large
+            const next = cached.length > 12 && evicted
+                ? Math.floor(cached.length * 0.75)
+                : Math.max(0, cached.length - 3);
+            cached = cached.slice(0, next);
             payload = serialize(cached);
-        }
+            evicted = true;
+        };
+
+        while (cached.length > 0 && isNearQuota(LOCAL_STORAGE_KEY, payload)) shrink();
 
         let saved = safeSetItem(LOCAL_STORAGE_KEY, payload);
         while (!saved && cached.length > 0) {
-            cached = cached.slice(0, Math.floor(cached.length / 2));
-            saved = safeSetItem(LOCAL_STORAGE_KEY, serialize(cached));
+            shrink();
+            saved = safeSetItem(LOCAL_STORAGE_KEY, payload);
         }
 
+        if (evicted && saved) alertStorageFull();
         setStorageWarning(saved ? null : 'Offline storage is full. Your data is still saved to the cloud.');
     }, [memories, tasks, savedCourses, moodleToken]);
 

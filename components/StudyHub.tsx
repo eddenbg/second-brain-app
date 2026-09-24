@@ -6,6 +6,8 @@ import {
 } from './Icons';
 import { generateSpeechFromText, answerQuestionFromContext, checkVideoStatus } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import { AlertCircle } from 'lucide-react';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
 
 // ── Study Chat ────────────────────────────────────────────────────────────────────────────────
 export const StudyChat: React.FC<{ memories: AnyMemory[]; initialContext: string }> = ({ memories, initialContext }) => {
@@ -88,8 +90,9 @@ export const StudyHubOverlay: React.FC<{
     onClose: () => void;
 }> = ({ overview, memories, onClose }) => {
     const [isJoining, setIsJoining] = useState(overview.type === 'research');
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+    const podcastTts = useTextToSpeech();
+    const isPlaying = podcastTts.status === 'playing';
+    const isLoadingAudio = podcastTts.status === 'loading';
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const [isVideoLoading, setIsVideoLoading] = useState(overview.type === 'video');
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -113,30 +116,7 @@ export const StudyHubOverlay: React.FC<{
         }
     }, [overview]);
 
-    const togglePodcast = async () => {
-        if (isPlaying) {
-            audioSourceRef.current?.stop();
-            setIsPlaying(false);
-            return;
-        }
-        setIsLoadingAudio(true);
-        try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-            audioContextRef.current = ctx;
-            const audioB64 = await generateSpeechFromText(overview.content);
-            if (audioB64) {
-                const buffer = await decodeAudioData(decode(audioB64), ctx, 24000, 1);
-                const source = ctx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(ctx.destination);
-                source.onended = () => setIsPlaying(false);
-                source.start(0);
-                audioSourceRef.current = source;
-                setIsPlaying(true);
-            }
-        } catch (e) { console.error(e); }
-        finally { setIsLoadingAudio(false); }
-    };
+    const togglePodcast = () => podcastTts.toggle(overview.content);
 
     if (isJoining) {
         return (
@@ -198,18 +178,21 @@ export const StudyHubOverlay: React.FC<{
                         <div className="mt-10 flex flex-col items-center gap-6">
                             <button
                                 onClick={togglePodcast}
-                                disabled={isLoadingAudio}
+                                aria-label={isPlaying ? 'Stop overview audio' : isLoadingAudio ? 'Cancel loading audio' : 'Listen to overview'}
                                 className={`w-24 h-24 rounded-full flex items-center justify-center transition-all shadow-2xl border-4 ${isPlaying ? 'bg-red-600 border-red-400 animate-pulse' : 'bg-blue-600 border-blue-400'}`}
                             >
                                 {isLoadingAudio
                                     ? <Loader2Icon className="w-10 h-10 animate-spin text-white" />
                                     : isPlaying
-                                        ? <StopCircleIcon className="w-12 h-12 text-white" />
-                                        : <PlayIcon className="w-12 h-12 text-white ml-2" />}
+                                        ? <XIcon className="w-12 h-12 text-white" />
+                                        : podcastTts.status === 'error'
+                                            ? <AlertCircle className="w-12 h-12 text-white" />
+                                            : <PlayIcon className="w-12 h-12 text-white ml-2" />}
                             </button>
                             <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">
-                                {isPlaying ? 'Playing AI Deep Dive...' : 'Listen to Overview'}
+                                {isLoadingAudio ? 'Loading audio…' : isPlaying ? 'Playing AI Deep Dive...' : 'Listen to Overview'}
                             </p>
+                            {podcastTts.error && <p role="alert" className="text-red-400 font-bold text-sm">{podcastTts.error}</p>}
                         </div>
                     )}
                 </div>
@@ -267,8 +250,12 @@ export const SummaryFocusModal: React.FC<{
                         onChange={e => setFocus(e.target.value)}
                         placeholder={type === 'research' ? 'What specific connections should I look for?' : 'What should I focus on?'}
                         className="w-full bg-gray-900 text-white text-xl p-6 rounded-[2rem] border-4 border-gray-700 outline-none focus:border-purple-500 shadow-inner h-40 font-bold"
+                        aria-describedby="research-focus-help"
                         autoFocus
                     />
+                    <p id="research-focus-help" className="text-gray-400 text-xs font-bold leading-relaxed px-4">
+                        Describe what you want to study (e.g., 'Explain chapter 3 concepts' or 'Create an audio summary of this week's lectures'). The AI will generate an overview from your course materials.
+                    </p>
                 </div>
 
                 <div className="flex gap-4">

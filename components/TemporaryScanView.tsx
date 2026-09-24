@@ -2,11 +2,14 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { DocumentMemory } from '../types';
 import { extractTextFromImage, generateSpeechFromText } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
+import { prepareImageForOcr } from '../utils/image';
+import { AlertCircle } from 'lucide-react';
+import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { getStoredDriveUploadToken, connectGoogleDriveUpload, uploadFileToDrive } from '../services/googleDriveService';
 import { getStoredNotionToken, searchNotionPages, createScanPage } from '../services/notionService';
 import type { NotionPage } from '../services/notionService';
 import QASession from './QASession';
-import { ArrowLeftIcon, CameraIcon, UploadIcon, Volume2Icon, Loader2Icon, DownloadIcon } from './Icons';
+import { ArrowLeftIcon, CameraIcon, UploadIcon, Volume2Icon, Loader2Icon, DownloadIcon, XIcon } from './Icons';
 
 interface TemporaryScanViewProps {
     onClose: () => void;
@@ -20,7 +23,8 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
     const [stream, setStream] = useState<MediaStream | null>(null);
 
     // Audio state
-    const [isPlaying, setIsPlaying] = useState(false);
+    const tts = useTextToSpeech();
+    const isPlaying = tts.status === 'playing';
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -92,14 +96,17 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
+        event.target.value = '';
         if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setImageDataUrl(e.target?.result as string);
-                setExtractedText(null);
-                stopCamera();
-            };
-            reader.readAsDataURL(file);
+            // Downscale in memory — the full-resolution file is never turned
+            // into a base64 string, and nothing here is persisted.
+            prepareImageForOcr(file)
+                .then(url => {
+                    setImageDataUrl(url);
+                    setExtractedText(null);
+                    stopCamera();
+                })
+                .catch(() => setError('Could not read this image. Please choose a different photo.'));
         } else {
             setError('Please select a valid image file.');
         }
@@ -127,26 +134,9 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
         }
     }, [imageDataUrl, extractedText, handleExtractText]);
 
-    const handleReadAloud = async () => {
-        if (isLoading === 'audio' || isPlaying || !extractedText) return;
-        setIsLoading('audio');
-        try {
-            const audioB64 = await generateSpeechFromText(extractedText);
-            if (audioB64 && audioContextRef.current) {
-                const audioData = decode(audioB64);
-                const audioBuffer = await decodeAudioData(audioData, audioContextRef.current, 24000, 1);
-                audioSourceRef.current = audioContextRef.current.createBufferSource();
-                audioSourceRef.current.buffer = audioBuffer;
-                audioSourceRef.current.connect(audioContextRef.current.destination);
-                audioSourceRef.current.onended = () => setIsPlaying(false);
-                audioSourceRef.current.start(0);
-                setIsPlaying(true);
-            }
-        } catch {
-            setError("Could not generate or play audio.");
-        } finally {
-            setIsLoading(null);
-        }
+    const handleReadAloud = () => {
+        if (!extractedText) return;
+        tts.toggle(extractedText);
     };
 
     const buildPDFBlob = useCallback(async (): Promise<Blob> => {
@@ -297,11 +287,12 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
                     <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 overflow-y-auto flex flex-col gap-3">
                         <div className="flex justify-between items-center">
                             <h3 className="text-lg font-semibold text-gray-300">Extracted Text</h3>
-                            <button onClick={handleReadAloud} disabled={isLoading === 'audio' || isPlaying} className="flex items-center gap-2 px-3 py-1 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-500 text-sm">
-                                {isLoading === 'audio' ? <Loader2Icon className="w-4 h-4 animate-spin"/> : <Volume2Icon className="w-4 h-4"/>}
-                                {isLoading === 'audio' ? 'Generating…' : isPlaying ? 'Playing…' : 'Read Aloud'}
+                            <button onClick={handleReadAloud} className="flex items-center gap-2 px-3 py-1 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:bg-gray-500 text-sm">
+                                {tts.status === 'loading' ? <Loader2Icon className="w-4 h-4 animate-spin"/> : isPlaying ? <XIcon className="w-4 h-4"/> : tts.status === 'error' ? <AlertCircle className="w-4 h-4"/> : <Volume2Icon className="w-4 h-4"/>}
+                                {tts.status === 'loading' ? 'Generating…' : isPlaying ? 'Stop' : tts.status === 'error' ? 'Try Again' : 'Read Aloud'}
                             </button>
                         </div>
+                        {tts.error && <p role="alert" className="text-red-400 text-xs font-bold">{tts.error}</p>}
                         <p className="text-gray-200 whitespace-pre-wrap text-sm flex-grow" dir="auto">{extractedText}</p>
 
                         {/* Export section */}
