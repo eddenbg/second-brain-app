@@ -1,5 +1,7 @@
 import type { Context } from "@netlify/functions";
 
+const MOODLE_BASE_URL = "https://online.dyellin.ac.il";
+
 export default async (req: Request, context: Context) => {
   // CORS Headers
   const headers = {
@@ -17,18 +19,47 @@ export default async (req: Request, context: Context) => {
   const url = new URL(req.url, 'http://localhost');
 
   // ── Login with credentials to obtain a token ─────────────────────────
+  // POST https://online.dyellin.ac.il/login/token.php
+  //   body: username, password, service=moodle_mobile_app
   if (url.searchParams.get("action") === 'login') {
-    const username = url.searchParams.get("username") ?? '';
-    const password = url.searchParams.get("password") ?? '';
+    let username = '';
+    let password = '';
+    if (req.method === 'POST') {
+      try {
+        const body = await req.json();
+        username = String(body?.username ?? '');
+        password = String(body?.password ?? '');
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400, headers });
+      }
+    } else {
+      // Legacy GET support
+      username = url.searchParams.get("username") ?? '';
+      password = url.searchParams.get("password") ?? '';
+    }
+    username = username.trim();
     if (!username || !password) {
       return new Response(JSON.stringify({ error: "username and password required" }), { status: 400, headers });
     }
     try {
-      const loginUrl = `https://online.dyellin.ac.il/login/token.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&service=moodle_mobile_app`;
-      const res = await fetch(loginUrl);
-      const data = await res.json();
+      const res = await fetch(`${MOODLE_BASE_URL}/login/token.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+        body: new URLSearchParams({ username, password, service: 'moodle_mobile_app' }).toString(),
+      });
+      const text = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error("Moodle token endpoint returned non-JSON:", text.substring(0, 200));
+        return new Response(JSON.stringify({ error: "Invalid response from Moodle server" }), { status: 502, headers });
+      }
       if (data.error) {
-        return new Response(JSON.stringify({ error: data.error }), { status: 401, headers });
+        return new Response(JSON.stringify({ error: data.error, errorcode: data.errorcode }), { status: 401, headers });
+      }
+      if (!data.token) {
+        return new Response(JSON.stringify({ error: "No token returned by Moodle" }), { status: 502, headers });
       }
       return new Response(JSON.stringify({ token: data.token }), { status: 200, headers });
     } catch (e: any) {
@@ -48,7 +79,7 @@ export default async (req: Request, context: Context) => {
     });
   }
 
-  const moodleApiBase = `https://online.dyellin.ac.il/webservice/rest/server.php?wstoken=${token}&moodlewsrestformat=json`;
+  const moodleApiBase = `${MOODLE_BASE_URL}/webservice/rest/server.php?wstoken=${token}&moodlewsrestformat=json`;
 
   const generateError = (text: string, context: string) => {
     console.error(`Moodle (${context}) returned non-JSON response:`, text);

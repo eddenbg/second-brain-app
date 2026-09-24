@@ -25,6 +25,12 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const [statusMessage, setStatusMessage] = useState('Starting camera…');
     const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
     const [stream, setStream] = useState<MediaStream | null>(null);
+    // Preview of the photo currently being processed. In-memory only — reset
+    // on every new selection and never persisted.
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    // Incremented per selection so a slower, older OCR run can't overwrite
+    // the result or preview of the photo the user just picked.
+    const selectionIdRef = useRef(0);
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,7 +88,10 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     // `ocrImageDataUrl` is a downscaled copy that is only sent to the AI and
     // then dropped. Only the extracted text and a tiny thumbnail are saved —
     // never the image itself (not to Firestore, not to localStorage).
-    const processImage = async (ocrImageDataUrl: string, thumbnailDataUrl: string | null) => {
+    const processImage = async (ocrImageDataUrl: string, thumbnailDataUrl: string | null, selectionId: number) => {
+        const isCurrent = () => selectionId === selectionIdRef.current;
+        if (!isCurrent()) return;
+        setPreviewUrl(ocrImageDataUrl);
         setPhase('processing');
         setStatusMessage('Extracting text…');
 
@@ -92,6 +101,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 withTimeout(extractTextFromImage(base64, mimeType), OCR_TIMEOUT_MS),
                 getCurrentLocation()
             ]);
+            if (!isCurrent()) return;
             if (text === OCR_ERROR_TEXT) throw new Error('OCR failed');
 
             // Title generation is bounded: if the AI is slow or fails we fall
@@ -100,6 +110,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
             const title = await withTimeout(generateTitleForContent(text || ''), TITLE_TIMEOUT_MS)
                 .then(t => (isPlaceholderTitle(t) ? fallbackTitle(text, 'Document') : t))
                 .catch(() => fallbackTitle(text, 'Document'));
+            if (!isCurrent()) return;
 
             await Promise.resolve(onSave({
                 type: 'document',
@@ -114,36 +125,54 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
 
             setPhase('done');
             setStatusMessage('Saved!');
-            setTimeout(onClose, 800);
+            setTimeout(onClose, 1500);
         } catch {
+            if (!isCurrent()) return;
             setPhase('error');
             setStatusMessage('Could not extract text. Try again with better lighting.');
         }
     };
 
+    // Read the newly selected file with a fresh FileReader every time.
+    const readFileAsDataUrl = (file: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+        });
+
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        e.target.value = ''; // release the file reference
+        // Reset so onChange fires again even if the same file is picked twice
+        e.target.value = '';
         if (!file) return;
 
+        // New selection: drop any previous image/preview before processing
+        const selectionId = ++selectionIdRef.current;
+        setPreviewUrl(null);
         setPhase('processing');
         setStatusMessage('Reading image…');
         let ocrImage: string;
         let thumbnail: string | null = null;
         try {
-            // Decode via an object URL and downscale — the full-resolution
-            // photo is never turned into a base64 string.
-            ocrImage = await prepareImageForOcr(file);
-            thumbnail = await createThumbnail(file).catch(() => null);
+            // The full-size data URL only lives inside this function; it is
+            // downscaled for OCR and then discarded (never stored).
+            const rawDataUrl = await readFileAsDataUrl(file);
+            ocrImage = await prepareImageForOcr(rawDataUrl);
+            thumbnail = await createThumbnail(ocrImage).catch(() => null);
         } catch {
+            if (selectionId !== selectionIdRef.current) return;
             setPhase('error');
             setStatusMessage('Could not read this image. Please choose a different photo.');
             return;
         }
-        await processImage(ocrImage, thumbnail);
+        await processImage(ocrImage, thumbnail, selectionId);
     };
 
     const startGalleryUpload = () => {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setPreviewUrl(null);
         fileInputRef.current?.click();
     };
 
@@ -160,7 +189,8 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         try { thumbnail = createThumbnailFromCanvas(canvas); } catch { /* preview is optional */ }
         stopCamera();
 
-        await processImage(ocrImage, thumbnail);
+        const selectionId = ++selectionIdRef.current;
+        await processImage(ocrImage, thumbnail, selectionId);
     };
 
     return (
@@ -225,12 +255,18 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                         </div>
                     </>
                 ) : phase === 'processing' ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F]">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F] px-6">
+                        {previewUrl && (
+                            <img src={previewUrl} alt="Selected photo" className="max-h-[40vh] max-w-full object-contain rounded-2xl border-4 border-white/20" />
+                        )}
                         <Loader2Icon className="w-24 h-24 text-white animate-spin" />
                         <p className="text-white font-black text-2xl uppercase">{statusMessage}</p>
                     </div>
                 ) : phase === 'done' ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F]">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F] px-6">
+                        {previewUrl && (
+                            <img src={previewUrl} alt="Selected photo" className="max-h-[40vh] max-w-full object-contain rounded-2xl border-4 border-white/20" />
+                        )}
                         <CheckIcon className="w-24 h-24 text-green-400" />
                         <p className="text-white font-black text-2xl uppercase">Saved!</p>
                     </div>
@@ -238,7 +274,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F] px-8 text-center">
                         <p className="text-white font-black text-2xl uppercase">{statusMessage}</p>
                         <button
-                            onClick={() => { setPhase('camera'); startCamera(facingMode); }}
+                            onClick={() => { setPreviewUrl(null); setPhase('camera'); startCamera(facingMode); }}
                             className="px-8 py-5 bg-white text-[#001F3F] font-black rounded-2xl text-xl uppercase"
                         >
                             Try Again

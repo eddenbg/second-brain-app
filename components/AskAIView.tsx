@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Mic, MicOff, Send, Loader2, Sparkles, ArrowRight, RotateCcw } from 'lucide-react';
+import { Mic, MicOff, Send, Loader2, Sparkles, ArrowRight, RotateCcw, Volume2, Square, AlertCircle } from 'lucide-react';
 import type { AnyMemory } from '../types';
 import { getGeminiInstance } from '../services/geminiService';
 import { searchMemories } from '../utils/SearchLogic';
@@ -39,6 +39,80 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories, messages, setMessages, 
     const [voiceError, setVoiceError] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const recognitionRef = useRef<any>(null);
+
+    // Read-aloud for AI responses (Web Speech API). One message at a time.
+    const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+    const [speechState, setSpeechState] = useState<'loading' | 'speaking' | 'error' | null>(null);
+    const speechRunRef = useRef(0);
+    const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearSpeechTimer = () => {
+        if (speechTimerRef.current) {
+            clearTimeout(speechTimerRef.current);
+            speechTimerRef.current = null;
+        }
+    };
+
+    const stopSpeaking = useCallback(() => {
+        speechRunRef.current++;
+        clearSpeechTimer();
+        try { window.speechSynthesis?.cancel(); } catch { /* unsupported */ }
+        setSpeakingIndex(null);
+        setSpeechState(null);
+    }, []);
+
+    useEffect(() => () => {
+        speechRunRef.current++;
+        clearSpeechTimer();
+        try { window.speechSynthesis?.cancel(); } catch { /* unsupported */ }
+    }, []);
+
+    const toggleSpeak = (index: number, text: string) => {
+        if (speakingIndex === index && (speechState === 'loading' || speechState === 'speaking')) {
+            stopSpeaking();
+            return;
+        }
+        const synth = window.speechSynthesis;
+        const run = ++speechRunRef.current;
+        clearSpeechTimer();
+        setSpeakingIndex(index);
+        if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+            setSpeechState('error');
+            return;
+        }
+        // Stop anything already playing before starting
+        synth.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = /[\u0590-\u05FF]/.test(text) ? 'he-IL' : 'en-US';
+        utterance.onstart = () => {
+            if (run !== speechRunRef.current) return;
+            clearSpeechTimer();
+            setSpeechState('speaking');
+        };
+        utterance.onend = () => {
+            if (run !== speechRunRef.current) return;
+            clearSpeechTimer();
+            setSpeakingIndex(null);
+            setSpeechState(null);
+        };
+        utterance.onerror = (e) => {
+            if (run !== speechRunRef.current) return;
+            clearSpeechTimer();
+            if (e.error === 'interrupted' || e.error === 'canceled') return;
+            setSpeechState('error');
+        };
+        // If speech hasn't started within 30 seconds, give up and show an error
+        speechTimerRef.current = setTimeout(() => {
+            if (run !== speechRunRef.current) return;
+            speechRunRef.current++;
+            synth.cancel();
+            setSpeechState('error');
+        }, 30_000);
+
+        setSpeechState('loading');
+        synth.speak(utterance);
+    };
 
     useEffect(() => {
         if (scrollRef.current) {
@@ -188,7 +262,7 @@ USER QUESTION: ${query}`,
                 )}
                 {messages.length > 1 && (
                     <button
-                        onClick={onNewConversation}
+                        onClick={() => { stopSpeaking(); onNewConversation(); }}
                         disabled={isTyping}
                         aria-label="Start a new conversation"
                         className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-white/20 text-white/70 text-[10px] font-black uppercase tracking-widest disabled:opacity-40"
@@ -221,6 +295,27 @@ USER QUESTION: ${query}`,
                                 : 'bg-white/5 text-white border-white/20'
                         }`}>
                             <p className="text-xl font-bold leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            {msg.role === 'ai' && (() => {
+                                const state = speakingIndex === i ? speechState : null;
+                                return (
+                                    <div className="flex justify-end mt-2 -mb-2 -mr-2">
+                                        <button
+                                            onClick={() => toggleSpeak(i, msg.content)}
+                                            aria-label={state === 'speaking' || state === 'loading' ? 'Stop reading' : state === 'error' ? 'Could not start audio. Tap to try again' : 'Read response aloud'}
+                                            title={state === 'error' ? 'Could not start audio. Try again.' : undefined}
+                                            className={`w-10 h-10 flex items-center justify-center rounded-xl border-2 active:scale-90 transition-transform ${
+                                                state === 'error' ? 'border-red-400 text-red-400' : 'border-white/20 text-white/70'
+                                            }`}
+                                            style={{ minHeight: 'unset' }}
+                                        >
+                                            {state === 'loading' ? <Loader2 size={18} strokeWidth={3} className="animate-spin" /> :
+                                             state === 'speaking' ? <Square size={16} strokeWidth={3} fill="currentColor" /> :
+                                             state === 'error' ? <AlertCircle size={18} strokeWidth={3} /> :
+                                             <Volume2 size={18} strokeWidth={3} />}
+                                        </button>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         {msg.links && msg.links.length > 0 && (

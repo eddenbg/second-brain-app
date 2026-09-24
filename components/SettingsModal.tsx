@@ -76,6 +76,8 @@ const GOOGLE_LOGO = (
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize }) => {
 
     const [isSigningIn, setIsSigningIn] = useState(false);
+    const [isSigningOut, setIsSigningOut] = useState(false);
+    const [signOutError, setSignOutError] = useState<string | null>(null);
     const [signInError, setSignInError] = useState<string | null>(null);
     const [moodleUsername, setMoodleUsername] = useState('');
     const [moodlePassword, setMoodlePassword] = useState('');
@@ -115,8 +117,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
     const handleMoodleLogin = async () => {
         const u = moodleUsername.trim();
-        const p = moodlePassword.trim();
-        if (!u || !p) { setMoodleLoginError('Enter your Moodle username and password.'); return; }
+        const p = moodlePassword; // not trimmed — spaces can be part of a password
+        if (!u || !p.trim()) { setMoodleLoginError('Enter your Moodle username and password.'); return; }
         setIsLoggingIn(true);
         setMoodleLoginError(null);
         try {
@@ -125,7 +127,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
             setMoodleUsername('');
             setMoodlePassword('');
         } catch (e: any) {
-            setMoodleLoginError(e.message || 'Login failed. Check your username and password.');
+            setMoodleLoginError(e.message || 'שגיאת חיבור — בדוק שם משתמש וסיסמה / Connection failed — check your username and password');
         } finally {
             setIsLoggingIn(false);
         }
@@ -139,6 +141,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const handleDisconnectDrive = () => {
         disconnectGoogleDrive();
         setIsDriveConnected(false);
+    };
+
+    const handleSignOut = async () => {
+        if (!onSignOut || isSigningOut) return;
+        setIsSigningOut(true);
+        setSignOutError(null);
+        try {
+            await onSignOut();
+        } catch (e: any) {
+            setSignOutError(e?.message || 'Sign-out failed. Please try again.');
+        } finally {
+            setIsSigningOut(false);
+        }
     };
 
     const handleSignIn = async () => {
@@ -293,11 +308,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                     Your data syncs automatically across all signed-in devices.
                                 </p>
                                 <button
-                                    onClick={() => onSignOut?.()}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
+                                    onClick={handleSignOut}
+                                    disabled={isSigningOut}
+                                    aria-busy={isSigningOut}
+                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white disabled:opacity-50"
                                 >
-                                    Sign Out
+                                    {isSigningOut && <Loader2Icon className="w-5 h-5 animate-spin" />}
+                                    {isSigningOut ? 'Signing out…' : 'Sign Out'}
                                 </button>
+                                {signOutError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{signOutError}</p>}
                             </>
                         ) : (
                             <>
@@ -391,28 +410,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                             <div className="flex items-center gap-3 sm:gap-4 mb-3">
                                 <GlobeIcon className={`w-7 h-7 sm:w-8 sm:h-8 ${moodleToken ? 'text-green-400' : 'text-gray-500'}`} />
                                 <p className="text-base sm:text-lg font-black text-white uppercase">Moodle (Dyellin)</p>
-                                {moodleToken && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
+                                {moodleToken && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Connected</div>}
                             </div>
                             <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connect to import course materials and sync your college schedule automatically.</p>
 
                             {moodleToken ? (
+                                <>
+                                <p className="text-green-400 font-black text-sm mb-3">מחובר / Connected ✓</p>
                                 <button
                                     onClick={() => onSaveMoodleToken('')}
                                     className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
                                 >
                                     Disconnect
                                 </button>
+                                </>
                             ) : (
                                 <div className="space-y-3 mt-3">
+                                    <label htmlFor="moodle-username" className="block text-white font-black text-xs uppercase tracking-widest">
+                                        שם משתמש / Username
+                                    </label>
                                     <input
+                                        id="moodle-username"
                                         type="text"
                                         value={moodleUsername}
                                         onChange={e => setMoodleUsername(e.target.value)}
-                                        placeholder="שם משתמש במודל"
+                                        placeholder="שם משתמש / Username"
                                         autoComplete="username"
+                                        autoCapitalize="none"
+                                        autoCorrect="off"
                                         className="w-full bg-gray-700 p-3 rounded-lg border border-gray-600 text-white text-sm"
-                                        aria-label="Moodle username"
+                                        aria-describedby="moodle-username-help"
                                     />
+                                    <p id="moodle-username-help" className="text-gray-400 text-xs font-bold leading-relaxed" dir="auto">
+                                        נסה קודם את מספר הסטודנט / ת.ז., ואם זה לא עובד — את כתובת האימייל.
+                                        <br />
+                                        Try your student ID number first; if that fails, try your email address.
+                                    </p>
                                     <input
                                         type="password"
                                         value={moodlePassword}

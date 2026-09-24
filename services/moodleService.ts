@@ -5,13 +5,31 @@ import type { CalendarEvent, MoodleCourse, MoodleContent } from '../types';
  * to bypass CORS restrictions on the college server.
  */
 
+export const MOODLE_BASE_URL = 'https://online.dyellin.ac.il/';
+
+export const MOODLE_LOGIN_ERROR = 'שגיאת חיבור — בדוק שם משתמש וסיסמה / Connection failed — check your username and password';
+
+/**
+ * Get a Moodle web-service token. The Netlify proxy POSTs to
+ * https://online.dyellin.ac.il/login/token.php with
+ * username, password and service=moodle_mobile_app.
+ */
 export const loginWithCredentials = async (username: string, password: string): Promise<string> => {
-    const url = `/api/moodleProxy?action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || 'Login failed');
-    if (!data.token) throw new Error('No token returned. Check your username/password.');
-    return data.token;
+    let res: Response;
+    try {
+        res = await fetch('/api/moodleProxy?action=login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+        });
+    } catch {
+        throw new Error('לא ניתן להתחבר לשרת המודל / Could not reach the Moodle server');
+    }
+    let data: any = {};
+    try { data = await res.json(); } catch { /* non-JSON response */ }
+    if (data.token) return data.token;
+    const detail = data.error ? ` (${data.error})` : '';
+    throw new Error(`${MOODLE_LOGIN_ERROR}${detail}`);
 };
 
 export const testMoodleConnection = async (token: string): Promise<boolean> => {

@@ -95,6 +95,9 @@ export const useRecordings = () => {
                     setUser(currentUser);
                     setLoading(false);
                 } else {
+                    // Signed out: reflect it in the UI right away, then fall
+                    // back to an anonymous session.
+                    setUser(null);
                     try {
                         await signInAnonymously(auth);
                     } catch (e) {
@@ -404,6 +407,8 @@ export const useRecordings = () => {
 
     const signOut = useCallback(async () => {
         if (!auth) return;
+        // onAuthStateChanged sets user to null immediately (UI shows Sign In),
+        // then starts a fresh anonymous session.
         await firebaseSignOut(auth);
     }, []);
 
