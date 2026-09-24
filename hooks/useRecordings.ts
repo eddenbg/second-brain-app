@@ -9,11 +9,23 @@ import {
     orderBy,
     onSnapshot
 } from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, linkWithPopup, signInWithPopup, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut, UserCredential } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut, OAuthCredential } from 'firebase/auth';
 import { saveGoogleToken } from '../services/googleCalendarService';
 import { saveDriveToken } from '../services/googleDriveService';
 import { googleProvider } from '../utils/firebase';
 import { safeSetItem, isNearQuota, stripMediaForCache, alertStorageFull } from '../utils/safeStorage';
+import { GOOGLE_TOKEN_REFRESHED_EVENT } from '../services/googleAuthEvents';
+
+export const SIGN_IN_FAILED_MESSAGE = 'Sign-in failed — please try again';
+
+/** Store the Google API token from a sign-in and tell the app it's fresh. */
+const storeGoogleAccessToken = (credential: OAuthCredential | null) => {
+    const token = credential?.accessToken;
+    if (!token) return;
+    saveGoogleToken(token);
+    saveDriveToken(token);
+    try { window.dispatchEvent(new Event(GOOGLE_TOKEN_REFRESHED_EVENT)); } catch { /* non-browser */ }
+};
 
 export interface StoredData {
     memories: AnyMemory[];
@@ -37,6 +49,7 @@ export const useRecordings = () => {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [syncError, setSyncError] = useState<string | null>(null);
     const [storageWarning, setStorageWarning] = useState<string | null>(null);
+    const [authError, setAuthError] = useState<string | null>(null);
 
     const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingTaskIdsRef = useRef<Set<string>>(new Set());
@@ -67,25 +80,34 @@ export const useRecordings = () => {
         let authUnsubscribe: (() => void) | undefined;
 
         const init = async () => {
-            // Await redirect result FIRST so the Google token is stored before
-            // onAuthStateChanged fires and the UI reads from localStorage.
+            // Google sign-in uses a full-page redirect (popups are blocked in
+            // installed PWAs). On every load, collect the redirect result
+            // FIRST — before the auth listener runs and before any sign-in UI
+            // shows — so the returning user and their Google token are applied
+            // without a manual reload.
             try {
                 const result = await getRedirectResult(auth);
-                if (result) {
-                    const credential = GoogleAuthProvider.credentialFromResult(result);
-                    const token = credential?.accessToken;
-                    if (token) {
-                        saveGoogleToken(token);
-                        saveDriveToken(token);
-                    }
+                if (result?.user) {
+                    storeGoogleAccessToken(GoogleAuthProvider.credentialFromResult(result));
+                    setUser(result.user);
                 }
             } catch (e: any) {
-                if (e.code === 'auth/credential-already-in-use') {
+                if (e?.code === 'auth/credential-already-in-use') {
                     // Google account already linked to another Firebase UID — sign into that account directly
                     const credential = GoogleAuthProvider.credentialFromError(e);
                     if (credential) {
-                        signInWithCredential(auth, credential).catch(console.error);
+                        try {
+                            const signedIn = await signInWithCredential(auth, credential);
+                            storeGoogleAccessToken(credential);
+                            setUser(signedIn.user);
+                        } catch (inner) {
+                            console.error('Google sign-in failed', inner);
+                            setAuthError(SIGN_IN_FAILED_MESSAGE);
+                        }
                     }
+                } else {
+                    console.error('Google sign-in redirect failed', e?.code, e?.message);
+                    setAuthError(SIGN_IN_FAILED_MESSAGE);
                 }
             }
 
@@ -346,64 +368,19 @@ export const useRecordings = () => {
         setMoodleToken(token);
     }, [user, savedCourses]);
 
+    // Full-page redirect to Google. The result is picked up by
+    // getRedirectResult when the app loads again (see the auth effect above).
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
-
-        const isStandalone = typeof window !== 'undefined' &&
-            (window.matchMedia('(display-mode: standalone)').matches ||
-             (window.navigator as any).standalone === true);
-
-        const storeGoogleTokenFromResult = (result: UserCredential) => {
-            const credential = GoogleAuthProvider.credentialFromResult(result);
-            const token = credential?.accessToken;
-            if (token) {
-                saveGoogleToken(token);
-                saveDriveToken(token);
-            }
-        };
-
-        const tryPopup = async () => {
-            let result: UserCredential;
-            if (auth.currentUser?.isAnonymous) {
-                result = await linkWithPopup(auth.currentUser, googleProvider);
-            } else {
-                result = await signInWithPopup(auth, googleProvider);
-            }
-            storeGoogleTokenFromResult(result);
-        };
-
-        const tryRedirect = async () => {
-            if (auth.currentUser?.isAnonymous) {
-                await linkWithRedirect(auth.currentUser, googleProvider);
-            } else {
-                await signInWithRedirect(auth, googleProvider);
-            }
-        };
-
-        // In PWA standalone mode skip the popup entirely — it's unreliable and
-        // just causes a blocked-popup error before the redirect fallback anyway.
-        if (isStandalone) {
-            await tryRedirect();
-            return;
-        }
-
-        try {
-            await tryPopup();
-        } catch (e: any) {
-            if (
-                e.code === 'auth/popup-blocked' ||
-                e.code === 'auth/popup-cancelled' ||
-                e.code === 'auth/cancelled-popup-request'
-            ) {
-                await tryRedirect();
-            } else if (e.code === 'auth/credential-already-in-use') {
-                const credential = GoogleAuthProvider.credentialFromError(e);
-                if (credential) await signInWithCredential(auth, credential);
-            } else {
-                throw e;
-            }
+        if (auth.currentUser?.isAnonymous) {
+            // Link so the anonymous session's data carries over to the Google account
+            await linkWithRedirect(auth.currentUser, googleProvider);
+        } else {
+            await signInWithRedirect(auth, googleProvider);
         }
     }, []);
+
+    const clearAuthError = useCallback(() => setAuthError(null), []);
 
     const signOut = useCallback(async () => {
         if (!auth) return;
@@ -417,6 +394,7 @@ export const useRecordings = () => {
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
         user, loading, isSyncing, hasUnsavedChanges, syncError, storageWarning, performSync,
+        authError, clearAuthError,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,
         isAnonymous: user?.isAnonymous ?? true,

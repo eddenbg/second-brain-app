@@ -14,7 +14,7 @@ import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './se
 import { processSharedUrl } from './services/geminiService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
 import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
-import { refreshGoogleToken, watchGoogleTokenExpiry, GOOGLE_AUTH_EXPIRED_EVENT, GOOGLE_TOKEN_REFRESHED_EVENT } from './services/googleAuthService';
+import { refreshGoogleToken, watchGoogleTokenExpiry, GOOGLE_TOKEN_REFRESHED_EVENT } from './services/googleAuthService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
@@ -135,7 +135,16 @@ function App() {
     moodleToken, saveMoodleToken,
     signInWithGoogle, signOut: signOutUser,
     storageWarning,
+    authError, clearAuthError,
   } = useRecordings();
+
+  // Google sign-in redirect came back with an error
+  useEffect(() => {
+    if (!authError) return;
+    setToast(authError);
+    const t = setTimeout(() => { setToast(null); clearAuthError(); }, 5000);
+    return () => clearTimeout(t);
+  }, [authError, clearAuthError]);
 
   // Non-blocking notice when the offline cache can't be written
   useEffect(() => {
@@ -328,22 +337,8 @@ function App() {
   const [googleExpired, setGoogleExpired] = useState(false);
   const [googleTokenVersion, setGoogleTokenVersion] = useState(0);
   const [isReconnectingGoogle, setIsReconnectingGoogle] = useState(false);
-  const autoRefreshTriedRef = useRef(false);
 
   useEffect(() => watchGoogleTokenExpiry(setGoogleExpired), []);
-
-  // When a Drive/Calendar call returns 401, try to refresh the token right
-  // away (once per session). Browsers often block popups that aren't
-  // triggered by a tap — then the banner's Reconnect button does it.
-  useEffect(() => {
-    const onApiAuthError = () => {
-      if (autoRefreshTriedRef.current) return;
-      autoRefreshTriedRef.current = true;
-      refreshGoogleToken(false).catch(() => { /* banner stays visible */ });
-    };
-    window.addEventListener(GOOGLE_AUTH_EXPIRED_EVENT, onApiAuthError);
-    return () => window.removeEventListener(GOOGLE_AUTH_EXPIRED_EVENT, onApiAuthError);
-  }, []);
 
   useEffect(() => {
     const onRefreshed = () => {
