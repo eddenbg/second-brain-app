@@ -281,6 +281,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     titlePlaceholder={`Thought – ${new Date().toLocaleDateString()}`}
                     saveButtonText="Save Thought"
                     audioOnly={true}
+                    voiceNoteMode={true}
                 />
             </div>
         );

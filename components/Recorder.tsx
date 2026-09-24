@@ -19,7 +19,13 @@ interface RecorderProps {
   saveButtonText: string;
   enableDiarization?: boolean;
   audioOnly?: boolean;
+  // Personal Hub voice notes: mic to start, square to stop, then transcribe
+  // and save automatically. No drawing area, no separate Save button.
+  voiceNoteMode?: boolean;
 }
+
+const VOICE_NOTE_FINAL_TRANSCRIPT_WAIT_MS = 1500;
+const VOICE_NOTE_AUDIO_WAIT_MS = 3000;
 
 const FRAME_RATE = 1;
 const JPEG_QUALITY = 0.7;
@@ -37,7 +43,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 };
 
 
-const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText, audioOnly = false }) => {
+const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder, saveButtonText, audioOnly = false, voiceNoteMode = false }) => {
     const [title, setTitle] = useState(titlePlaceholder);
     const [transcript, setTranscript] = useState('');
     const [structuredTranscript, setStructuredTranscript] = useState<{text: string, timestamp: number}[]>([]);
@@ -57,6 +63,10 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const frameIntervalRef = useRef<number | null>(null);
     const startTimeRef = useRef<number>(0);
+    // Latest transcript/audio, readable right after stopping (state lags a render)
+    const transcriptRef = useRef('');
+    const structuredTranscriptRef = useRef<{ text: string; timestamp: number }[]>([]);
+    const recordedMediaRef = useRef<Promise<string | null> | null>(null);
 
     const stopAllMedia = useCallback(() => {
         if (stream) {
@@ -73,6 +83,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         if (isRecording) return;
         setTranscript('');
         setStructuredTranscript([]);
+        transcriptRef.current = '';
+        structuredTranscriptRef.current = [];
         setError(null);
         setNotebookData(null);
         startTimeRef.current = Date.now();
@@ -128,11 +140,17 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             const chunks: Blob[] = [];
             mediaRecorderRef.current = new MediaRecorder(mediaStream, { mimeType: captureMode === 'remote' ? 'audio/webm' : 'video/webm' });
             mediaRecorderRef.current.ondataavailable = (event) => chunks.push(event.data);
+            let resolveMedia: (url: string | null) => void = () => {};
+            recordedMediaRef.current = new Promise(resolve => { resolveMedia = resolve; });
             mediaRecorderRef.current.onstop = () => {
-                if (captureMode === 'remote') return;
+                if (captureMode === 'remote') { resolveMedia(null); return; }
                 const blob = new Blob(chunks, { type: 'video/webm' });
                 const reader = new FileReader();
-                reader.onloadend = () => setVideoDataUrl(reader.result as string);
+                reader.onloadend = () => {
+                    setVideoDataUrl(reader.result as string);
+                    resolveMedia(reader.result as string);
+                };
+                reader.onerror = () => resolveMedia(null);
                 reader.readAsDataURL(blob);
             };
             mediaRecorderRef.current.start();
@@ -184,6 +202,8 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         const text = message.serverContent?.inputTranscription?.text;
                         if (text) {
                             const timestamp = (Date.now() - startTimeRef.current) / 1000;
+                            transcriptRef.current += text;
+                            structuredTranscriptRef.current = [...structuredTranscriptRef.current, { text, timestamp }];
                             setTranscript(prev => prev + text);
                             setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                         }
@@ -221,7 +241,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
     const stopRecording = async () => {
         setIsRecording(false);
-        mediaRecorderRef.current?.stop();
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
         if (sessionPromiseRef.current) {
             const session = await sessionPromiseRef.current;
             session.close();
@@ -246,7 +268,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     // Auto-show privacy screen when the user returns to the app while recording
     // (so the screen isn't accidentally visible when they unlock their phone)
     useEffect(() => {
-        if (!isRecording) return;
+        if (!isRecording || voiceNoteMode) return;
         const handleVisibility = () => {
             if (document.visibilityState === 'visible' && isRecording) {
                 setPrivacyMode(true);
@@ -276,8 +298,16 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     };
 
     // TODO(deferred): Tasks auto-generation from recordings (turn action items into Kanban tasks).
-    const handleSave = async () => {
+    // State copies used as fallbacks inside handleSave (which shadows the names)
+    const transcriptState = transcript;
+    const structuredTranscriptState = structuredTranscript;
+    const videoDataUrlState = videoDataUrl;
+
+    const handleSave = async (recordedMedia?: string | null) => {
         setIsProcessing(true);
+        const transcript = transcriptRef.current || transcriptState;
+        const structuredTranscript = structuredTranscriptRef.current.length > 0 ? structuredTranscriptRef.current : structuredTranscriptState;
+        const videoDataUrl = recordedMedia !== undefined ? recordedMedia : videoDataUrlState;
         // AI calls are bounded so "Saving..." can never hang: title falls back
         // to the first words of the transcript (or "Recording <date>").
         const defaultTitle = fallbackTitle(transcript, 'Recording');
@@ -318,6 +348,56 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
     };
     
+    // Voice note: stop, wait briefly for the last words to be transcribed,
+    // then save automatically.
+    const stopAndAutoSave = async () => {
+        if (isProcessing) return;
+        setIsProcessing(true);
+        setError(null);
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        await new Promise(r => setTimeout(r, VOICE_NOTE_FINAL_TRANSCRIPT_WAIT_MS));
+        await stopRecording();
+        const media = recordedMediaRef.current
+            ? await Promise.race([
+                recordedMediaRef.current,
+                new Promise<null>(r => setTimeout(() => r(null), VOICE_NOTE_AUDIO_WAIT_MS)),
+            ])
+            : null;
+        if (!transcriptRef.current.trim()) {
+            setIsProcessing(false);
+            setError('No speech detected — tap the microphone and try again. / לא זוהה דיבור — הקש על המיקרופון ונסה שוב.');
+            return;
+        }
+        await handleSave(media);
+    };
+
+    if (voiceNoteMode) {
+        return (
+            <div className="bg-[#001f3f] p-6 rounded-[3rem] border-4 border-white/10 shadow-2xl flex flex-col items-center gap-6 w-full">
+                <button
+                    onClick={isRecording ? stopAndAutoSave : startRecording}
+                    disabled={isProcessing}
+                    aria-label={isProcessing ? 'Transcribing and saving' : isRecording ? 'Stop recording' : 'Start recording'}
+                    className={`w-40 h-40 rounded-full flex items-center justify-center shadow-2xl transition-all active:scale-95 disabled:opacity-70 ${
+                        isRecording && !isProcessing ? 'bg-red-600 text-white animate-pulse' : 'bg-yellow-500 text-[#001f3f]'
+                    }`}
+                >
+                    {isProcessing
+                        ? <Loader2Icon className="w-20 h-20 animate-spin" />
+                        : isRecording
+                            ? <div className="w-16 h-16 bg-white rounded-xl" aria-hidden="true" />
+                            : <MicIcon className="w-20 h-20" />}
+                </button>
+                <p role="status" aria-live="polite" className="font-black uppercase text-sm text-white/60 tracking-widest text-center">
+                    {isProcessing ? 'Transcribing & saving…' : isRecording ? 'Listening… tap the square to stop' : 'Tap the microphone to record'}
+                </p>
+                {error && <p className="text-center text-red-400 font-bold bg-red-900/20 p-3 rounded-xl" dir="auto">{error}</p>}
+            </div>
+        );
+    }
+
     // Full-screen recording mode with notebook
     if (isRecording && !audioOnly && captureMode !== 'remote') {
         return (
@@ -360,7 +440,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             Stop
                         </button>
                         <button
-                            onClick={handleSave}
+                            onClick={() => handleSave()}
                             disabled={isProcessing}
                             aria-label="Save recording"
                             className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded-full font-black text-sm uppercase transition-all disabled:bg-gray-600"
@@ -468,7 +548,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                      {isRecording ? 'STOP' : 'RECORD'}
                  </button>
                  <button
-                    onClick={handleSave}
+                    onClick={() => handleSave()}
                     disabled={isRecording || isProcessing || !transcript}
                     aria-label={isProcessing ? "Saving recording" : "Save recording"}
                     className="px-10 py-5 bg-yellow-500 rounded-2xl text-[#001f3f] disabled:bg-gray-700 disabled:text-gray-400 active:scale-95 transition-transform flex items-center gap-4 font-black text-2xl uppercase shadow-xl"
