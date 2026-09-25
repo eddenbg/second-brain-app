@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import {
     Folder, Mic, FileText, ArrowLeft, Plus,
     Trash2, X, LayoutGrid, ListTodo, FileStack, Camera,
@@ -206,7 +207,9 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             placeholder="New Course Name…"
                             className="flex-grow"
                             aria-label="Enter new course name"
+                            dir="auto"
                         />
+                        <VoiceInputButton value={newCourseName} onChange={setNewCourseName} label="new course name" />
                         <button
                             onClick={() => {
                                 if (newCourseName.trim()) {

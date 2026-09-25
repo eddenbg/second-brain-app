@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import VoiceInputButton from './VoiceInputButton';
 import { Search, Loader2, ExternalLink, Download, X } from 'lucide-react';
 import type { AnyMemory, WebMemory } from '../types';
 
@@ -79,8 +80,10 @@ const ClaudeResearchPanel: React.FC<ClaudeResearchPanelProps> = ({ topic, onSave
           onChange={e => setQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !loading && research()}
           placeholder={`What do you want to learn about ${topic}?`}
-          className="flex-1 !text-sm !py-3 !px-4"
+          className="flex-1 min-w-0 !text-sm !py-3 !px-4"
+          dir="auto"
         />
+        <VoiceInputButton value={query} onChange={setQuery} label="research question" />
         <button
           onClick={research}
           disabled={loading || !query.trim()}

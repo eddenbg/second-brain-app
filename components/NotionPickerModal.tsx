@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { WithVoice } from './VoiceInputButton';
 import type { NotionPage } from '../services/notionService';
 import { searchNotionPages } from '../services/notionService';
 import { XIcon, SearchIcon, Loader2Icon, ArrowLeftIcon } from './Icons';
@@ -98,15 +99,17 @@ const NotionPickerModal: React.FC<NotionPickerModalProps> = ({ token, onClose, o
                     )}
                     <div className="flex-grow min-w-0">
                         {searchMode ? (
-                            <input
-                                autoFocus
-                                dir="auto"
-                                type="text"
-                                placeholder="Search pages..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="w-full bg-gray-900 px-3 py-2 rounded-xl border-2 border-purple-500 text-white font-bold text-sm outline-none"
-                            />
+                            <WithVoice value={searchQuery} onChange={setSearchQuery} label="page search">
+                                <input
+                                    autoFocus
+                                    dir="auto"
+                                    type="text"
+                                    placeholder="Search pages..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full bg-gray-900 px-3 py-2 rounded-xl border-2 border-purple-500 text-white font-bold text-sm outline-none"
+                                />
+                            </WithVoice>
                         ) : (
                             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                                 {navStack.map((crumb, i) => (

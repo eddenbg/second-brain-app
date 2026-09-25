@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Task, AnyMemory, TaskStatus } from '../types';
 import { XIcon, CheckIcon, PlusIcon, LinkIcon } from './Icons';
+import { WithVoice } from './VoiceInputButton';
 
 interface KanbanBoardProps {
     tasks: Task[];
@@ -68,11 +69,15 @@ const AddTaskModal: React.FC<{
                 <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto">
                     <div>
                         <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Title</label>
-                        <input className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" value={title} onChange={e => setTitle(e.target.value)} required autoFocus placeholder="What needs to be done?"/>
+                        <WithVoice value={title} onChange={setTitle} label="task title">
+                            <input className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" value={title} onChange={e => setTitle(e.target.value)} required autoFocus placeholder="What needs to be done?" dir="auto"/>
+                        </WithVoice>
                     </div>
                     <div>
                         <label className="block text-yellow-500 text-xs font-black uppercase tracking-widest mb-2">Description</label>
-                        <textarea className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Add more details..." />
+                        <WithVoice value={description} onChange={setDescription} label="task description">
+                            <textarea className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Add more details..." dir="auto" />
+                        </WithVoice>
                     </div>
                     
                     <div>
@@ -101,12 +106,15 @@ const AddTaskModal: React.FC<{
                                  {existingProjects.map(p => <option key={p} value={p} className="bg-[#001f3f]">{p}</option>)}
                              </select>
                          )}
-                         <input 
-                            className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" 
-                            placeholder="Or create new project..."
-                            value={newProject}
-                            onChange={(e) => setNewProject(e.target.value)}
-                         />
+                         <WithVoice value={newProject} onChange={setNewProject} label="new project name">
+                            <input 
+                               className="w-full bg-white/5 text-white p-4 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold" 
+                               placeholder="Or create new project..."
+                               value={newProject}
+                               onChange={(e) => setNewProject(e.target.value)}
+                               dir="auto"
+                            />
+                         </WithVoice>
                     </div>
                     
                     {availableMemories.length > 0 && (
@@ -158,12 +166,17 @@ const TaskCard: React.FC<{
         onUpdate(task.id, { subtasks: newSubtasks });
     };
 
+    // Inline subtask entry (a text field with voice input, instead of a browser prompt)
+    const [isAddingSubtask, setIsAddingSubtask] = useState(false);
+    const [subtaskTitle, setSubtaskTitle] = useState('');
     const addSubtask = () => {
-        const title = prompt("New subtask title:");
+        const title = subtaskTitle.trim();
         if (title) {
             const newSubtask = { id: Date.now().toString(), title, done: false };
             onUpdate(task.id, { subtasks: [...(task.subtasks || []), newSubtask] });
         }
+        setSubtaskTitle('');
+        setIsAddingSubtask(false);
     };
 
     const handleDragStart = (e: React.DragEvent) => {
@@ -218,9 +231,30 @@ const TaskCard: React.FC<{
                         <span className={`text-xs font-bold ${st.done ? 'line-through text-gray-500' : 'text-gray-200'}`}>{st.title}</span>
                     </div>
                 ))}
-                <button onClick={addSubtask} aria-label="Add subtask" className="text-[10px] text-yellow-500/60 hover:text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-2 transition-colors">
-                    <PlusIcon className="w-3.5 h-3.5"/> Subtask
-                </button>
+                {isAddingSubtask ? (
+                    <div className="mt-2 space-y-2">
+                        <WithVoice value={subtaskTitle} onChange={setSubtaskTitle} label="subtask">
+                            <input
+                                className="w-full bg-white/5 text-white text-sm p-3 rounded-xl border-2 border-white/10 focus:border-yellow-500 outline-none font-bold"
+                                value={subtaskTitle}
+                                onChange={e => setSubtaskTitle(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } if (e.key === 'Escape') { setSubtaskTitle(''); setIsAddingSubtask(false); } }}
+                                placeholder="New subtask"
+                                aria-label="New subtask title"
+                                dir="auto"
+                                autoFocus
+                            />
+                        </WithVoice>
+                        <div className="flex gap-2">
+                            <button onClick={addSubtask} disabled={!subtaskTitle.trim()} className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl bg-yellow-500 text-[#001f3f] disabled:opacity-40">Add</button>
+                            <button onClick={() => { setSubtaskTitle(''); setIsAddingSubtask(false); }} className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl bg-white/5 text-gray-300">Cancel</button>
+                        </div>
+                    </div>
+                ) : (
+                    <button onClick={() => setIsAddingSubtask(true)} aria-label="Add subtask" className="text-[10px] text-yellow-500/60 hover:text-yellow-500 font-black uppercase tracking-widest flex items-center gap-1.5 mt-2 transition-colors">
+                        <PlusIcon className="w-3.5 h-3.5"/> Subtask
+                    </button>
+                )}
             </div>
 
             {linkedDocs.length > 0 && (

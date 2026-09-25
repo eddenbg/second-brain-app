@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import VoiceInputButton from './VoiceInputButton';
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
     Volume2, Loader2, X, Package, Camera, FileText,
@@ -526,8 +527,10 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                 onChange={e => setNewTagInput(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && addTag()}
                                 placeholder="New category name..."
-                                className="flex-grow bg-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white placeholder:text-white/30 outline-none"
+                                className="flex-grow min-w-0 bg-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white placeholder:text-white/30 outline-none"
+                                dir="auto"
                             />
+                            <VoiceInputButton value={newTagInput} onChange={setNewTagInput} label="new category name" />
                             <button
                                 onClick={addTag}
                                 disabled={!newTagInput.trim()}

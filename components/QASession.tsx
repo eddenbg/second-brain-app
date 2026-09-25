@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import VoiceInputButton from './VoiceInputButton';
 import { answerQuestionFromContext, generateSpeechFromText } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
 import { AlertCircle } from 'lucide-react';
@@ -127,8 +128,10 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type or use mic..."
             aria-label="Ask a question"
-            className="flex-grow bg-transparent text-white text-2xl p-4 focus:outline-none font-black placeholder:text-white/20"
+            className="flex-grow min-w-0 bg-transparent text-white text-2xl p-4 focus:outline-none font-black placeholder:text-white/20"
+            dir="auto"
           />
+          <VoiceInputButton value={query} onChange={setQuery} label="question" size="lg" className="self-center" />
           <button 
             onClick={handleSend} 
             aria-label="Send message"

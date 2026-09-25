@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import { generateTitleForContent } from '../services/geminiService';
 import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
 import type { WebMemory } from '../types';
@@ -89,7 +90,8 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
                     <div>
                         <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Title</label>
                          <div className="flex gap-2">
-                           <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Name your link" className="flex-grow bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                           <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Name your link" dir="auto" className="flex-grow min-w-0 bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                           <VoiceInputButton value={title} onChange={setTitle} label="link title" />
                            <button onClick={handleGenerateTitle} className="p-4 bg-purple-600 text-white rounded-2xl shadow-lg active:scale-95 transition-all">
                                <BrainCircuitIcon className="w-6 h-6"/>
                            </button>
@@ -98,12 +100,16 @@ const AddWebMemoryModal: React.FC<AddWebMemoryModalProps> = ({ onClose, onSave, 
                     
                     <div>
                         <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Notes</label>
-                        <textarea value={content} onChange={e => setContent(e.target.value)} rows={4} placeholder="What is this link about?" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                        <WithVoice value={content} onChange={setContent} label="link notes">
+                            <textarea value={content} onChange={e => setContent(e.target.value)} rows={4} placeholder="What is this link about?" dir="auto" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                        </WithVoice>
                     </div>
                     
                     <div>
                         <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Tags</label>
-                        <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. school, research" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                        <WithVoice value={tags} onChange={setTags} label="tags">
+                            <input type="text" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. school, research" dir="auto" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                        </WithVoice>
                     </div>
                     
                     <div className="bg-gray-900 p-6 rounded-[2rem] border border-gray-700 shadow-inner">

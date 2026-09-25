@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import VoiceInputButton from './VoiceInputButton';
 import { Search, X } from 'lucide-react';
 import type { AnyMemory } from '../types';
 
@@ -70,8 +71,10 @@ const SearchBar: React.FC<SearchBarProps> = ({
                     onChange={(e) => handleSearch(e.target.value)}
                     placeholder={placeholder}
                     className="w-full pl-12 pr-4 py-3 rounded-2xl bg-white/10 border-2 border-white/20 text-white placeholder-white/40 font-bold text-sm focus:outline-none focus:border-white/60 focus:bg-white/15 transition-all"
+                    dir="auto"
                 />
             </div>
+            <VoiceInputButton value={query} onChange={handleSearch} label="search" />
             {query && (
                 <button
                     onClick={clearSearch}

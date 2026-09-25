@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import type { DriveFile, DriveItem } from '../services/googleDriveService';
 import { listDriveFolder, listDriveFiles, getStoredDriveToken } from '../services/googleDriveService';
 import { XIcon, SearchIcon, Loader2Icon, FileTextIcon, FolderIcon, ArrowLeftIcon } from './Icons';
@@ -160,15 +161,17 @@ const DrivePickerModal: React.FC<DrivePickerModalProps> = ({ onClose, onImport, 
                     )}
                     <div className="flex-grow min-w-0">
                         {searchMode ? (
-                            <input
-                                autoFocus
-                                dir="auto"
-                                type="text"
-                                placeholder="Search Drive..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="w-full bg-gray-900 px-3 py-2 rounded-xl border-2 border-blue-500 text-white font-bold text-sm outline-none"
-                            />
+                            <WithVoice value={searchQuery} onChange={setSearchQuery} label="Drive search">
+                                <input
+                                    autoFocus
+                                    dir="auto"
+                                    type="text"
+                                    placeholder="Search Drive..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full bg-gray-900 px-3 py-2 rounded-xl border-2 border-blue-500 text-white font-bold text-sm outline-none"
+                                />
+                            </WithVoice>
                         ) : (
                             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                                 {folderStack.map((crumb, i) => (

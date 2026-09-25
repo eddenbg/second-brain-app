@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import type { CalendarEvent } from '../types';
 import { XIcon, SaveIcon } from './Icons';
 
@@ -48,7 +49,9 @@ const AddEventModal: React.FC<AddEventModalProps> = ({ date, onClose, onSave }) 
                 <main className="p-6 space-y-4">
                     <div>
                         <label className="block text-gray-300 font-bold mb-2">Title</label>
-                        <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full bg-gray-700 p-3 rounded border border-gray-600 focus:border-blue-500" autoFocus required />
+                        <WithVoice value={title} onChange={setTitle} label="event title">
+                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} dir="auto" className="w-full bg-gray-700 p-3 rounded border border-gray-600 focus:border-blue-500" autoFocus required />
+                        </WithVoice>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -69,7 +72,9 @@ const AddEventModal: React.FC<AddEventModalProps> = ({ date, onClose, onSave }) 
                     </div>
                     <div>
                         <label className="block text-gray-300 font-bold mb-2">Description (optional)</label>
-                        <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full bg-gray-700 p-3 rounded border border-gray-600"></textarea>
+                        <WithVoice value={description} onChange={setDescription} label="event description">
+                            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} dir="auto" className="w-full bg-gray-700 p-3 rounded border border-gray-600"></textarea>
+                        </WithVoice>
                     </div>
                 </main>
                 <footer className="p-4 flex justify-end gap-3 bg-gray-900/50 rounded-b-xl">

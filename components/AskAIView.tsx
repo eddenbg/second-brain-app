@@ -3,6 +3,8 @@ import { Mic, MicOff, Send, Loader2, Sparkles, ArrowRight, RotateCcw, Volume2, S
 import type { AnyMemory } from '../types';
 import { getGeminiInstance } from '../services/geminiService';
 import { searchMemories } from '../utils/SearchLogic';
+import { startDictation } from '../utils/dictation';
+import type { DictationSession } from '../utils/dictation';
 
 export interface AskAIMessage {
     role: 'user' | 'ai';
@@ -38,7 +40,6 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories, messages, setMessages, 
     const [isListening, setIsListening] = useState(false);
     const [voiceError, setVoiceError] = useState<string | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
-    const recognitionRef = useRef<any>(null);
 
     // Read-aloud for AI responses (Web Speech API). One message at a time.
     const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
@@ -203,50 +204,45 @@ USER QUESTION: ${query}`,
         }
     };
 
+    // Voice questions use the same Gemini transcription as voice notes
+    // (Hebrew, English, and switching mid-sentence). Tap to start, tap to stop;
+    // the question is sent automatically when you stop.
+    const dictationRef = useRef<DictationSession | null>(null);
+    // Always call the latest handleSend (it reads current memories)
+    const handleSendRef = useRef(handleSend);
+    handleSendRef.current = handleSend;
+    const [isConnectingVoice, setIsConnectingVoice] = useState(false);
+
     const startListening = useCallback(() => {
         setVoiceError(null);
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            setVoiceError('Voice input not supported in this browser.');
-            return;
-        }
-
-        const recognition = new SpeechRecognition();
-        recognitionRef.current = recognition;
-        recognition.lang = 'iw-IL';
-        recognition.interimResults = true;
-        recognition.continuous = false;
-        recognition.maxAlternatives = 1;
-
-        recognition.onstart = () => setIsListening(true);
-
-        recognition.onresult = (event: any) => {
-            const transcript = Array.from(event.results as any[])
-                .map((r: any) => r[0].transcript)
-                .join('');
-            setInput(transcript);
-        };
-
-        recognition.onend = () => {
-            setIsListening(false);
-            setInput(prev => {
-                if (prev.trim()) setTimeout(() => handleSend(prev), 100);
-                return prev;
-            });
-        };
-
-        recognition.onerror = (event: any) => {
-            setIsListening(false);
-            if (event.error !== 'no-speech') setVoiceError(`Voice error: ${event.error}`);
-        };
-
-        recognition.start();
+        setInput('');
+        let spoken = '';
+        const session = startDictation({
+            onText: (delta) => {
+                if (dictationRef.current !== session) return;
+                spoken += delta;
+                setInput(spoken.replace(/^\s+/, ''));
+            },
+            onStatus: (status, err) => {
+                if (dictationRef.current !== session) return;
+                setIsConnectingVoice(status === 'connecting' || status === 'stopping');
+                setIsListening(status === 'connecting' || status === 'listening');
+                if (status === 'error') setVoiceError(err || 'Voice input failed. Try again.');
+                if (status === 'idle') {
+                    dictationRef.current = null;
+                    const question = spoken.trim();
+                    if (question) handleSendRef.current(question);
+                }
+            },
+        });
+        dictationRef.current = session;
     }, []);
 
     const stopListening = useCallback(() => {
-        recognitionRef.current?.stop();
-        setIsListening(false);
+        void dictationRef.current?.stop();
     }, []);
+
+    useEffect(() => () => { void dictationRef.current?.stop(false); }, []);
 
     return (
         <div className="flex flex-col h-full gap-4" style={{ height: 'calc(100vh - 220px)' }}>
@@ -375,7 +371,7 @@ USER QUESTION: ${query}`,
 
                 <button
                     onClick={isListening ? stopListening : startListening}
-                    disabled={isTyping}
+                    disabled={isTyping || (isConnectingVoice && !isListening)}
                     aria-label={isListening ? 'Stop listening' : 'Speak your question'}
                     className={`w-full h-20 flex items-center justify-center gap-4 rounded-2xl font-black text-xl uppercase transition-all ${
                         isListening
@@ -383,9 +379,11 @@ USER QUESTION: ${query}`,
                             : 'bg-white text-[#001F3F] border-white'
                     }`}
                 >
-                    {isListening
-                        ? <><MicOff size={40} strokeWidth={3} /> Stop Listening</>
-                        : <><Mic size={40} strokeWidth={3} /> Tap to Speak</>
+                    {isConnectingVoice && !isListening
+                        ? <><Loader2 size={40} strokeWidth={3} className="animate-spin" /> Finishing…</>
+                        : isListening
+                            ? <><MicOff size={40} strokeWidth={3} /> Stop Listening</>
+                            : <><Mic size={40} strokeWidth={3} /> Tap to Speak</>
                     }
                 </button>
             </div>

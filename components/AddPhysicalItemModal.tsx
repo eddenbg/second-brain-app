@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import { generateTitleForContent } from '../services/geminiService';
 import type { PhysicalItemMemory, VideoItemMemory, AnyMemory } from '../types';
 import { BrainCircuitIcon, CameraIcon, XIcon, SaveIcon, UploadIcon, VideoIcon, StopCircleIcon, Loader2Icon } from './Icons';
@@ -320,13 +321,16 @@ const AddPhysicalItemModal: React.FC<AddPhysicalItemModalProps> = ({ onClose, on
                     <div className="space-y-4">
                         <div>
                             <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Details</label>
-                            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="What is this? Where is it located?" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                            <WithVoice value={description} onChange={setDescription} label="item details">
+                                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="What is this? Where is it located?" dir="auto" className="w-full bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                            </WithVoice>
                         </div>
                         
                         <div>
                             <label className="block text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Title</label>
                              <div className="flex gap-2">
-                               <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="flex-grow bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                               <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" dir="auto" className="flex-grow min-w-0 bg-gray-900 text-white text-base p-4 rounded-2xl border-2 border-gray-700 outline-none focus:border-blue-600 font-bold shadow-inner"/>
+                               <VoiceInputButton value={title} onChange={setTitle} label="item title" />
                                <button onClick={handleGenerateTitle} disabled={isGeneratingTitle || (!description.trim() && !transcript.trim())} className="p-4 bg-purple-600 text-white rounded-2xl disabled:bg-gray-700 shadow-lg active:scale-95 transition-all">
                                    {isGeneratingTitle ? <Loader2Icon className="w-6 h-6 animate-spin"/> : <BrainCircuitIcon className="w-6 h-6"/>}
                                </button>

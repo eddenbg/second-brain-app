@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import type { AnyMemory } from '../types';
 import {
     XIcon, ArrowLeftIcon, Loader2Icon, PlayIcon, StopCircleIcon,
@@ -73,8 +74,10 @@ export const StudyChat: React.FC<{ memories: AnyMemory[]; initialContext: string
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSend()}
                     placeholder="Ask about hidden connections..."
-                    className="flex-grow bg-transparent text-white font-bold p-4 outline-none text-lg"
+                    className="flex-grow min-w-0 bg-transparent text-white font-bold p-4 outline-none text-lg"
+                    dir="auto"
                 />
+                <VoiceInputButton value={input} onChange={setInput} label="question" size="lg" className="self-center" />
                 <button onClick={handleSend} className="p-5 bg-blue-600 text-white rounded-[1.8rem] shadow-xl active:scale-90 transition-transform">
                     <SendIcon className="w-8 h-8" />
                 </button>
@@ -245,14 +248,17 @@ export const SummaryFocusModal: React.FC<{
 
                 <div className="space-y-2">
                     <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest ml-4">Research Focus</label>
-                    <textarea
-                        value={focus}
-                        onChange={e => setFocus(e.target.value)}
-                        placeholder={type === 'research' ? 'What specific connections should I look for?' : 'What should I focus on?'}
-                        className="w-full bg-gray-900 text-white text-xl p-6 rounded-[2rem] border-4 border-gray-700 outline-none focus:border-purple-500 shadow-inner h-40 font-bold"
-                        aria-describedby="research-focus-help"
-                        autoFocus
-                    />
+                    <WithVoice value={focus} onChange={setFocus} label="research focus">
+                        <textarea
+                            value={focus}
+                            onChange={e => setFocus(e.target.value)}
+                            placeholder={type === 'research' ? 'What specific connections should I look for?' : 'What should I focus on?'}
+                            className="w-full bg-gray-900 text-white text-xl p-6 rounded-[2rem] border-4 border-gray-700 outline-none focus:border-purple-500 shadow-inner h-40 font-bold"
+                            aria-describedby="research-focus-help"
+                            dir="auto"
+                            autoFocus
+                        />
+                    </WithVoice>
                     <p id="research-focus-help" className="text-gray-400 text-xs font-bold leading-relaxed px-4">
                         Describe what you want to study (e.g., 'Explain chapter 3 concepts' or 'Create an audio summary of this week's lectures'). The AI will generate an overview from your course materials.
                     </p>

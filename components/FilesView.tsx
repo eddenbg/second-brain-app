@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import VoiceInputButton from './VoiceInputButton';
 import type { AnyMemory, DocumentMemory, VoiceMemory, FileMemory, PhysicalItemMemory } from '../types';
 import {
     FolderIcon, MicIcon, CameraIcon, FileTextIcon,
@@ -350,8 +351,10 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full bg-white/10 p-4 pl-12 rounded-2xl border-2 border-white/10 focus:border-yellow-500 outline-none font-black uppercase text-xs tracking-tight shadow-inner text-white"
+                            dir="auto"
                         />
                     </div>
+                    <VoiceInputButton value={searchQuery} onChange={setSearchQuery} label="vault search" />
                     <button
                         onClick={() => { window.history.pushState({ filesModal: 'drive' }, ''); setShowDrivePicker(true); }}
                         aria-label="Import from Google Drive"
