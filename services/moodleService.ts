@@ -28,6 +28,10 @@ export const loginWithCredentials = async (username: string, password: string): 
     let data: any = {};
     try { data = await res.json(); } catch { /* non-JSON response */ }
     if (data.token) return data.token;
+    // A problem on Dyellin's side (not your password): show what it actually was
+    if (data.reason) {
+        throw new Error(`לא ניתן להתחבר למודל / Can't connect to Moodle: ${data.error}${data.detail ? ` [${data.detail}]` : ''}`);
+    }
     const detail = data.error ? ` (${data.error})` : '';
     throw new Error(`${MOODLE_LOGIN_ERROR}${detail}`);
 };

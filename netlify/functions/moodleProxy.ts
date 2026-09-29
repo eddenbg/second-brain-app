@@ -2,6 +2,48 @@ import type { Context } from "@netlify/functions";
 
 const MOODLE_BASE_URL = "https://online.dyellin.ac.il";
 
+/**
+ * The token endpoint didn't answer with JSON. Ask Moodle's public app
+ * settings (no login needed) and look at the page we got, to explain why:
+ * app access turned off, single sign-on only, or the request being blocked.
+ */
+async function diagnoseLogin(status: number, body: string): Promise<{ error: string; reason: string; detail: string }> {
+  const title = (body.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] || '').trim().slice(0, 80);
+  const detail = `HTTP ${status}${title ? ` · page: “${title}”` : ''}`;
+
+  let config: any = null;
+  try {
+    const args = encodeURIComponent(JSON.stringify([{ index: 0, methodname: 'tool_mobile_get_public_config', args: {} }]));
+    const r = await fetch(`${MOODLE_BASE_URL}/lib/ajax/service-nologin.php?args=${args}`);
+    const j = await r.json();
+    config = Array.isArray(j) && !j[0]?.error ? j[0]?.data : null;
+  } catch { /* site doesn't expose it, or blocked */ }
+
+  if (config) {
+    if (config.maintenanceenabled) {
+      return { reason: 'maintenance', detail, error: 'Moodle is under maintenance right now. Try again later.' };
+    }
+    if (config.enablewebservices === 0 || config.enablemobilewebservice === 0) {
+      return { reason: 'app-access-off', detail, error: 'Dyellin has turned off app access to Moodle, so the app cannot log in with a password. Ask the college IT whether the Moodle mobile app is allowed.' };
+    }
+    if (config.typeoflogin === 2 || config.typeoflogin === 3) {
+      const providers = (config.identityproviders || []).map((p: any) => p.name).filter(Boolean).join(', ');
+      return {
+        reason: 'sso',
+        detail: `${detail} · login type ${config.typeoflogin}${providers ? ` · ${providers}` : ''}`,
+        error: `Dyellin's Moodle uses a web sign-in page${providers ? ` (${providers})` : ''} instead of a username and password for apps.`,
+      };
+    }
+  }
+  if (status === 403 || status === 429 || /cloudflare|access denied|request blocked|forbidden|captcha/i.test(body)) {
+    return { reason: 'blocked', detail, error: "Dyellin's server blocked the request from the app's server (it may only accept traffic from Israel or from browsers)." };
+  }
+  if (status >= 500) {
+    return { reason: 'server-error', detail, error: "Dyellin's Moodle server returned an error. Try again later." };
+  }
+  return { reason: 'unexpected', detail, error: "Dyellin's Moodle returned a web page instead of a login answer." };
+}
+
 export default async (req: Request, context: Context) => {
   // CORS Headers
   const headers = {
@@ -52,8 +94,10 @@ export default async (req: Request, context: Context) => {
       try {
         data = JSON.parse(text);
       } catch {
-        console.error("Moodle token endpoint returned non-JSON:", text.substring(0, 200));
-        return new Response(JSON.stringify({ error: "Invalid response from Moodle server" }), { status: 502, headers });
+        // Not a Moodle answer — work out why, so the app can say something useful
+        console.error(`Moodle token endpoint returned non-JSON (HTTP ${res.status}):`, text.substring(0, 300));
+        const diagnosis = await diagnoseLogin(res.status, text);
+        return new Response(JSON.stringify(diagnosis), { status: 502, headers });
       }
       if (data.error) {
         return new Response(JSON.stringify({ error: data.error, errorcode: data.errorcode }), { status: 401, headers });
