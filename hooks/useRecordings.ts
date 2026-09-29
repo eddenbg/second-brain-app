@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AnyMemory, WebMemory, Task } from '../types';
+import type { AnyMemory, WebMemory, Task, CalendarEvent } from '../types';
 import { db, auth } from '../utils/firebase';
 import { 
     collection, 
@@ -15,6 +15,10 @@ import { saveDriveToken } from '../services/googleDriveService';
 import { googleProvider } from '../utils/firebase';
 import { safeSetItem, isNearQuota, stripMediaForCache, alertStorageFull } from '../utils/safeStorage';
 import { GOOGLE_TOKEN_REFRESHED_EVENT } from '../services/googleAuthEvents';
+import { prepareMemoryForCloud } from '../utils/memoryPrep';
+import { savePending, listPending, removePending, deleteLocalFor } from '../utils/mediaStore';
+
+export const MEMORY_SAVE_FAILED_EVENT = 'second-brain:memory-save-failed';
 
 export const SIGN_IN_FAILED_MESSAGE = 'Sign-in failed — please try again';
 
@@ -50,6 +54,7 @@ export const useRecordings = () => {
     const [syncError, setSyncError] = useState<string | null>(null);
     const [storageWarning, setStorageWarning] = useState<string | null>(null);
     const [authError, setAuthError] = useState<string | null>(null);
+    const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
     const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingTaskIdsRef = useRef<Set<string>>(new Set());
@@ -161,10 +166,40 @@ export const useRecordings = () => {
             });
         });
 
+        // Calendar events added by hand (previously lost on reload)
+        const eventsRef = collection(db, 'users', user.uid, 'events');
+        const unsubEvents = onSnapshot(eventsRef, (snapshot) => {
+            const remote = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as CalendarEvent[];
+            setCalendarEvents(remote.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+        }, (e) => console.warn('Calendar events listener failed', e));
+
         return () => {
             unsubMemories();
             unsubTasks();
+            unsubEvents();
         };
+    }, [user]);
+
+    // 3a. Retry any saves that failed earlier (kept on this device)
+    useEffect(() => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        let cancelled = false;
+        const retry = async () => {
+            const pending = await listPending();
+            if (pending.length === 0 || cancelled) return;
+            const { setDoc } = await import('firebase/firestore');
+            for (const mem of pending) {
+                try {
+                    await setDoc(doc(db, 'users', user.uid, 'memories', mem.id), mem);
+                    await removePending(mem.id);
+                } catch (e) {
+                    console.warn('Retry of saved-on-device item failed', e);
+                }
+            }
+        };
+        void retry();
+        window.addEventListener('online', retry);
+        return () => { cancelled = true; window.removeEventListener('online', retry); };
     }, [user]);
 
     // 3b. Separate Real-time Listener for Settings to ensure cross-device sync
@@ -273,11 +308,23 @@ export const useRecordings = () => {
         if (!user || !db || (db as any).type === 'mock') return;
         const newMemory = {
             ...memoryData,
-            id: Date.now().toString(),
+            // Suffix keeps ids unique when several items are saved in the same millisecond
+            id: `${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
             date: new Date().toISOString(),
         } as AnyMemory;
+        // Move audio/oversized parts to device storage so the save can't fail on size
+        const cloudMemory = await prepareMemoryForCloud(newMemory);
         const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), newMemory);
+        const write = setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), cloudMemory);
+        write.catch(async (e) => {
+            // Keep a copy on this device and retry later — nothing is lost
+            console.error('Cloud save failed; kept on device for retry', e);
+            await savePending(newMemory.id, cloudMemory).catch(() => {});
+            window.dispatchEvent(new CustomEvent(MEMORY_SAVE_FAILED_EVENT));
+        });
+        // Offline, Firestore queues the write and only resolves once it reaches
+        // the server — don't make the UI wait for that.
+        await Promise.race([write.catch(() => {}), new Promise(r => setTimeout(r, 5000))]);
         // Fire-and-forget: generate AI topic tags and patch the document
         (async () => {
             try {
@@ -298,6 +345,8 @@ export const useRecordings = () => {
         if (!user || !db || (db as any).type === 'mock') return;
         const { deleteDoc } = await import('firebase/firestore');
         await deleteDoc(doc(db, 'users', user.uid, 'memories', id));
+        void deleteLocalFor(id);
+        void removePending(id);
     }, [user]);
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
@@ -343,12 +392,30 @@ export const useRecordings = () => {
         await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
     }, [user]);
 
-    const addCourse = useCallback(async (courseName: string) => {
+    const addCalendarEvent = useCallback(async (event: Omit<CalendarEvent, 'id'>) => {
+        const newEvent: CalendarEvent = { ...event, id: `manual-${Date.now()}`, source: 'manual' };
+        setCalendarEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
         if (!user || !db || (db as any).type === 'mock') return;
-        const updated = [...new Set([...savedCourses, courseName])];
         const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updated, moodleToken }, { merge: true });
-    }, [user, savedCourses, moodleToken]);
+        const clean = Object.fromEntries(Object.entries(newEvent).filter(([, v]) => v !== undefined));
+        await setDoc(doc(db, 'users', user.uid, 'events', newEvent.id), clean).catch(e => console.error('Saving event failed', e));
+    }, [user]);
+
+    const deleteCalendarEvent = useCallback(async (eventId: string) => {
+        setCalendarEvents(prev => prev.filter(e => e.id !== eventId));
+        if (!user || !db || (db as any).type === 'mock') return;
+        const { deleteDoc } = await import('firebase/firestore');
+        await deleteDoc(doc(db, 'users', user.uid, 'events', eventId)).catch(e => console.error('Deleting event failed', e));
+    }, [user]);
+
+    // Accepts one or several names; arrayUnion avoids overwriting courses added moments earlier
+    const addCourse = useCallback(async (courseName: string | string[]) => {
+        if (!user || !db || (db as any).type === 'mock') return;
+        const names = (Array.isArray(courseName) ? courseName : [courseName]).map(n => n.trim()).filter(Boolean);
+        if (names.length === 0) return;
+        const { setDoc, arrayUnion } = await import('firebase/firestore');
+        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: arrayUnion(...names) }, { merge: true });
+    }, [user]);
 
     const deleteCourse = useCallback(async (courseName: string) => {
         if (!user || !db || (db as any).type === 'mock') return;
@@ -397,6 +464,7 @@ export const useRecordings = () => {
         authError, clearAuthError,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,
+        calendarEvents, addCalendarEvent, deleteCalendarEvent,
         isAnonymous: user?.isAnonymous ?? true,
     };
 };

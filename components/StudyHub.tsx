@@ -97,7 +97,7 @@ export const StudyHubOverlay: React.FC<{
     const isPlaying = podcastTts.status === 'playing';
     const isLoadingAudio = podcastTts.status === 'loading';
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
-    const [isVideoLoading, setIsVideoLoading] = useState(overview.type === 'video');
+    const [isVideoLoading, setIsVideoLoading] = useState(overview.type === 'video' && !!overview.videoUri);
     const audioContextRef = useRef<AudioContext | null>(null);
     const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -228,14 +228,15 @@ export const SummaryFocusModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center p-6 animate-fade-in">
-            <div className="bg-gray-800 rounded-[3rem] border-4 border-gray-700 p-8 w-full max-w-lg space-y-6 shadow-2xl">
+            <div className="bg-gray-800 rounded-[3rem] border-4 border-gray-700 p-8 w-full max-w-lg space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center gap-4 text-purple-400">
                     <PenToolIcon className="w-10 h-10" />
                     <h3 className="text-3xl font-black uppercase tracking-tighter">Study Pod</h3>
                 </div>
 
                 <div className="flex bg-gray-900 p-1.5 rounded-2xl border-2 border-gray-700 overflow-x-auto scrollbar-hide">
-                    {(['written', 'audio', 'video', 'research'] as const).map(t => (
+                    {/* Video generation isn't implemented, so it isn't offered */}
+                    {(['written', 'audio', 'research'] as const).map(t => (
                         <button
                             key={t}
                             onClick={() => setType(t)}

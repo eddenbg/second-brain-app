@@ -23,6 +23,12 @@ export interface BaseMemory {
   thumbnailDataUrl?: string;
   // Set to 'image' when the memory contains a photo (drives the Files Vault IMAGE filter)
   fileType?: 'image';
+  // Parts too large for the cloud, kept only on the device that recorded them
+  // (see utils/mediaStore.ts): recorded audio, the notebook drawings, or the
+  // timestamped transcript.
+  localMedia?: boolean;
+  localNotebook?: boolean;
+  localStructuredTranscript?: boolean;
 }
 
 export interface TranscriptSegment {

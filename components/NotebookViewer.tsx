@@ -39,7 +39,7 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement,
         // Determine which strokes to show based on sync time
         const maxTime = syncWithAudio ? currentTime * 1000 : Infinity;
 
-        notebook.strokes.forEach(stroke => {
+        (notebook.strokes || []).forEach(stroke => {
             ctx.strokeStyle = stroke.color;
             ctx.lineWidth = stroke.width;
             ctx.lineCap = 'round';
@@ -54,6 +54,14 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement,
                 ctx.lineTo(visiblePoints[i].x, visiblePoints[i].y);
             }
             ctx.stroke();
+        });
+
+        // Handwriting converted to text
+        (notebook.textNotes || []).forEach(note => {
+            if (note.t > maxTime) return;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 24px Arial, sans-serif';
+            ctx.fillText(note.text, note.x, note.y);
         });
     };
 
@@ -96,7 +104,8 @@ const NotebookViewer: React.FC<NotebookViewerProps> = ({ notebook, audioElement,
             ref={canvasRef}
             width={1200}
             height={1600}
-            className="w-full h-full max-h-96 mx-auto rounded-2xl border-2 border-white/10 shadow-lg bg-gray-800"
+            className="w-full h-auto mx-auto rounded-2xl border-2 border-white/10 shadow-lg bg-gray-800"
+            aria-label="Notes drawn during the recording"
         />
     );
 };

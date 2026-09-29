@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import RecordingExtras from './RecordingExtras';
 import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import {
     Folder, Mic, FileText, ArrowLeft, Plus,
@@ -167,10 +168,8 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             return (
                 <AddDocumentModal
                     onClose={handleBack}
-                    onSave={(mem) => {
-                        onSave({ ...mem, category: 'college', course: 'General' });
-                        window.history.back();
-                    }}
+                    // Stay on the scanner's "Saved" screen (Read Aloud / Scan Another); Done closes it
+                    onSave={(mem) => onSave({ ...mem, category: 'college', course: 'General' })}
                 />
             );
         }
@@ -362,7 +361,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                             <Brain size={40} strokeWidth={3} />
                             <div className="text-left">
                                 <div className="text-lg font-black uppercase">Study Session</div>
-                                <div className="text-sm opacity-70">Audio · Video · Written · Research</div>
+                                <div className="text-sm opacity-70">Audio · Written · Research</div>
                             </div>
                         </button>
                     )}
@@ -454,10 +453,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
             return (
                 <AddDocumentModal
                     onClose={handleBack}
-                    onSave={(mem) => {
-                        onSave({ ...mem, course: selectedCourse!, category: 'college' });
-                        window.history.back();
-                    }}
+                    onSave={(mem) => onSave({ ...mem, course: selectedCourse!, category: 'college' })}
                 />
             );
         }
@@ -472,7 +468,11 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         </button>
                         <h2 className="text-2xl font-black uppercase flex-grow truncate">{selectedItem.title}</h2>
                         <button
-                            onClick={() => { onDelete(selectedItem.id); handleBack(); }}
+                            onClick={() => {
+                                if (!window.confirm(`Delete "${selectedItem.title}"? This can't be undone.`)) return;
+                                onDelete(selectedItem.id);
+                                handleBack();
+                            }}
                             aria-label="Delete"
                             className="p-3 bg-white/10 rounded-xl border-2 border-white/20"
                         >
@@ -482,9 +482,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                     <div className="card-brutal">
                         {selectedItem.type === 'voice' && (
                             <div className="space-y-5">
-                                {(selectedItem as VoiceMemory).audioDataUrl && (
-                                    <audio src={(selectedItem as VoiceMemory).audioDataUrl} controls className="w-full" />
-                                )}
+<RecordingExtras memory={selectedItem} />
                                 {(selectedItem as VoiceMemory).summary && (
                                     <div className="bg-gradient-to-br from-blue-900/40 to-blue-800/20 p-4 rounded-2xl border-2 border-blue-500/30">
                                         <h3 className="font-black text-blue-400 uppercase text-sm tracking-widest mb-3">Lecture Summary</h3>

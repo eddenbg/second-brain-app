@@ -4,17 +4,17 @@ import type { DocumentMemory } from '../types';
 import { generateTitleForContent, extractTextFromImage } from '../services/geminiService';
 import { getCurrentLocation } from '../utils/location';
 import { XIcon, Loader2Icon, CheckIcon } from './Icons';
+import ReadAloudButton from './ReadAloudButton';
 import { Camera, SwitchCamera, Image } from 'lucide-react';
 import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl } from '../utils/image';
 import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
 
 const OCR_TIMEOUT_MS = 60_000;
 const TITLE_TIMEOUT_MS = 15_000;
-const OCR_ERROR_TEXT = 'Error extracting text.';
 
 interface AddDocumentModalProps {
     course?: string;
-    onSave: (memory: Omit<DocumentMemory, 'id'|'date'>) => void;
+    onSave: (memory: Omit<DocumentMemory, 'id'|'date'>) => void | Promise<void>;
     onClose: () => void;
 }
 
@@ -28,6 +28,8 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     // Preview of the photo currently being processed. In-memory only — reset
     // on every new selection and never persisted.
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    // Text read from the last photo, shown on the "Saved" screen with Read Aloud
+    const [savedText, setSavedText] = useState('');
     // Incremented per selection so a slower, older OCR run can't overwrite
     // the result or preview of the photo the user just picked.
     const selectionIdRef = useRef(0);
@@ -102,7 +104,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 getCurrentLocation()
             ]);
             if (!isCurrent()) return;
-            if (text === OCR_ERROR_TEXT) throw new Error('OCR failed');
+            if (!text) throw new Error('No text was found in this photo. Make sure the page fills the frame and is in focus.');
 
             // Title generation is bounded: if the AI is slow or fails we fall
             // back to the first words of the text instead of hanging.
@@ -112,6 +114,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 .catch(() => fallbackTitle(text, 'Document'));
             if (!isCurrent()) return;
 
+            try {
             await Promise.resolve(onSave({
                 type: 'document',
                 source: 'ocr',
@@ -122,14 +125,21 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 ...(thumbnailDataUrl && { thumbnailDataUrl, fileType: 'image' as const }),
                 ...(location && { location })
             }) as unknown);
+            } catch (saveError) {
+                console.error('Saving the scan failed', saveError);
+                throw new Error('The text was read, but saving failed. Check your connection and try again.');
+            }
 
+            setSavedText(text);
             setPhase('done');
             setStatusMessage('Saved!');
-            setTimeout(onClose, 1500);
-        } catch {
+        } catch (e: any) {
             if (!isCurrent()) return;
             setPhase('error');
-            setStatusMessage('Could not extract text. Try again with better lighting.');
+            const reason = e?.name === 'TimeoutError'
+                ? 'The AI took too long to answer. Try again.'
+                : (e?.message || 'The AI could not read this image.');
+            setStatusMessage(reason.startsWith('The text was read') ? reason : `Could not read the text. ${reason}`);
         }
     };
 
@@ -248,8 +258,16 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                             <div className="w-[88%] h-[70%] border-4 border-white/60 rounded-2xl" />
                         </div>
-                        <div className="absolute bottom-8 left-0 right-0 flex justify-center">
-                            <p className="bg-black/60 text-white font-black text-xl px-6 py-3 rounded-full uppercase tracking-wide">
+                        <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center gap-4 px-4">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); stopCamera(); startGalleryUpload(); }}
+                                aria-label="Choose a photo from the gallery instead"
+                                className="flex items-center gap-2 bg-purple-600 text-white font-black text-base px-5 py-3 rounded-full uppercase tracking-wide shadow-xl active:scale-95"
+                            >
+                                <Image className="w-6 h-6" strokeWidth={2.5} />
+                                Gallery
+                            </button>
+                            <p className="bg-black/60 text-white font-black text-xl px-6 py-3 rounded-full uppercase tracking-wide pointer-events-none">
                                 Tap to Capture
                             </p>
                         </div>
@@ -267,18 +285,61 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                         {previewUrl && (
                             <img src={previewUrl} alt="Selected photo" className="max-h-[40vh] max-w-full object-contain rounded-2xl border-4 border-white/20" />
                         )}
-                        <CheckIcon className="w-24 h-24 text-green-400" />
-                        <p className="text-white font-black text-2xl uppercase">Saved!</p>
+                        <div className="flex items-center gap-3">
+                            <CheckIcon className="w-12 h-12 text-green-400" />
+                            <p className="text-white font-black text-2xl uppercase">Saved!</p>
+                        </div>
+                        {savedText && (
+                            <p className="w-full max-w-md max-h-32 overflow-y-auto bg-black/30 rounded-2xl p-4 text-white text-base leading-relaxed whitespace-pre-wrap" dir="auto">
+                                {savedText}
+                            </p>
+                        )}
+                        <div className="w-full max-w-md flex flex-col items-center gap-3">
+                            {savedText && <ReadAloudButton text={savedText} />}
+                            <div className="w-full flex gap-3">
+                                <button
+                                    onClick={() => { setPreviewUrl(null); setSavedText(''); setPhase('inputChoice'); }}
+                                    className="flex-1 py-4 bg-white/10 text-white font-black rounded-2xl text-base uppercase border-2 border-white/20"
+                                >
+                                    Scan Another
+                                </button>
+                                <button
+                                    onClick={onClose}
+                                    className="flex-1 py-4 bg-white text-[#001F3F] font-black rounded-2xl text-base uppercase"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F] px-8 text-center">
-                        <p className="text-white font-black text-2xl uppercase">{statusMessage}</p>
-                        <button
-                            onClick={() => { setPreviewUrl(null); setPhase('camera'); startCamera(facingMode); }}
-                            className="px-8 py-5 bg-white text-[#001F3F] font-black rounded-2xl text-xl uppercase"
-                        >
-                            Try Again
-                        </button>
+                        {previewUrl && (
+                            <img src={previewUrl} alt="The photo that could not be read" className="max-h-[30vh] max-w-full object-contain rounded-2xl border-4 border-white/20" />
+                        )}
+                        <p className="text-white font-black text-xl" dir="auto">{statusMessage}</p>
+                        <div className="w-full max-w-xs flex flex-col gap-3">
+                            <button
+                                onClick={() => { setPreviewUrl(null); startGalleryUpload(); }}
+                                className="w-full py-5 bg-purple-600 text-white font-black rounded-2xl text-lg uppercase flex items-center justify-center gap-3"
+                            >
+                                <Image className="w-6 h-6" strokeWidth={2.5} />
+                                Choose from Gallery
+                            </button>
+                            <button
+                                onClick={() => { setPreviewUrl(null); setPhase('camera'); startCamera(facingMode); }}
+                                className="w-full py-5 bg-blue-600 text-white font-black rounded-2xl text-lg uppercase flex items-center justify-center gap-3"
+                            >
+                                <Camera className="w-6 h-6" strokeWidth={2.5} />
+                                Take Photo
+                            </button>
+                            <button
+                                onClick={onClose}
+                                className="w-full py-4 bg-white/10 text-white font-black rounded-2xl text-base uppercase"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -290,7 +351,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                     style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}
                 >
                     <button
-                        onClick={phase === 'inputChoice' ? onClose : () => setPhase('inputChoice')}
+                        onClick={phase === 'inputChoice' ? onClose : () => { stopCamera(); setPhase('inputChoice'); }}
                         aria-label={phase === 'inputChoice' ? 'Close' : 'Back to input choice'}
                         className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center hover:bg-black/80 transition-colors"
                     >

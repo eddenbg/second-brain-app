@@ -4,15 +4,50 @@ const UNAVAILABLE_ERROR_MESSAGE = "AI features are currently unavailable. The AP
 
 let geminiInstance: GoogleGenAI | null = null;
 
+const model = 'gemini-2.5-flash';
+// Used automatically if Google retires or renames the main model, so AI
+// features keep working without an app update.
+const FALLBACK_MODEL = 'gemini-flash-latest';
+
+const isModelUnavailableError = (e: any): boolean => {
+    const msg = String(e?.message || e || '');
+    return e?.status === 404 || /\b404\b|NOT_FOUND|is not found|not supported for generateContent|no longer available|deprecated/i.test(msg);
+};
+
 export const getGeminiInstance = (): GoogleGenAI | null => {
     if (geminiInstance) return geminiInstance;
     const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_API_KEY;
     if (!apiKey) return null;
-    geminiInstance = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey });
+    // Retry text/vision calls on the fallback model when the main model is gone
+    const original = ai.models.generateContent.bind(ai.models);
+    (ai.models as any).generateContent = async (params: any) => {
+        try {
+            return await original(params);
+        } catch (e) {
+            if (params?.model === model && isModelUnavailableError(e)) {
+                console.warn(`Model ${model} unavailable, retrying with ${FALLBACK_MODEL}`, e);
+                return await original({ ...params, model: FALLBACK_MODEL });
+            }
+            throw e;
+        }
+    };
+    geminiInstance = ai;
     return geminiInstance;
 };
 
-const model = 'gemini-2.5-flash';
+/** Short, user-facing reason for an AI failure. */
+export const describeAiError = (e: any): string => {
+    const msg = String(e?.message || e || '');
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'You appear to be offline. Check your internet connection.';
+    if (/API key not valid|API_KEY_INVALID|PERMISSION_DENIED|\b403\b/i.test(msg)) return 'The AI key was rejected. The Gemini API key needs checking.';
+    if (/RESOURCE_EXHAUSTED|quota|\b429\b|rate limit/i.test(msg)) return 'The AI is busy or the daily limit was reached. Wait a minute and try again.';
+    if (isModelUnavailableError(e)) return 'The AI model is unavailable right now.';
+    if (/timed out|TimeoutError/i.test(msg)) return 'The AI took too long to answer. Try again.';
+    if (/Failed to fetch|NetworkError|network/i.test(msg)) return 'Could not reach the AI service. Check your connection.';
+    if (/SAFETY|blocked/i.test(msg)) return 'The AI declined to read this image.';
+    return 'The AI could not read this image.';
+};
 
 export async function askQuestion(question: string, context: string): Promise<string> {
     const ai = getGeminiInstance();
@@ -117,21 +152,28 @@ export async function generateSpeechFromText(text: string): Promise<string | nul
     } catch (error) { return null; }
 }
 
+/**
+ * OCR a photo. Throws an Error whose message is a short user-facing reason
+ * (see describeAiError) so the scanner can say what actually went wrong.
+ */
 export async function extractTextFromImage(base64Data: string, mimeType: string): Promise<string> {
     const ai = getGeminiInstance();
-    if (!ai) return UNAVAILABLE_ERROR_MESSAGE;
+    if (!ai) throw new Error('AI features are not set up (missing Gemini API key).');
     try {
         const response = await ai.models.generateContent({
             model,
             contents: { 
                 parts: [
                     { inlineData: { mimeType, data: base64Data } }, 
-                    { text: `Extract all text from this image exactly as written. Support both printed and handwritten text in Hebrew or English. Preserve line breaks and original layout.` }
+                    { text: `Extract all text from this image exactly as written. Support both printed and handwritten text in Hebrew or English. Preserve line breaks and original layout. Return only the text. If there is no readable text, return nothing.` }
                 ] 
             },
         });
-        return response.text ?? "No text found.";
-    } catch (error) { return "Error extracting text."; }
+        return (response.text ?? '').trim();
+    } catch (error) {
+        console.error('OCR failed', error);
+        throw new Error(describeAiError(error));
+    }
 }
 
 export async function analyzeVoiceNote(content: string): Promise<{ title: string; actionItems: string[] }> {

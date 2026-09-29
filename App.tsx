@@ -8,7 +8,7 @@ import PersonalView from './components/PersonalView';
 import ScheduleView from './components/ScheduleView';
 import FilesView from './components/FilesView';
 import SettingsModal from './components/SettingsModal';
-import { useRecordings } from './hooks/useRecordings';
+import { useRecordings, MEMORY_SAVE_FAILED_EVENT } from './hooks/useRecordings';
 import { safeSetItem } from './utils/safeStorage';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
@@ -46,7 +46,6 @@ function App() {
   const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xlarge'>(() =>
     (localStorage.getItem('font_size') as 'normal' | 'large' | 'xlarge') || 'normal'
   );
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
   const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
@@ -136,7 +135,18 @@ function App() {
     signInWithGoogle, signOut: signOutUser,
     storageWarning,
     authError, clearAuthError,
+    calendarEvents, addCalendarEvent: saveCalendarEvent, deleteCalendarEvent: removeCalendarEvent,
   } = useRecordings();
+
+  // A memory couldn't reach the cloud — it's kept on the device and retried
+  useEffect(() => {
+    const onFailed = () => {
+      setToast('Saved on this device only for now — will upload when back online.');
+      setTimeout(() => setToast(null), 6000);
+    };
+    window.addEventListener(MEMORY_SAVE_FAILED_EVENT, onFailed);
+    return () => window.removeEventListener(MEMORY_SAVE_FAILED_EVENT, onFailed);
+  }, []);
 
   // Google sign-in redirect came back with an error
   useEffect(() => {
@@ -158,21 +168,38 @@ function App() {
   const personalMemories = useMemo(() => memories.filter(m => m.category === 'personal'), [memories]);
 
   // TODO(deferred): Moodle full integration (assignments, grades, two-way sync).
-  // Moodle sync
+  // Moodle sync: once per session (per connected account), a few seconds
+  // after sign-in so the saved items have loaded and nothing is imported twice.
+  const memoriesRef = useRef(memories);
+  memoriesRef.current = memories;
+  const coursesRef = useRef(courses);
+  coursesRef.current = courses;
+  const moodleSyncedForRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!moodleToken || !user || loading) return;
+    if (moodleSyncedForRef.current === moodleToken) return;
     const syncMoodle = async () => {
-      if (!moodleToken || memories.length === 0) return;
+      moodleSyncedForRef.current = moodleToken;
       try {
         setIsSyncingMoodle(true);
         const moodleCourses = await fetchMoodleCourses(moodleToken);
-        for (const mc of moodleCourses) {
-          if (!courses.includes(mc.fullname)) addCourse(mc.fullname);
-        }
+        const newCourses = moodleCourses.map(mc => mc.fullname).filter(name => !coursesRef.current.includes(name));
+        if (newCourses.length > 0) await addCourse(newCourses);
+        const seen = new Set(
+          memoriesRef.current
+            .filter(m => m.type === 'file')
+            .map(m => `${(m as any).course}::${(m as FileMemory).moodleId || m.title}`)
+        );
+        const seenTitles = new Set(memoriesRef.current.map(m => `${(m as any).course}::${m.title}`));
         for (const mc of moodleCourses) {
           const contents = await fetchCourseContents(moodleToken, mc.id);
           for (const item of contents) {
-            const alreadySaved = memories.some(m => m.title === item.name && (m as any).course === mc.fullname);
+            const idKey = `${mc.fullname}::${item.id}`;
+            const titleKey = `${mc.fullname}::${item.name}`;
+            const alreadySaved = seen.has(idKey) || seenTitles.has(titleKey);
             if (!alreadySaved) {
+              seen.add(idKey);
+              seenTitles.add(titleKey);
               await addMemory({
                 type: 'file',
                 title: item.name,
@@ -192,8 +219,9 @@ function App() {
         setIsSyncingMoodle(false);
       }
     };
-    syncMoodle();
-  }, [moodleToken, addCourse, memories.length]);
+    const t = setTimeout(syncMoodle, 5000);
+    return () => clearTimeout(t);
+  }, [moodleToken, user, loading, addCourse]);
 
   const toggleSettings = (open: boolean) => {
     if (open) {
@@ -321,14 +349,14 @@ function App() {
     getMoodleEvents();
   }, [moodleToken]);
 
+  // Hand-added events are saved to the cloud (useRecordings) so they survive reloads
   const addCalendarEvent = (event: Omit<CalendarEvent, 'id'>) => {
-    const newEvent = { ...event, id: Date.now().toString(), source: 'manual' as const };
-    setCalendarEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
+    void saveCalendarEvent(event);
   };
 
   const deleteCalendarEvent = (eventId: string) => {
       if (window.confirm('Delete event?')) {
-          setCalendarEvents(prev => prev.filter(e => e.id !== eventId));
+          void removeCalendarEvent(eventId);
       }
   };
 

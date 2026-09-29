@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import RecordingExtras from './RecordingExtras';
 import VoiceInputButton from './VoiceInputButton';
 import {
     Mic, Globe, ArrowLeft, Plus, Trash2,
@@ -606,7 +607,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                         )}
                                     </div>
                                     <button
-                                        onClick={() => onDeleteMemory(mem.id)}
+                                        onClick={() => { if (window.confirm(`Delete "${mem.title}"?`)) onDeleteMemory(mem.id); }}
                                         aria-label="Delete clip"
                                         className="p-3 bg-white/10 rounded-xl flex-shrink-0"
                                     >
@@ -682,7 +683,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                                         </p>
                                     </div>
                                     <button
-                                        onClick={() => onDeleteMemory(mem.id)}
+                                        onClick={() => { if (window.confirm(`Delete "${mem.title}"?`)) onDeleteMemory(mem.id); }}
                                         aria-label="Delete document"
                                         className="p-3 bg-white/10 rounded-xl"
                                     >
@@ -718,10 +719,8 @@ const PersonalView: React.FC<PersonalViewProps> = ({
         return (
             <AddDocumentModal
                 onClose={() => navigateTo('documents')}
-                onSave={(mem) => {
-                    onSaveMemory({ ...mem, category: 'personal' });
-                    navigateTo('documents');
-                }}
+                // Stay on the scanner's "Saved" screen (Read Aloud / Scan Another); Done closes it
+                onSave={(mem) => onSaveMemory({ ...mem, category: 'personal' })}
             />
         );
     }
@@ -760,7 +759,11 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                     <h2 className="text-2xl font-black uppercase flex-grow truncate">{selectedItem.title}</h2>
                     <button
-                        onClick={() => { onDeleteMemory(selectedItem.id); setSubView(prevView); }}
+                        onClick={() => {
+                            if (!window.confirm(`Delete "${selectedItem.title}"? This can't be undone.`)) return;
+                            onDeleteMemory(selectedItem.id);
+                            setSubView(prevView);
+                        }}
                         aria-label="Delete"
                         className="p-3 bg-white/10 rounded-xl border-2 border-white/20"
                     >
@@ -771,9 +774,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                 <div className="card-brutal">
                     {selectedItem.type === 'voice' && (
                         <div className="space-y-5">
-                            {(selectedItem as VoiceMemory).audioDataUrl && (
-                                <audio src={(selectedItem as VoiceMemory).audioDataUrl} controls className="w-full" />
-                            )}
+                            <RecordingExtras memory={selectedItem} />
                             {(selectedItem as VoiceMemory).summary && (
                                 <div className="bg-gradient-to-br from-blue-900/40 to-blue-800/20 p-4 rounded-2xl border-2 border-blue-500/30">
                                     <h3 className="font-black text-blue-400 uppercase text-sm tracking-widest mb-3">Summary</h3>

@@ -20,7 +20,9 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const [extractedText, setExtractedText] = useState<string | null>(null);
     const [isExtracting, setIsExtracting] = useState(false);
     const [showTextModal, setShowTextModal] = useState(false);
-    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string }>>([]);
+    const [textAnnotations, setTextAnnotations] = useState<Array<{ text: string; x: number; y: number; id: string; t: number }>>(
+        () => (initialData?.textNotes || []).map((n, i) => ({ ...n, id: `init-${i}` }))
+    );
     const [hasLassoSelection, setHasLassoSelection] = useState(false);
     const [lastLassoSelection, setLastLassoSelection] = useState<{ x: number; y: number; minX: number; minY: number; maxX: number; maxY: number } | null>(null);;
 
@@ -32,6 +34,11 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const isDrawingRef = useRef(false);
     const currentStrokeRef = useRef<DrawingStroke | null>(null);
     const lassoPointsRef = useRef<{ x: number; y: number }[]>([]);
+    // Palm rejection: once an S Pen / stylus is used, finger and palm touches
+    // no longer draw. Only one pointer draws at a time.
+    const penSeenRef = useRef(false);
+    const activePointerRef = useRef<number | null>(null);
+    const toolOverrideRef = useRef<'eraser' | null>(null);
 
     // Fixed white color for better contrast against blue background
     const PEN_COLOR = '#FFFFFF';
@@ -39,10 +46,14 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
     const ERASER_WIDTH = 20;
     const LASSO_COLOR = '#FBBF24';
 
-    // Sync notebook data with parent
+    // Sync notebook data with parent (including handwriting converted to text)
     useEffect(() => {
-        onUpdate({ strokes, backgroundImageUrl: bgImage });
-    }, [strokes, bgImage, onUpdate]);
+        onUpdate({
+            strokes,
+            backgroundImageUrl: bgImage,
+            textNotes: textAnnotations.map(({ text, x, y, t }) => ({ text, x, y, t })),
+        });
+    }, [strokes, bgImage, textAnnotations, onUpdate]);
 
     // Redraw canvas when strokes or text annotations change
     useEffect(() => {
@@ -66,7 +77,7 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             });
 
             // Draw text annotations
-            textAnnotations.forEach((annotation: { text: string; x: number; y: number; id: string }) => {
+            textAnnotations.forEach((annotation) => {
                 ctx.fillStyle = '#FFFFFF';
                 ctx.font = 'bold 24px Arial, sans-serif';
                 ctx.strokeStyle = '#000000';
@@ -77,12 +88,12 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     }, [strokes, textAnnotations]);
 
-    const getPos = (e: React.MouseEvent | React.TouchEvent) => {
+    const getPos = (e: React.PointerEvent) => {
         const canvas = canvasRef.current;
         if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        const clientX = e.clientX;
+        const clientY = e.clientY;
 
         const scaleX = canvas.width / rect.width;
         const scaleY = canvas.height / rect.height;
@@ -93,8 +104,20 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         };
     };
 
-    const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    // The tool for the current stroke (the S Pen's side button erases)
+    const activeTool = () => toolOverrideRef.current || tool;
+
+    const startDrawing = (e: React.PointerEvent) => {
         if (!canvasRef.current) return;
+        if (e.pointerType === 'pen') penSeenRef.current = true;
+        // Palm rejection: ignore touches once a pen has been used
+        if (penSeenRef.current && e.pointerType === 'touch') return;
+        if (activePointerRef.current !== null) return;
+        activePointerRef.current = e.pointerId;
+        try { canvasRef.current.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+        // S Pen side button (or stylus eraser end) → erase
+        toolOverrideRef.current = e.pointerType === 'pen' && (e.buttons & 32 || e.button === 5 || e.buttons & 2) ? 'eraser' : null;
+        const tool = activeTool();
 
         const pos = getPos(e);
         isDrawingRef.current = true;
@@ -130,8 +153,10 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
-    const draw = (e: React.MouseEvent | React.TouchEvent) => {
+    const draw = (e: React.PointerEvent) => {
         if (!isDrawingRef.current || !canvasRef.current) return;
+        if (e.pointerId !== activePointerRef.current) return;
+        const tool = activeTool();
 
         const pos = getPos(e);
         const timestamp = Date.now() - startTime;
@@ -169,9 +194,13 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
-    const stopDrawing = () => {
+    const stopDrawing = (e?: React.PointerEvent) => {
+        if (e && e.pointerId !== activePointerRef.current) return;
+        activePointerRef.current = null;
         if (!isDrawingRef.current) return;
         isDrawingRef.current = false;
+        const tool = activeTool();
+        toolOverrideRef.current = null;
 
         if (tool === 'lasso' && lassoPointsRef.current.length > 0) {
             // Handle lasso selection - just mark that selection is active
@@ -239,11 +268,12 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
             const text = await extractHandwritingFromImage(base64);
 
             // Add text annotation to canvas at the stroke location
-            setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
+            setTextAnnotations(prev => [...prev, {
                 text: text.trim(),
                 x: minX,
                 y: maxY + 30,
-                id: Date.now().toString()
+                id: Date.now().toString(),
+                t: Date.now() - startTime
             }]);
         } catch (error) {
             console.error('Conversion error:', error);
@@ -274,11 +304,12 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                 const text = await extractHandwritingFromImage(base64);
 
                 // Add text annotation at the selected area (replace handwriting)
-                setTextAnnotations((prev: { text: string; x: number; y: number; id: string }[]) => [...prev, {
+                setTextAnnotations(prev => [...prev, {
                     text: text.trim(),
                     x: minX,
                     y: minY + (cropCanvas.height / 2),
-                    id: Date.now().toString()
+                    id: Date.now().toString(),
+                    t: Date.now() - startTime
                 }]);
 
                 // Clear the selected area and reset selection
@@ -306,21 +337,21 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
         }
     };
 
+    // Undo restores the state before the last stroke; Redo re-applies it
     const handleUndo = () => {
-        if (strokes.length === 0) return;
-        const newUndoStack = [...undoStack, strokes];
-        const newStrokes = strokes.slice(0, -1);
-        setUndoStack(newUndoStack);
-        setRedoStack([]);
-        setStrokes(newStrokes);
+        if (undoStack.length === 0) return;
+        const previous = undoStack[undoStack.length - 1];
+        setRedoStack([...redoStack, strokes]);
+        setUndoStack(undoStack.slice(0, -1));
+        setStrokes(previous);
     };
 
     const handleRedo = () => {
         if (redoStack.length === 0) return;
-        const lastRedo = redoStack[redoStack.length - 1];
+        const next = redoStack[redoStack.length - 1];
         setUndoStack([...undoStack, strokes]);
         setRedoStack(redoStack.slice(0, -1));
-        setStrokes(lastRedo);
+        setStrokes(next);
     };
 
     return (
@@ -415,19 +446,17 @@ const LectureNotebook: React.FC<LectureNotebookProps> = ({ onUpdate, initialData
                     </div>
                 )}
 
-                <div className={`relative ${bgImage ? 'flex-1' : 'w-full'}`}>
+                <div className={`relative overflow-y-auto ${bgImage ? 'flex-1' : 'w-full'}`}>
                     <canvas
                         ref={canvasRef}
                         width={1200}
                         height={1600}
-                        className="w-full h-full touch-none cursor-crosshair"
-                        onMouseDown={startDrawing}
-                        onMouseMove={draw}
-                        onMouseUp={stopDrawing}
-                        onMouseLeave={stopDrawing}
-                        onTouchStart={startDrawing}
-                        onTouchMove={draw}
-                        onTouchEnd={stopDrawing}
+                        className="w-full h-auto block touch-none cursor-crosshair"
+                        onPointerDown={startDrawing}
+                        onPointerMove={draw}
+                        onPointerUp={stopDrawing}
+                        onPointerCancel={stopDrawing}
+                        onContextMenu={e => e.preventDefault()}
                         aria-label="Drawing canvas for lecture notes"
                     />
                 </div>

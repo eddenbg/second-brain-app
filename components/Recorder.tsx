@@ -67,6 +67,13 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const transcriptRef = useRef('');
     const structuredTranscriptRef = useRef<{ text: string; timestamp: number }[]>([]);
     const recordedMediaRef = useRef<Promise<string | null> | null>(null);
+    // Live transcription sessions end after ~10–15 minutes, so a long lecture
+    // reconnects automatically while recording continues.
+    const recordingActiveRef = useRef(false);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const reconnectAttemptsRef = useRef(0);
+    const wakeLockRef = useRef<any>(null);
 
     const stopAllMedia = useCallback(() => {
         if (stream) {
@@ -156,47 +163,71 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             mediaRecorderRef.current.start();
 
             const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            audioContextRef.current = audioContext;
             await audioContext.resume();
             const actualSampleRate = audioContext.sampleRate;
-            sessionPromiseRef.current = ai.live.connect({
+            recordingActiveRef.current = true;
+            reconnectAttemptsRef.current = 0;
+            void requestWakeLock();
+
+            // Send each chunk to whichever live session is current (survives reconnects)
+            const sendToSession = (media: { data: string; mimeType: string }) => {
+                sessionPromiseRef.current?.then((s) => {
+                    try { s.sendRealtimeInput({ media }); } catch { /* session closing — reconnect in progress */ }
+                }).catch(() => {});
+            };
+
+            // Microphone → 16 kHz PCM, set up once for the whole recording
+            const source = audioContext.createMediaStreamSource(mediaStream);
+            const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+            scriptProcessor.onaudioprocess = (e) => {
+                if (!recordingActiveRef.current) return;
+                const int16 = downsampleTo16k(e.inputBuffer.getChannelData(0), actualSampleRate);
+                sendToSession({ data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' });
+            };
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+
+            // Camera frames (in-person video mode only)
+            if (!audioOnly && captureMode !== 'remote') {
+                const canvasEl = canvasRef.current;
+                const videoEl = videoRef.current;
+                const ctx = canvasEl?.getContext('2d');
+                if (canvasEl && videoEl && ctx) {
+                    frameIntervalRef.current = window.setInterval(() => {
+                        canvasEl.width = videoEl.videoWidth;
+                        canvasEl.height = videoEl.videoHeight;
+                        ctx.drawImage(videoEl, 0, 0, videoEl.videoWidth, videoEl.videoHeight);
+                        canvasEl.toBlob(async (blob) => {
+                            if (blob) sendToSession({ data: await blobToBase64(blob), mimeType: 'image/jpeg' });
+                        }, 'image/jpeg', JPEG_QUALITY);
+                    }, 1000 / FRAME_RATE);
+                }
+            }
+
+            const scheduleReconnect = (delayMs: number) => {
+                if (!recordingActiveRef.current || reconnectTimerRef.current) return;
+                reconnectAttemptsRef.current += 1;
+                if (reconnectAttemptsRef.current > 3) {
+                    // Audio keeps recording; tell the user transcription is struggling
+                    setError('Transcription connection dropped. The audio is still recording; reconnecting…');
+                }
+                const old = sessionPromiseRef.current;
+                reconnectTimerRef.current = setTimeout(() => {
+                    reconnectTimerRef.current = null;
+                    if (!recordingActiveRef.current) return;
+                    sessionPromiseRef.current = connectLive();
+                    old?.then(s => { try { s.close(); } catch { /* already closed */ } }).catch(() => {});
+                }, Math.min(delayMs + (reconnectAttemptsRef.current > 3 ? 5000 : 0), 10_000));
+            };
+
+            function connectLive(): Promise<Session> {
+                const promise: Promise<Session> = ai!.live.connect({
                 model: 'gemini-2.5-flash-native-audio-latest',
                 callbacks: {
                     onopen: () => {
-                        const source = audioContext.createMediaStreamSource(mediaStream);
-                        const scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-                        scriptProcessor.onaudioprocess = (e) => {
-                            const inputData = e.inputBuffer.getChannelData(0);
-                            const int16 = downsampleTo16k(inputData, actualSampleRate);
-                            const pcmBlob = { data: encode(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' };
-                            sessionPromiseRef.current?.then((s) => s.sendRealtimeInput({ media: pcmBlob }));
-                        };
-                        source.connect(scriptProcessor);
-                        scriptProcessor.connect(audioContext.destination);
-
-                        if (captureMode === 'remote') return;
-
-                        const canvasEl = canvasRef.current;
-                        const videoEl = videoRef.current;
-                        if (!canvasEl || !videoEl) return;
-
-                        const ctx = canvasEl.getContext('2d');
-                        if (!ctx) return;
-
-                        frameIntervalRef.current = window.setInterval(() => {
-                            canvasEl.width = videoEl.videoWidth;
-                            canvasEl.height = videoEl.videoHeight;
-                            ctx.drawImage(videoEl, 0, 0, videoEl.videoWidth, videoEl.videoHeight);
-                            canvasEl.toBlob(
-                                async (blob) => {
-                                    if (blob) {
-                                        const base64Data = await blobToBase64(blob);
-                                        sessionPromiseRef.current?.then((session) => {
-                                            session.sendRealtimeInput({ media: { data: base64Data, mimeType: 'image/jpeg' } });
-                                        });
-                                    }
-                                }, 'image/jpeg', JPEG_QUALITY
-                            );
-                        }, 1000 / FRAME_RATE);
+                        reconnectAttemptsRef.current = 0;
+                        setError(null);
                     },
                     onmessage: (message) => {
                         const text = message.serverContent?.inputTranscription?.text;
@@ -207,9 +238,15 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                             setTranscript(prev => prev + text);
                             setStructuredTranscript(prev => [...prev, { text, timestamp }]);
                         }
+                        // Server is about to end this session — open the next one now
+                        if ((message as any).goAway && recordingActiveRef.current && sessionPromiseRef.current === promise) {
+                            scheduleReconnect(0);
+                        }
                     },
-                    onerror: (e) => { console.error(e); setError('Live transcription failed. Make sure your Gemini API key (Settings → AI Features) has Gemini Live access enabled at aistudio.google.com.'); },
-                    onclose: () => { audioContext.close(); },
+                    onerror: (e) => { console.error('Live transcription error', e); },
+                    onclose: () => {
+                        if (recordingActiveRef.current && sessionPromiseRef.current === promise) scheduleReconnect(1000);
+                    },
                 },
                 config: {
                     responseModalities: [Modality.AUDIO],
@@ -221,7 +258,15 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                     Do not describe every minor gesture. Focus on information that is critical for understanding and cannot be understood from audio alone.
                     Continue transcribing the spoken words seamlessly around these visual notes.`
                 },
-            });
+                });
+                promise.catch((e) => {
+                    console.error('Live transcription connect failed', e);
+                    if (recordingActiveRef.current && sessionPromiseRef.current === promise) scheduleReconnect(2000);
+                });
+                return promise;
+            }
+
+            sessionPromiseRef.current = connectLive();
         } catch (err) {
             console.error(err);
             const denied = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError');
@@ -239,16 +284,37 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         }
     }, [stream]);
 
+    // Keep the screen (and so the recording) awake during long lectures
+    const requestWakeLock = async () => {
+        try {
+            wakeLockRef.current = await (navigator as any).wakeLock?.request('screen');
+        } catch { /* not supported or denied — recording still works */ }
+    };
+    useEffect(() => {
+        // The wake lock is dropped when the app is hidden; take it back on return
+        const onVisible = () => {
+            if (document.visibilityState === 'visible' && recordingActiveRef.current) void requestWakeLock();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, []);
+
     const stopRecording = async () => {
+        recordingActiveRef.current = false;
+        if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+        try { await wakeLockRef.current?.release(); } catch { /* already released */ }
+        wakeLockRef.current = null;
         setIsRecording(false);
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
             mediaRecorderRef.current.stop();
         }
         if (sessionPromiseRef.current) {
-            const session = await sessionPromiseRef.current;
-            session.close();
+            const pending = sessionPromiseRef.current;
             sessionPromiseRef.current = null;
+            try { (await pending).close(); } catch { /* already closed */ }
         }
+        try { void audioContextRef.current?.close(); } catch { /* already closed */ }
+        audioContextRef.current = null;
         stopAllMedia();
     };
     
