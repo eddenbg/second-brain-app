@@ -17,11 +17,13 @@ export const useTextToSpeech = () => {
     useEffect(() => () => playerRef.current?.dispose(), []);
 
     const play = useCallback((text: string) => { void playerRef.current?.play(text); }, []);
+    const pause = useCallback(() => playerRef.current?.pause(), []);
     const stop = useCallback(() => playerRef.current?.stop(), []);
+    // Tap while reading → pause; tap while paused → resume from the same sentence
     const toggle = useCallback((text: string) => {
-        if (status === 'playing' || status === 'loading') stop();
+        if (status === 'playing' || status === 'loading') pause();
         else play(text);
-    }, [status, play, stop]);
+    }, [status, play, pause]);
 
-    return { status, error, play, stop, toggle };
+    return { status, error, play, pause, stop, toggle };
 };

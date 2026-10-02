@@ -11,7 +11,7 @@ import AddDocumentModal from './AddDocumentModal';
 import { StudyHubOverlay, SummaryFocusModal } from './StudyHub';
 import { generateSpeechFromText, generateStudyOverview } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Pause, Play } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import DrivePickerModal from './DrivePickerModal';
 import MoodlePickerModal from './MoodlePickerModal';
@@ -109,8 +109,8 @@ const MediaPreviewDrawer: React.FC<{
                                 <FileTextIcon className="w-20 h-20 text-indigo-400" />
                             </div>
                             <button onClick={toggleAudio} className="px-10 py-5 bg-teal-600 text-white font-black rounded-3xl text-xl shadow-xl flex items-center gap-4">
-                                {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <XIcon className="w-8 h-8" /> : tts.status === 'error' ? <AlertCircle className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
-                                {isGenerating ? 'LOADING…' : isPlaying ? 'STOP READING' : tts.status === 'error' ? 'TRY AGAIN' : 'READ SUMMARY'}
+                                {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <Pause className="w-8 h-8" fill="currentColor" /> : tts.status === 'paused' ? <Play className="w-8 h-8" fill="currentColor" /> : tts.status === 'error' ? <AlertCircle className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
+                                {isGenerating ? 'LOADING…' : isPlaying ? 'PAUSE' : tts.status === 'paused' ? 'RESUME' : tts.status === 'error' ? 'TRY AGAIN' : 'READ SUMMARY'}
                             </button>
                             {tts.error && <p role="alert" className="text-red-400 text-sm font-bold">{tts.error}</p>}
                             <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">

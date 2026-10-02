@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import VoiceInputButton from './VoiceInputButton';
 import { answerQuestionFromContext, generateSpeechFromText } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Pause, Play } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 import { SendIcon, UserIcon, BotIcon, MicIcon, Volume2Icon, StopCircleIcon, Loader2Icon, BrainCircuitIcon, CalendarIcon } from './Icons';
 import type { AnyMemory, Task, CalendarEvent } from '../types';
@@ -79,9 +79,9 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
   };
 
   const handleReadResponse = (msg: Message) => {
+      // Same message: pause while reading, resume while paused
       if (playingMessageId === msg.id && (tts.status === 'playing' || tts.status === 'loading')) {
-          tts.stop();
-          setPlayingMessageId(null);
+          tts.pause();
           return;
       }
       setPlayingMessageId(msg.id);
@@ -104,11 +104,12 @@ const QASession: React.FC<QASessionProps> = ({ memories, tasks = [], calendarEve
               {msg.sender === 'ai' && (
                   <button 
                     onClick={() => handleReadResponse(msg)} 
-                    aria-label={playingMessageId === msg.id ? "Stop reading" : "Read response aloud"}
+                    aria-label={playingMessageId === msg.id && tts.status === 'playing' ? "Pause reading" : playingMessageId === msg.id && tts.status === 'paused' ? "Resume reading" : "Read response aloud"}
                     className="mt-6 p-4 bg-white/10 rounded-2xl text-yellow-500 hover:bg-white/20 transition-colors"
                   >
                       {playingMessageId === msg.id && tts.status === 'loading' ? <Loader2Icon className="w-10 h-10 animate-spin"/> :
-                       playingMessageId === msg.id && tts.status === 'playing' ? <StopCircleIcon className="w-10 h-10"/> :
+                       playingMessageId === msg.id && tts.status === 'playing' ? <Pause className="w-10 h-10" fill="currentColor"/> :
+                       playingMessageId === msg.id && tts.status === 'paused' ? <Play className="w-10 h-10" fill="currentColor"/> :
                        playingMessageId === msg.id && tts.status === 'error' ? <AlertCircle className="w-10 h-10 text-red-400"/> :
                        <Volume2Icon className="w-10 h-10"/>}
                   </button>

@@ -7,7 +7,7 @@ import {
 } from './Icons';
 import { generateSpeechFromText, answerQuestionFromContext, checkVideoStatus } from '../services/geminiService';
 import { decode, decodeAudioData } from '../utils/audio';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Pause } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
 
 // ── Study Chat ────────────────────────────────────────────────────────────────────────────────
@@ -187,13 +187,13 @@ export const StudyHubOverlay: React.FC<{
                                 {isLoadingAudio
                                     ? <Loader2Icon className="w-10 h-10 animate-spin text-white" />
                                     : isPlaying
-                                        ? <XIcon className="w-12 h-12 text-white" />
+                                        ? <Pause className="w-12 h-12 text-white" fill="currentColor" />
                                         : podcastTts.status === 'error'
                                             ? <AlertCircle className="w-12 h-12 text-white" />
                                             : <PlayIcon className="w-12 h-12 text-white ml-2" />}
                             </button>
                             <p className="text-gray-400 font-bold uppercase tracking-widest text-sm">
-                                {isLoadingAudio ? 'Loading audio…' : isPlaying ? 'Playing AI Deep Dive...' : 'Listen to Overview'}
+                                {isLoadingAudio ? 'Loading audio…' : isPlaying ? 'Playing — tap to pause' : podcastTts.status === 'paused' ? 'Paused — tap to resume' : 'Listen to Overview'}
                             </p>
                             {podcastTts.error && <p role="alert" className="text-red-400 font-bold text-sm">{podcastTts.error}</p>}
                         </div>
