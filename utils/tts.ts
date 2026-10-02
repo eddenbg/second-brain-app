@@ -21,7 +21,8 @@ export const TTS_START_TIMEOUT_MS = 30_000;
 const GEMINI_PIECE_TIMEOUT_MS = 20_000;
 export const TTS_ERROR_MESSAGE = 'Could not start audio. Try again.';
 
-const MAX_CHARS = 30_000;
+// Whole lecture PDFs: pieces are fetched one at a time, so length isn't a problem
+const MAX_CHARS = 500_000;
 const FIRST_PIECE_CHARS = 220;   // small, so the first audio arrives fast
 const PIECE_CHARS = 600;
 const BROWSER_PIECE_CHARS = 220; // Chrome cuts off long utterances

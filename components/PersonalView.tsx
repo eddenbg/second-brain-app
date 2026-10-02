@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import OriginalPdfLink from './OriginalPdfLink';
 import DocumentPhoto from './DocumentPhoto';
 import RecordingExtras from './RecordingExtras';
 import VoiceInputButton from './VoiceInputButton';
@@ -845,11 +846,13 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     )}
                     {selectedItem.type === 'document' && (
                         <div className="space-y-5">
+                            {/* Read Aloud above the text, so long PDFs don't need scrolling first */}
+                            <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
                             <DocumentPhoto memory={selectedItem} />
-                            <p className="text-xl leading-relaxed whitespace-pre-wrap">
+                            <OriginalPdfLink memory={selectedItem} />
+                            <p className="text-xl leading-relaxed whitespace-pre-wrap" dir="auto">
                                 {(selectedItem as DocumentMemory).extractedText}
                             </p>
-                            <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
                         </div>
                     )}
                 </div>

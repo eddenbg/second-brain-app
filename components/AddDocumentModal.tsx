@@ -5,7 +5,7 @@ import { generateTitleForContent, extractTextFromImage } from '../services/gemin
 import { getCurrentLocation } from '../utils/location';
 import { XIcon, Loader2Icon, CheckIcon } from './Icons';
 import ReadAloudButton from './ReadAloudButton';
-import { Camera, SwitchCamera, Image, Cloud } from 'lucide-react';
+import { Camera, SwitchCamera, Image, Cloud, FileText } from 'lucide-react';
 import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl, resizeImage } from '../utils/image';
 import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
 
@@ -33,6 +33,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     // Text read from the last photo, shown on the "Saved" screen with Read Aloud
     const [savedText, setSavedText] = useState('');
+    const [savedNote, setSavedNote] = useState('');
     // Incremented per selection so a slower, older OCR run can't overwrite
     // the result or preview of the photo the user just picked.
     const selectionIdRef = useRef(0);
@@ -43,6 +44,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     // fastest) and Android's full file chooser (Google Photos, Drive, …)
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cloudInputRef = useRef<HTMLInputElement>(null);
+    const pdfInputRef = useRef<HTMLInputElement>(null);
 
     const stopCamera = useCallback(() => {
         if (stream) {
@@ -151,14 +153,73 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         }
     };
 
+    // PDF (lecture slides, handouts): read every page's text so it can be
+    // listened to and asked about. The file itself is kept on this device.
+    const processPdf = async (file: File, selectionId: number) => {
+        const isCurrent = () => selectionId === selectionIdRef.current;
+        setPreviewUrl(null);
+        setSavedText('');
+        setSavedNote('');
+        setPhase('processing');
+        setStatusMessage('Reading PDF…');
+        try {
+            // PDF tools load only when a PDF is picked (keeps the app quick to open)
+            const { extractPdfText, titleFromFileName } = await import('../utils/pdf');
+            const result = await extractPdfText(file, ({ fromPage, toPage, totalPages }) => {
+                if (!isCurrent()) return;
+                setStatusMessage(totalPages > 1
+                    ? `Reading PDF… pages ${fromPage}–${toPage} of ${totalPages}`
+                    : 'Reading PDF…');
+            });
+            if (!isCurrent()) return;
+            setStatusMessage('Saving…');
+            const location = await getCurrentLocation();
+            try {
+                await Promise.resolve(onSave({
+                    type: 'document',
+                    source: 'pdf',
+                    title: titleFromFileName(file.name),
+                    fileName: file.name,
+                    extractedText: result.text,
+                    ...(result.pageCount && { pageCount: result.pageCount }),
+                    category: course ? 'college' : 'personal',
+                    course,
+                    pdfBlob: file,
+                    ...(location && { location }),
+                } as any) as unknown);
+            } catch (saveError) {
+                console.error('Saving the PDF failed', saveError);
+                throw new Error('The text was read, but saving failed. Check your connection and try again.');
+            }
+            if (!isCurrent()) return;
+            setSavedText(result.text);
+            setSavedNote(
+                `${titleFromFileName(file.name)}${result.pageCount ? ` · ${result.pageCount} pages` : ''}` +
+                (result.failedRanges.length ? ` · pages ${result.failedRanges.join(', ')} couldn't be read` : '')
+            );
+            setPhase('done');
+            setStatusMessage('Saved!');
+        } catch (e: any) {
+            if (!isCurrent()) return;
+            setPhase('error');
+            const reason = e?.message || 'The AI could not read this PDF.';
+            setStatusMessage(reason.startsWith('The text was read') ? reason : `Could not read the PDF. ${reason}`);
+        }
+    };
+
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         // Reset so onChange fires again even if the same file is picked twice
         e.target.value = '';
         if (!file) return;
+        const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        if (isPdf) {
+            await processPdf(file, ++selectionIdRef.current);
+            return;
+        }
         if (file.type && !file.type.startsWith('image/')) {
             setPhase('error');
-            setStatusMessage('That file isn\'t a photo. Choose a photo of the page (PDFs aren\'t supported yet).');
+            setStatusMessage('That file isn\'t a photo or a PDF. Choose a photo of the page or a PDF file.');
             return;
         }
 
@@ -187,6 +248,12 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         if (fileInputRef.current) fileInputRef.current.value = '';
         setPreviewUrl(null);
         fileInputRef.current?.click();
+    };
+
+    const startPdfUpload = () => {
+        if (pdfInputRef.current) pdfInputRef.current.value = '';
+        setPreviewUrl(null);
+        pdfInputRef.current?.click();
     };
 
     const startCloudUpload = () => {
@@ -235,6 +302,14 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 className="hidden"
                 aria-label="Choose image from Google Photos or Drive"
             />
+            <input
+                ref={pdfInputRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={handleFileSelect}
+                className="hidden"
+                aria-label="Choose a PDF file"
+            />
 
             {/* Full-screen preview */}
             <div className="relative flex-grow bg-black overflow-hidden" onClick={phase === 'camera' && stream ? capture : undefined}>
@@ -243,7 +318,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-8 bg-[#001F3F] px-6">
                         <div className="text-center space-y-2">
                             <p className="text-white font-black text-3xl uppercase">Scan or Upload</p>
-                            <p className="text-gray-300 text-sm">Choose how to add your document</p>
+                            <p className="text-gray-300 text-sm">A photo of a page, or a PDF to listen to</p>
                         </div>
 
                         <div className="w-full max-w-xs space-y-4">
@@ -261,6 +336,14 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                             >
                                 <Image className="w-6 h-6" strokeWidth={2.5} />
                                 Browse Gallery
+                            </button>
+
+                            <button
+                                onClick={startPdfUpload}
+                                className="w-full py-6 bg-red-600 hover:bg-red-500 text-white rounded-3xl font-black text-xl uppercase flex items-center justify-center gap-3 transition-all active:scale-95"
+                            >
+                                <FileText className="w-6 h-6" strokeWidth={2.5} />
+                                Upload PDF
                             </button>
 
                             <button
@@ -316,6 +399,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                             <CheckIcon className="w-12 h-12 text-green-400" />
                             <p className="text-white font-black text-2xl uppercase">Saved!</p>
                         </div>
+                        {savedNote && <p className="text-white/70 text-sm font-bold text-center" dir="auto">{savedNote}</p>}
                         {savedText && (
                             <p className="w-full max-w-md max-h-32 overflow-y-auto bg-black/30 rounded-2xl p-4 text-white text-base leading-relaxed whitespace-pre-wrap" dir="auto">
                                 {savedText}
@@ -325,7 +409,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                             {savedText && <ReadAloudButton text={savedText} />}
                             <div className="w-full flex gap-3">
                                 <button
-                                    onClick={() => { setPreviewUrl(null); setSavedText(''); setPhase('inputChoice'); }}
+                                    onClick={() => { setPreviewUrl(null); setSavedText(''); setSavedNote(''); setPhase('inputChoice'); }}
                                     className="flex-1 py-4 bg-white/10 text-white font-black rounded-2xl text-base uppercase border-2 border-white/20"
                                 >
                                     Scan Another

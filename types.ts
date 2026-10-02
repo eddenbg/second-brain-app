@@ -30,6 +30,7 @@ export interface BaseMemory {
   localNotebook?: boolean;
   localStructuredTranscript?: boolean;
   localImage?: boolean;
+  localPdf?: boolean;
 }
 
 export interface TranscriptSegment {
@@ -92,8 +93,10 @@ export interface VideoItemMemory extends BaseMemory {
 export interface DocumentMemory extends BaseMemory {
   type: 'document';
   extractedText: string;
-  imageDataUrl?: string; // legacy only — new OCR scans don't keep the image
-  source?: 'ocr';
+  imageDataUrl?: string; // compressed photo of the scanned page
+  source?: 'ocr' | 'pdf';
+  pageCount?: number;    // PDFs
+  fileName?: string;     // PDFs: original file name
 }
 
 export interface FileMemory extends BaseMemory {

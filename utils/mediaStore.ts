@@ -55,7 +55,7 @@ export const deleteLocalFor = async (memoryId: string): Promise<void> => {
     } catch { /* nothing stored */ }
 };
 
-export const localKey = (memoryId: string, field: 'audio' | 'notebook' | 'structuredTranscript' | 'image') => `${memoryId}:${field}`;
+export const localKey = (memoryId: string, field: 'audio' | 'notebook' | 'structuredTranscript' | 'image' | 'pdf') => `${memoryId}:${field}`;
 
 // ── Failed cloud saves ─────────────────────────────────────────────────────
 export const savePending = (id: string, memory: unknown): Promise<void> =>

@@ -58,6 +58,17 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
         m.voiceNote = rest;
     }
 
+    // 1b. An uploaded PDF file stays on this device (the text goes to the cloud)
+    if (typeof Blob !== 'undefined' && m.pdfBlob instanceof Blob) {
+        try {
+            await putLocal(localKey(id, 'pdf'), m.pdfBlob);
+            m.localPdf = true;
+        } catch (e) {
+            console.warn('Could not keep the PDF on this device', e);
+        }
+    }
+    delete m.pdfBlob;
+
     // 2. Compact the transcript timeline and drawings
     if (Array.isArray(m.structuredTranscript) && m.structuredTranscript.length > 0) {
         m.structuredTranscript = mergeSegments(m.structuredTranscript);
@@ -85,6 +96,11 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
         // Extremely long transcript: keep the full text on device, the cloud copy is trimmed
         await putLocal(`${id}:transcript`, m.transcript).catch(() => {});
         m.transcript = m.transcript.slice(0, 250_000) + '\n\n[Transcript continues on the device it was recorded on.]';
+    }
+    if (cloudSize(m) > MAX_CLOUD_BYTES && typeof m.extractedText === 'string') {
+        // Very long PDF: full text stays on this device, the cloud copy is trimmed
+        await putLocal(`${id}:extractedText`, m.extractedText).catch(() => {});
+        m.extractedText = m.extractedText.slice(0, 250_000) + '\n\n[The rest of this document is on the device it was added on.]';
     }
     // Firestore rejects `undefined` values
     for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];

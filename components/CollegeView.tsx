@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import OriginalPdfLink from './OriginalPdfLink';
+import FileTextPanel from './FileTextPanel';
 import DocumentPhoto from './DocumentPhoto';
 import RecordingExtras from './RecordingExtras';
 import VoiceInputButton, { WithVoice } from './VoiceInputButton';
@@ -523,14 +525,20 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         )}
                         {(selectedItem.type === 'document' || selectedItem.type === 'file') && (
                             <div className="space-y-5">
-                                {selectedItem.type === 'document' && <DocumentPhoto memory={selectedItem} />}
-                                <p className="text-xl leading-relaxed whitespace-pre-wrap">
-                                    {'extractedText' in selectedItem
-                                        ? (selectedItem as DocumentMemory).extractedText
-                                        : 'No text content available.'}
-                                </p>
-                                {'extractedText' in selectedItem && (selectedItem as DocumentMemory).extractedText && (
-                                    <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
+                                {selectedItem.type === 'file' ? (
+                                    <FileTextPanel memory={selectedItem} onUpdate={onUpdate} />
+                                ) : (
+                                    <>
+                                        {/* Read Aloud above the text, so long PDFs don't need scrolling first */}
+                                        {(selectedItem as DocumentMemory).extractedText && (
+                                            <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
+                                        )}
+                                        <DocumentPhoto memory={selectedItem} />
+                                        <OriginalPdfLink memory={selectedItem} />
+                                        <p className="text-xl leading-relaxed whitespace-pre-wrap" dir="auto">
+                                            {(selectedItem as DocumentMemory).extractedText || 'No text content available.'}
+                                        </p>
+                                    </>
                                 )}
                             </div>
                         )}

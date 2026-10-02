@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import ReadAloudButton from './ReadAloudButton';
+import FileTextPanel from './FileTextPanel';
 import DocumentPhoto from './DocumentPhoto';
 import VoiceInputButton from './VoiceInputButton';
 import type { AnyMemory, DocumentMemory, VoiceMemory, FileMemory, PhysicalItemMemory } from '../types';
@@ -108,11 +110,10 @@ const MediaPreviewDrawer: React.FC<{
                             <div className="bg-indigo-900/30 p-10 rounded-full border-4 border-indigo-500 shadow-2xl">
                                 <FileTextIcon className="w-20 h-20 text-indigo-400" />
                             </div>
-                            <button onClick={toggleAudio} className="px-10 py-5 bg-teal-600 text-white font-black rounded-3xl text-xl shadow-xl flex items-center gap-4">
-                                {isGenerating ? <Loader2Icon className="w-8 h-8 animate-spin" /> : isPlaying ? <Pause className="w-8 h-8" fill="currentColor" /> : tts.status === 'paused' ? <Play className="w-8 h-8" fill="currentColor" /> : tts.status === 'error' ? <AlertCircle className="w-8 h-8" /> : <Volume2Icon className="w-8 h-8" />}
-                                {isGenerating ? 'LOADING…' : isPlaying ? 'PAUSE' : tts.status === 'paused' ? 'RESUME' : tts.status === 'error' ? 'TRY AGAIN' : 'READ SUMMARY'}
-                            </button>
-                            {tts.error && <p role="alert" className="text-red-400 text-sm font-bold">{tts.error}</p>}
+                            {/* Reads the file's text (fetched once from Drive), with Read Aloud */}
+                            <div className="w-full">
+                                <FileTextPanel memory={memory} onUpdate={onUpdate} />
+                            </div>
                             <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">
                                 {(memory as FileMemory).sourceType === 'drive' ? 'Open in Drive' : 'Download Original'}
                             </a>
@@ -125,7 +126,10 @@ const MediaPreviewDrawer: React.FC<{
                         </div>
                     )}
                     {memory.type === 'document' && <DocumentPhoto memory={memory} />}
-                    {(memory as DocumentMemory).extractedText && (
+                    {memory.type === 'document' && (memory as DocumentMemory).extractedText && (
+                        <ReadAloudButton text={(memory as DocumentMemory).extractedText} />
+                    )}
+                    {memory.type === 'document' && (memory as DocumentMemory).extractedText && (
                         <div className="bg-gray-900 p-6 rounded-[2rem] border-2 border-gray-700">
                             <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest mb-2">Extracted Text</h3>
                             <p className="text-gray-300 text-sm whitespace-pre-wrap">{(memory as DocumentMemory).extractedText}</p>
@@ -477,6 +481,9 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                                         </div>
                                         {isScannedDoc(mem) && (
                                             <span className="text-[8px] font-black uppercase tracking-widest text-[#001f3f] bg-yellow-500 px-2 py-0.5 rounded-md">Scanned Doc</span>
+                                        )}
+                                        {mem.type === 'document' && (mem as DocumentMemory).source === 'pdf' && (
+                                            <span className="text-[8px] font-black uppercase tracking-widest text-white bg-red-600 px-2 py-0.5 rounded-md">PDF</span>
                                         )}
                                     </div>
                                 ) : (

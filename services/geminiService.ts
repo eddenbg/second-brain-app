@@ -210,8 +210,9 @@ export async function generateStudyOverview(
     const context = memories.slice(0, 40).map(m => {
         const content = m.type === 'voice' ? m.transcript :
                         m.type === 'document' ? m.extractedText :
-                        m.content || m.description || m.summary || '';
-        return `[${(m.type || 'NOTE').toUpperCase()}] ${m.title || ''}: ${(content || '').slice(0, 500)}`;
+                        m.content || m.extractedText || m.description || m.summary || '';
+        const perItem = Math.max(500, Math.floor(60_000 / Math.max(1, Math.min(memories.length, 40))));
+        return `[${(m.type || 'NOTE').toUpperCase()}] ${m.title || ''}: ${(content || '').slice(0, perItem)}`;
     }).join('\n\n');
 
     const styleGuide: Record<string, string> = {
@@ -253,8 +254,10 @@ export async function answerQuestionFromContext(
         const content = m.type === 'voice' ? m.transcript :
                         m.type === 'document' ? m.extractedText :
                         m.type === 'web' ? m.content :
-                        m.description || m.summary || '';
-        return `[${(m.type || 'MEMORY').toUpperCase()}] ${m.title || '(untitled)'}: ${(content || '').slice(0, 400)}`;
+                        m.extractedText || m.description || m.summary || '';
+        // One document (e.g. "Ask AI" on a PDF): send all of it, not just the start
+        const perItem = Math.max(400, Math.floor(100_000 / Math.max(1, memories.length)));
+        return `[${(m.type || 'MEMORY').toUpperCase()}] ${m.title || '(untitled)'}: ${(content || '').slice(0, perItem)}`;
     }).join('\n');
 
     const taskContext = tasks.slice(0, 20).map((t: any) =>
