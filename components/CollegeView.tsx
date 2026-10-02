@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import OriginalPdfLink from './OriginalPdfLink';
+import OriginalWithText from './OriginalWithText';
 import FileTextPanel from './FileTextPanel';
-import DocumentPhoto from './DocumentPhoto';
 import RecordingExtras from './RecordingExtras';
 import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import {
@@ -533,11 +532,11 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                                         {(selectedItem as DocumentMemory).extractedText && (
                                             <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
                                         )}
-                                        <DocumentPhoto memory={selectedItem} />
-                                        <OriginalPdfLink memory={selectedItem} />
-                                        <p className="text-xl leading-relaxed whitespace-pre-wrap" dir="auto">
-                                            {(selectedItem as DocumentMemory).extractedText || 'No text content available.'}
-                                        </p>
+                                        <OriginalWithText
+                                            memory={selectedItem}
+                                            title={selectedItem.title}
+                                            text={(selectedItem as DocumentMemory).extractedText || 'No text content available.'}
+                                        />
                                     </>
                                 )}
                             </div>

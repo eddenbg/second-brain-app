@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import OriginalPdfLink from './OriginalPdfLink';
-import DocumentPhoto from './DocumentPhoto';
+import OriginalWithText from './OriginalWithText';
 import RecordingExtras from './RecordingExtras';
 import VoiceInputButton from './VoiceInputButton';
 import {
@@ -210,16 +209,16 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     </button>
                 </div>
 
-                {/* Scan Document – full width */}
+                {/* Documents – opens the list; scanning / uploading starts from there */}
                 <button
-                    onClick={() => navigateTo('scanning')}
-                    aria-label={`Scan or upload document – ${documents.length} scanned`}
+                    onClick={() => navigateTo('documents')}
+                    aria-label={`Documents and PDFs – ${documents.length} saved`}
                     className="w-full h-28 bg-[#EF4444] text-white rounded-3xl flex items-center justify-center gap-4"
                 >
-                    <Camera className="w-14 h-14" strokeWidth={3} />
+                    <FileText className="w-14 h-14" strokeWidth={3} />
                     <div className="text-left">
-                        <div className="text-xl font-black uppercase">Scan or Upload Doc</div>
-                        <div className="text-sm opacity-75">{documents.length} documents • Scan, Upload or OCR</div>
+                        <div className="text-xl font-black uppercase">Documents &amp; PDFs</div>
+                        <div className="text-sm opacity-75">{documents.length} saved • Scan a page or upload a PDF</div>
                     </div>
                 </button>
 
@@ -671,6 +670,16 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <Camera size={32} strokeWidth={3} />
                     </button>
                 </header>
+                <button
+                    onClick={() => navigateTo('scanning')}
+                    className="w-full h-20 bg-[#EF4444] text-white rounded-3xl flex items-center justify-center gap-3 text-xl font-black uppercase"
+                >
+                    <Camera size={32} strokeWidth={3} />
+                    Scan a page or upload a PDF
+                </button>
+                {documents.length === 0 && (
+                    <p className="text-center text-white/60 font-bold">No documents yet.</p>
+                )}
                 <div className="flex flex-col gap-4">
                     {documents.map(mem => {
                         const d = mem as DocumentMemory;
@@ -848,11 +857,11 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                         <div className="space-y-5">
                             {/* Read Aloud above the text, so long PDFs don't need scrolling first */}
                             <ReadAloudButton text={(selectedItem as DocumentMemory).extractedText} />
-                            <DocumentPhoto memory={selectedItem} />
-                            <OriginalPdfLink memory={selectedItem} />
-                            <p className="text-xl leading-relaxed whitespace-pre-wrap" dir="auto">
-                                {(selectedItem as DocumentMemory).extractedText}
-                            </p>
+                            <OriginalWithText
+                                memory={selectedItem}
+                                title={selectedItem.title}
+                                text={(selectedItem as DocumentMemory).extractedText}
+                            />
                         </div>
                     )}
                 </div>

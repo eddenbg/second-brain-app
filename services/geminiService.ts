@@ -139,14 +139,14 @@ export async function chatWithMemories(
     } catch (error) { return 'I encountered an error. Please try again.'; }
 }
 
-export async function generateSpeechFromText(text: string): Promise<string | null> {
+export async function generateSpeechFromText(text: string, voiceName = 'Kore'): Promise<string | null> {
     const ai = getGeminiInstance();
     if (!ai) return null;
     try {
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash-preview-tts",
             contents: [{ parts: [{ text: text.substring(0, 5000) }] }],
-            config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } },
+            config: { responseModalities: [Modality.AUDIO], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } } },
         });
         return response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
     } catch (error) { return null; }

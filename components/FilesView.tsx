@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReadAloudButton from './ReadAloudButton';
 import FileTextPanel from './FileTextPanel';
-import DocumentPhoto from './DocumentPhoto';
+import OriginalWithText from './OriginalWithText';
 import VoiceInputButton from './VoiceInputButton';
 import type { AnyMemory, DocumentMemory, VoiceMemory, FileMemory, PhysicalItemMemory } from '../types';
 import {
@@ -125,14 +125,18 @@ const MediaPreviewDrawer: React.FC<{
                             <p className="text-gray-200 text-lg leading-relaxed font-medium">{(memory as VoiceMemory).summary}</p>
                         </div>
                     )}
-                    {memory.type === 'document' && <DocumentPhoto memory={memory} />}
                     {memory.type === 'document' && (memory as DocumentMemory).extractedText && (
                         <ReadAloudButton text={(memory as DocumentMemory).extractedText} />
                     )}
-                    {memory.type === 'document' && (memory as DocumentMemory).extractedText && (
+                    {memory.type === 'document' && (
                         <div className="bg-gray-900 p-6 rounded-[2rem] border-2 border-gray-700">
-                            <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest mb-2">Extracted Text</h3>
-                            <p className="text-gray-300 text-sm whitespace-pre-wrap">{(memory as DocumentMemory).extractedText}</p>
+                            <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest mb-2">Original &amp; Text</h3>
+                            <OriginalWithText
+                                memory={memory}
+                                title={memory.title}
+                                text={(memory as DocumentMemory).extractedText || ''}
+                                textClassName="text-gray-200 text-lg leading-relaxed"
+                            />
                         </div>
                     )}
                 </div>

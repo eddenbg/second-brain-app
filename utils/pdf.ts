@@ -125,4 +125,4 @@ export async function extractPdfText(file: Blob, onProgress?: (p: PdfProgress) =
 
 /** Title from a file name: "Lecture_3 - Groups.pdf" → "Lecture 3 - Groups". */
 export const titleFromFileName = (name: string): string =>
-    name.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim() || 'PDF document';
+    name.replace(/\.pdf$/i, '').replace(/[_+]+/g, ' ').replace(/\s+/g, ' ').trim() || 'PDF document';

@@ -5,12 +5,15 @@ import { TextToSpeechPlayer, TtsStatus } from '../utils/tts';
 export const useTextToSpeech = () => {
     const [status, setStatus] = useState<TtsStatus>('idle');
     const [error, setError] = useState<string | null>(null);
+    // Set when the AI voice failed and the phone voice took over
+    const [notice, setNotice] = useState<string | null>(null);
     const playerRef = useRef<TextToSpeechPlayer | null>(null);
 
     if (!playerRef.current) {
-        playerRef.current = new TextToSpeechPlayer((s, err) => {
+        playerRef.current = new TextToSpeechPlayer((s, err, note) => {
             setStatus(s);
             setError(s === 'error' ? err || null : null);
+            setNotice(note || null);
         });
     }
 
@@ -25,5 +28,5 @@ export const useTextToSpeech = () => {
         else play(text);
     }, [status, play, pause]);
 
-    return { status, error, play, pause, stop, toggle };
+    return { status, error, notice, play, pause, stop, toggle };
 };

@@ -5,6 +5,7 @@ import { getGeminiInstance } from '../services/geminiService';
 import { searchMemories } from '../utils/SearchLogic';
 import { startDictation } from '../utils/dictation';
 import type { DictationSession } from '../utils/dictation';
+import { getTtsSettings, phoneVoiceFor } from '../utils/ttsSettings';
 
 export interface AskAIMessage {
     role: 'user' | 'ai';
@@ -85,7 +86,11 @@ const AskAIView: React.FC<AskAIViewProps> = ({ memories, messages, setMessages, 
         synth.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = /[\u0590-\u05FF]/.test(text) ? 'he-IL' : 'en-US';
+        const lang = /[\u0590-\u05FF]/.test(text) ? 'he-IL' : 'en-US';
+        utterance.lang = lang;
+        utterance.rate = getTtsSettings().rate;
+        const voice = phoneVoiceFor(lang);
+        if (voice) utterance.voice = voice;
         utterance.onstart = () => {
             if (run !== speechRunRef.current) return;
             clearSpeechTimer();

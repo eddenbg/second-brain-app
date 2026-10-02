@@ -4,6 +4,7 @@ import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
 } from './Icons';
 import { Calendar } from 'lucide-react';
+import ReadAloudSettings from './ReadAloudSettings';
 import { testMoodleConnection, loginWithCredentials } from '../services/moodleService';
 import {
     disconnectGoogleCalendar,
@@ -470,6 +471,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                         </div>
                     </div>
 
+
+                    {/* Read Aloud: engine, voice, speed */}
+                    <div className="space-y-4">
+                        <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">Read Aloud</h3>
+                        <div className="bg-gray-900 border-2 border-gray-700 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6">
+                            <ReadAloudSettings />
+                        </div>
+                    </div>
 
                     {/* MCP / Claude Integration Section */}
                     <div className="space-y-4">

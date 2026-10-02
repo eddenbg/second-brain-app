@@ -1,14 +1,20 @@
 import { generateSpeechFromText } from '../services/geminiService';
-import { decode, decodeAudioData } from './audio';
+import { decode } from './audio';
 import { withTimeout } from './timeout';
+import { getTtsSettings, phoneVoiceFor, TTS_SETTINGS_EVENT } from './ttsSettings';
 
 // Text-to-speech player shared by every "Read Aloud" button.
 //
-// Long text is split into short pieces (about a sentence). The first piece is
-// sent to Gemini TTS right away so audio starts within seconds, and the next
-// piece is fetched while the current one plays. If Gemini fails, the phone's
-// built-in voice reads the rest — one piece at a time, so nothing is left
-// queued in Android's speech engine if the app is closed.
+// Two engines, chosen in Settings → Read Aloud (utils/ttsSettings.ts):
+// - AI voice: Google Gemini TTS (gemini-2.5-flash-preview-tts), the voice
+//   picked in Settings. Long text is split into short pieces; the first is
+//   sent right away so audio starts within seconds, the next ones are fetched
+//   while the current one plays. Played through an <audio> element so the
+//   speed can change without changing the pitch.
+// - Phone voice: the phone's own text-to-speech (Android: Google / Samsung
+//   TTS), one ~sentence at a time so nothing is left queued if the app closes.
+// If an AI piece fails twice, the phone voice reads the rest of this text (and
+// the button says so) — it doesn't flip back and forth on Pause / Resume.
 //
 // Pause / resume: pausing remembers the current piece; resuming continues
 // from the start of that piece (audio already fetched is reused). Leaving the
@@ -17,14 +23,17 @@ import { withTimeout } from './timeout';
 export type TtsStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error';
 
 export const TTS_START_TIMEOUT_MS = 30_000;
-// Per-piece limit for Gemini; leaves time for the browser-voice fallback
-const GEMINI_PIECE_TIMEOUT_MS = 20_000;
+// Per-attempt limit for one Gemini piece (each piece gets two attempts)
+const GEMINI_PIECE_TIMEOUT_MS = 25_000;
+// How many pieces to fetch ahead of the one playing (more at high speeds)
+const PREFETCH_AHEAD = 2;
+export const FELL_BACK_NOTICE = 'The AI voice didn’t answer, so the phone voice is reading. Start Over to try the AI voice again.';
 export const TTS_ERROR_MESSAGE = 'Could not start audio. Try again.';
 
 // Whole lecture PDFs: pieces are fetched one at a time, so length isn't a problem
 const MAX_CHARS = 500_000;
 const FIRST_PIECE_CHARS = 220;   // small, so the first audio arrives fast
-const PIECE_CHARS = 600;
+const PIECE_CHARS = 900;  // fewer, longer requests after the first
 const BROWSER_PIECE_CHARS = 220; // Chrome cuts off long utterances
 
 const hasHebrew = (text: string) => /[֐-׿]/.test(text);
@@ -62,6 +71,35 @@ export const splitForSpeech = (text: string, firstMax = FIRST_PIECE_CHARS, max =
     return pieces;
 };
 
+const SAMPLE_RATE = 24000;
+
+/** Wrap Gemini's raw 16-bit mono PCM in a WAV header so <audio> can play it. */
+const pcmToWavBlob = (pcm: Uint8Array): Blob => {
+    const header = new ArrayBuffer(44);
+    const v = new DataView(header);
+    const writeStr = (o: number, str: string) => { for (let k = 0; k < str.length; k++) v.setUint8(o + k, str.charCodeAt(k)); };
+    writeStr(0, 'RIFF');
+    v.setUint32(4, 36 + pcm.byteLength, true);
+    writeStr(8, 'WAVE');
+    writeStr(12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);              // PCM
+    v.setUint16(22, 1, true);              // mono
+    v.setUint32(24, SAMPLE_RATE, true);
+    v.setUint32(28, SAMPLE_RATE * 2, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    writeStr(36, 'data');
+    v.setUint32(40, pcm.byteLength, true);
+    return new Blob([header, pcm as BlobPart], { type: 'audio/wav' });
+};
+
+let silentUrl: string | null = null;
+const getSilentUrl = () => {
+    if (!silentUrl) silentUrl = URL.createObjectURL(pcmToWavBlob(new Uint8Array(4800)));
+    return silentUrl;
+};
+
 // Only one player speaks at a time
 let activePlayer: TextToSpeechPlayer | null = null;
 
@@ -82,8 +120,8 @@ if (typeof document !== 'undefined') {
 }
 
 export class TextToSpeechPlayer {
-    private ctx: AudioContext | null = null;
-    private source: AudioBufferSourceNode | null = null;
+    private audio: HTMLAudioElement | null = null;
+    private audioUrl: string | null = null;
     private startTimer: ReturnType<typeof setTimeout> | null = null;
     private runId = 0;
 
@@ -92,15 +130,29 @@ export class TextToSpeechPlayer {
     private pieces: string[] = [];
     private position = 0;
     private useBrowserVoice = false;
-    private audioCache = new Map<number, Promise<string | null>>();
+    // The AI voice failed for this text: keep the phone voice until Start Over
+    private fellBack = false;
+    private audioCache = new Map<string, Promise<string | null>>();
     private status: TtsStatus = 'idle';
 
-    constructor(private onStatusChange: (status: TtsStatus, error?: string) => void) {}
+    constructor(private onStatusChange: (status: TtsStatus, error?: string, notice?: string) => void) {
+        if (typeof window !== 'undefined') window.addEventListener(TTS_SETTINGS_EVENT, this.onSettingsChanged);
+    }
 
     private setStatus(status: TtsStatus, error?: string) {
         this.status = status;
-        this.onStatusChange(status, error);
+        this.onStatusChange(status, error, this.fellBack ? FELL_BACK_NOTICE : undefined);
     }
+
+    // Speed changes apply right away to the AI voice (the phone voice picks
+    // them up from the next sentence)
+    private onSettingsChanged = () => {
+        if (this.audio) {
+            const { rate } = getTtsSettings();
+            this.audio.defaultPlaybackRate = rate;
+            this.audio.playbackRate = rate;
+        }
+    };
 
     /** Read `text` from the beginning, or resume it if it's paused. Call from a tap. */
     async play(text: string): Promise<void> {
@@ -114,9 +166,10 @@ export class TextToSpeechPlayer {
             this.text = clipped;
             this.pieces = splitForSpeech(clipped);
             this.position = 0;
-            this.useBrowserVoice = false;
+            this.fellBack = false;
             this.audioCache.clear();
         }
+        this.useBrowserVoice = this.fellBack || getTtsSettings().engine === 'phone';
         await this.start();
     }
 
@@ -129,38 +182,36 @@ export class TextToSpeechPlayer {
         const deadline = Date.now() + TTS_START_TIMEOUT_MS;
 
         if (!this.useBrowserVoice) {
-            // Create / resume the AudioContext synchronously inside the tap —
-            // mobile browsers keep it suspended (silent) otherwise.
+            // Start the <audio> element inside the tap (silently) — mobile
+            // browsers only allow sound that starts from a tap.
             try {
-                const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-                this.ctx = Ctx ? new Ctx({ sampleRate: 24000 }) : null;
-                void this.ctx?.resume();
+                this.audio = new Audio();
+                this.audio.src = getSilentUrl();
+                void this.audio.play().catch(() => {});
             } catch {
-                this.ctx = null;
+                this.audio = null;
             }
         }
 
-        if (this.ctx && !this.useBrowserVoice) {
+        if (this.audio && !this.useBrowserVoice) {
             let first = true;
             while (this.position < this.pieces.length) {
                 const i = this.position;
-                const b64 = await this.fetchPiece(i);
+                let b64 = await this.fetchPiece(i);
+                if (run !== this.runId) return;
+                // One retry (a fresh request) before giving up on the AI voice
+                if (!b64 && (!first || Date.now() < deadline - 5000)) b64 = await this.fetchPiece(i);
                 if (run !== this.runId) return;
                 if (!b64) {
-                    // Gemini failed: the phone's voice reads from here on
-                    this.useBrowserVoice = true;
-                    this.releaseAudio();
-                    this.speakWithBrowser(run, first ? Math.max(0, deadline - Date.now()) : TTS_START_TIMEOUT_MS);
+                    this.switchToPhoneVoice(run, first ? Math.max(5000, deadline - Date.now()) : TTS_START_TIMEOUT_MS);
                     return;
                 }
-                // Fetch the next piece while this one plays
-                if (i + 1 < this.pieces.length) void this.fetchPiece(i + 1);
+                // Fetch the next pieces while this one plays
+                for (let k = 1; k <= PREFETCH_AHEAD && i + k < this.pieces.length; k++) void this.fetchPiece(i + k);
                 const played = await this.playBase64(b64, run);
                 if (run !== this.runId) return;
                 if (!played) {
-                    this.useBrowserVoice = true;
-                    this.releaseAudio();
-                    this.speakWithBrowser(run, Math.max(10_000, deadline - Date.now()));
+                    this.switchToPhoneVoice(run, Math.max(10_000, deadline - Date.now()));
                     return;
                 }
                 first = false;
@@ -174,34 +225,49 @@ export class TextToSpeechPlayer {
         this.speakWithBrowser(run, Math.max(0, deadline - Date.now()));
     }
 
+    private switchToPhoneVoice(run: number, timeLeftMs: number) {
+        this.useBrowserVoice = true;
+        this.fellBack = true;
+        this.releaseAudio();
+        this.speakWithBrowser(run, timeLeftMs);
+    }
+
     private fetchPiece(i: number): Promise<string | null> {
-        let p = this.audioCache.get(i);
+        const voice = getTtsSettings().aiVoice;
+        const key = `${voice}:${i}`;
+        let p = this.audioCache.get(key);
         if (!p) {
-            p = withTimeout(generateSpeechFromText(this.pieces[i]), GEMINI_PIECE_TIMEOUT_MS).catch(() => null);
-            // Don't keep failures, so a later resume can retry
-            p.then(v => { if (!v) this.audioCache.delete(i); });
-            this.audioCache.set(i, p);
+            p = withTimeout(generateSpeechFromText(this.pieces[i], voice), GEMINI_PIECE_TIMEOUT_MS).catch(() => null);
+            // Don't keep failures, so a retry / later resume asks again
+            p.then(v => { if (!v) this.audioCache.delete(key); });
+            this.audioCache.set(key, p);
         }
         return p;
     }
 
     /** Play one piece of Gemini audio; resolves when it ends or is stopped. */
     private async playBase64(b64: string, run: number): Promise<boolean> {
-        const ctx = this.ctx;
-        if (!ctx) return false;
+        const audio = this.audio;
+        if (!audio) return false;
         try {
-            if (ctx.state === 'suspended') await withTimeout(ctx.resume(), 3000).catch(() => {});
-            if (ctx.state !== 'running') return false;
-            const buffer = await decodeAudioData(decode(b64), ctx, 24000, 1);
-            if (run !== this.runId) return true;
+            if (this.audioUrl) URL.revokeObjectURL(this.audioUrl);
+            this.audioUrl = URL.createObjectURL(pcmToWavBlob(decode(b64)));
+            audio.src = this.audioUrl;
+            audio.defaultPlaybackRate = getTtsSettings().rate;
+            audio.playbackRate = getTtsSettings().rate;
+            (audio as any).preservesPitch = true;
             return await new Promise<boolean>((resolve) => {
-                const src = ctx.createBufferSource();
-                src.buffer = buffer;
-                src.connect(ctx.destination);
-                src.onended = () => resolve(true);
-                this.source = src;
-                src.start(0);
-                if (run === this.runId) this.setStatus('playing');
+                audio.onended = () => resolve(true);
+                audio.onerror = () => resolve(false);
+                // Stopped by Pause / Stop: halt() resolves through onpause
+                audio.onpause = () => { if (run !== this.runId) resolve(true); };
+                audio.play().then(() => {
+                    if (run === this.runId) this.setStatus('playing');
+                }).catch((e) => {
+                    if (run !== this.runId) { resolve(true); return; }
+                    console.warn('Playing Gemini audio failed', e);
+                    resolve(false);
+                });
             });
         } catch (e) {
             console.warn('Playing Gemini audio failed', e);
@@ -239,6 +305,9 @@ export class TextToSpeechPlayer {
             if (index >= browserPieces.length) { this.finish(run); return; }
             const utterance = new SpeechSynthesisUtterance(browserPieces[index]);
             utterance.lang = lang;
+            utterance.rate = getTtsSettings().rate;
+            const voice = phoneVoiceFor(lang);
+            if (voice) utterance.voice = voice;
             utterance.onstart = () => {
                 // A stale utterance that started late (after Pause / Stop): silence it
                 if (run !== this.runId) { stopBrowserSpeech(); return; }
@@ -292,12 +361,19 @@ export class TextToSpeechPlayer {
     }
 
     private releaseAudio() {
-        try { this.source?.stop(); } catch { /* already stopped */ }
-        this.source = null;
-        // Closing the context guarantees silence, even for audio that was
-        // still being decoded
-        try { void this.ctx?.close(); } catch { /* already closed */ }
-        this.ctx = null;
+        const audio = this.audio;
+        this.audio = null;
+        if (audio) {
+            try {
+                audio.pause();
+                audio.removeAttribute('src');
+                audio.load();
+            } catch { /* already stopped */ }
+        }
+        if (this.audioUrl) {
+            URL.revokeObjectURL(this.audioUrl);
+            this.audioUrl = null;
+        }
     }
 
     /** Silence everything without changing the reading position. */
@@ -327,6 +403,7 @@ export class TextToSpeechPlayer {
     stop(notify = true): void {
         this.reset();
         this.text = '';
+        this.fellBack = false;
         this.audioCache.clear();
         if (notify) this.setStatus('idle');
         else this.status = 'idle';
@@ -334,5 +411,6 @@ export class TextToSpeechPlayer {
 
     dispose(): void {
         this.stop(false);
+        if (typeof window !== 'undefined') window.removeEventListener(TTS_SETTINGS_EVENT, this.onSettingsChanged);
     }
 }

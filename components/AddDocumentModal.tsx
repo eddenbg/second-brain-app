@@ -5,6 +5,7 @@ import { generateTitleForContent, extractTextFromImage } from '../services/gemin
 import { getCurrentLocation } from '../utils/location';
 import { XIcon, Loader2Icon, CheckIcon } from './Icons';
 import ReadAloudButton from './ReadAloudButton';
+import OriginalWithText from './OriginalWithText';
 import { Camera, SwitchCamera, Image, Cloud, FileText } from 'lucide-react';
 import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl, resizeImage } from '../utils/image';
 import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
@@ -34,6 +35,8 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     // Text read from the last photo, shown on the "Saved" screen with Read Aloud
     const [savedText, setSavedText] = useState('');
     const [savedNote, setSavedNote] = useState('');
+    // The PDF just read, shown page by page next to its text
+    const [savedPdf, setSavedPdf] = useState<File | null>(null);
     // Incremented per selection so a slower, older OCR run can't overwrite
     // the result or preview of the photo the user just picked.
     const selectionIdRef = useRef(0);
@@ -100,6 +103,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const processImage = async (ocrImageDataUrl: string, thumbnailDataUrl: string | null, selectionId: number) => {
         const isCurrent = () => selectionId === selectionIdRef.current;
         if (!isCurrent()) return;
+        setSavedPdf(null);
         setPreviewUrl(ocrImageDataUrl);
         setPhase('processing');
         setStatusMessage('Extracting text…');
@@ -160,6 +164,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         setPreviewUrl(null);
         setSavedText('');
         setSavedNote('');
+        setSavedPdf(null);
         setPhase('processing');
         setStatusMessage('Reading PDF…');
         try {
@@ -192,6 +197,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 throw new Error('The text was read, but saving failed. Check your connection and try again.');
             }
             if (!isCurrent()) return;
+            setSavedPdf(file);
             setSavedText(result.text);
             setSavedNote(
                 `${titleFromFileName(file.name)}${result.pageCount ? ` · ${result.pageCount} pages` : ''}` +
@@ -391,25 +397,17 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                         <p className="text-white font-black text-2xl uppercase">{statusMessage}</p>
                     </div>
                 ) : phase === 'done' ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-[#001F3F] px-6">
-                        {previewUrl && (
-                            <img src={previewUrl} alt="Selected photo" className="max-h-[40vh] max-w-full object-contain rounded-2xl border-4 border-white/20" />
-                        )}
-                        <div className="flex items-center gap-3">
-                            <CheckIcon className="w-12 h-12 text-green-400" />
-                            <p className="text-white font-black text-2xl uppercase">Saved!</p>
-                        </div>
-                        {savedNote && <p className="text-white/70 text-sm font-bold text-center" dir="auto">{savedNote}</p>}
-                        {savedText && (
-                            <p className="w-full max-w-md max-h-32 overflow-y-auto bg-black/30 rounded-2xl p-4 text-white text-base leading-relaxed whitespace-pre-wrap" dir="auto">
-                                {savedText}
-                            </p>
-                        )}
-                        <div className="w-full max-w-md flex flex-col items-center gap-3">
+                    <div className="absolute inset-0 overflow-y-auto bg-[#001F3F] px-5 py-6">
+                        <div className="w-full max-w-3xl mx-auto flex flex-col gap-5">
+                            <div className="flex items-center justify-center gap-3">
+                                <CheckIcon className="w-12 h-12 text-green-400" />
+                                <p className="text-white font-black text-2xl uppercase">Saved!</p>
+                            </div>
+                            {savedNote && <p className="text-white/70 text-sm font-bold text-center" dir="auto">{savedNote}</p>}
                             {savedText && <ReadAloudButton text={savedText} />}
                             <div className="w-full flex gap-3">
                                 <button
-                                    onClick={() => { setPreviewUrl(null); setSavedText(''); setSavedNote(''); setPhase('inputChoice'); }}
+                                    onClick={() => { setPreviewUrl(null); setSavedText(''); setSavedNote(''); setSavedPdf(null); setPhase('inputChoice'); }}
                                     className="flex-1 py-4 bg-white/10 text-white font-black rounded-2xl text-base uppercase border-2 border-white/20"
                                 >
                                     Scan Another
@@ -421,6 +419,16 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                                     Done
                                 </button>
                             </div>
+                            {/* Original photo / PDF pages next to the text read from them */}
+                            {(savedText || previewUrl) && (
+                                <OriginalWithText
+                                    title={savedNote || 'Scanned page'}
+                                    text={savedText}
+                                    imageSrc={previewUrl}
+                                    pdf={savedPdf}
+                                    textClassName="text-white text-lg leading-relaxed"
+                                />
+                            )}
                         </div>
                     </div>
                 ) : (
