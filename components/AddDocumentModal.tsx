@@ -6,11 +6,14 @@ import { getCurrentLocation } from '../utils/location';
 import { XIcon, Loader2Icon, CheckIcon } from './Icons';
 import ReadAloudButton from './ReadAloudButton';
 import { Camera, SwitchCamera, Image } from 'lucide-react';
-import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl } from '../utils/image';
+import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl, resizeImage } from '../utils/image';
 import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
 
 const OCR_TIMEOUT_MS = 60_000;
 const TITLE_TIMEOUT_MS = 15_000;
+// Saved photo: sharp enough to read, small enough for the cloud (~150–400 KB)
+const STORED_PHOTO_MAX_DIM = 1600;
+const STORED_PHOTO_QUALITY = 0.65;
 
 interface AddDocumentModalProps {
     course?: string;
@@ -26,7 +29,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
     const [stream, setStream] = useState<MediaStream | null>(null);
     // Preview of the photo currently being processed. In-memory only — reset
-    // on every new selection and never persisted.
+    // on every new selection.
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     // Text read from the last photo, shown on the "Saved" screen with Read Aloud
     const [savedText, setSavedText] = useState('');
@@ -87,9 +90,8 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         startCamera(next);
     };
 
-    // `ocrImageDataUrl` is a downscaled copy that is only sent to the AI and
-    // then dropped. Only the extracted text and a tiny thumbnail are saved —
-    // never the image itself (not to Firestore, not to localStorage).
+    // The photo is saved with the text (compressed, ~1600px) so you can check
+    // the extracted text against the original. A small thumbnail is kept for lists.
     const processImage = async (ocrImageDataUrl: string, thumbnailDataUrl: string | null, selectionId: number) => {
         const isCurrent = () => selectionId === selectionIdRef.current;
         if (!isCurrent()) return;
@@ -99,6 +101,8 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
 
         try {
             const { base64, mimeType } = splitDataUrl(ocrImageDataUrl);
+            // Compressed copy of the photo to keep alongside the text
+            const storedPhoto = await resizeImage(ocrImageDataUrl, STORED_PHOTO_MAX_DIM, STORED_PHOTO_QUALITY).catch(() => null);
             const [text, location] = await Promise.all([
                 withTimeout(extractTextFromImage(base64, mimeType), OCR_TIMEOUT_MS),
                 getCurrentLocation()
@@ -122,6 +126,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 extractedText: text || '',
                 category: course ? 'college' : 'personal',
                 course,
+                ...(storedPhoto && { imageDataUrl: storedPhoto, fileType: 'image' as const }),
                 ...(thumbnailDataUrl && { thumbnailDataUrl, fileType: 'image' as const }),
                 ...(location && { location })
             }) as unknown);

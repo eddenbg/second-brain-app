@@ -29,6 +29,7 @@ export interface BaseMemory {
   localMedia?: boolean;
   localNotebook?: boolean;
   localStructuredTranscript?: boolean;
+  localImage?: boolean;
 }
 
 export interface TranscriptSegment {

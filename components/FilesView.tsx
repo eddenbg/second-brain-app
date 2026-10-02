@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import DocumentPhoto from './DocumentPhoto';
 import VoiceInputButton from './VoiceInputButton';
 import type { AnyMemory, DocumentMemory, VoiceMemory, FileMemory, PhysicalItemMemory } from '../types';
 import {
@@ -123,6 +124,7 @@ const MediaPreviewDrawer: React.FC<{
                             <p className="text-gray-200 text-lg leading-relaxed font-medium">{(memory as VoiceMemory).summary}</p>
                         </div>
                     )}
+                    {memory.type === 'document' && <DocumentPhoto memory={memory} />}
                     {(memory as DocumentMemory).extractedText && (
                         <div className="bg-gray-900 p-6 rounded-[2rem] border-2 border-gray-700">
                             <h3 className="text-indigo-400 font-black text-[10px] uppercase tracking-widest mb-2">Extracted Text</h3>

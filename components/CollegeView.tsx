@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import DocumentPhoto from './DocumentPhoto';
 import RecordingExtras from './RecordingExtras';
 import VoiceInputButton, { WithVoice } from './VoiceInputButton';
 import {
@@ -522,13 +523,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         )}
                         {(selectedItem.type === 'document' || selectedItem.type === 'file') && (
                             <div className="space-y-5">
-                                {selectedItem.type === 'document' && (selectedItem as DocumentMemory).imageDataUrl && (
-                                    <img
-                                        src={(selectedItem as DocumentMemory).imageDataUrl}
-                                        className="w-full rounded-2xl border-2 border-white/20"
-                                        alt={selectedItem.title}
-                                    />
-                                )}
+                                {selectedItem.type === 'document' && <DocumentPhoto memory={selectedItem} />}
                                 <p className="text-xl leading-relaxed whitespace-pre-wrap">
                                     {'extractedText' in selectedItem
                                         ? (selectedItem as DocumentMemory).extractedText

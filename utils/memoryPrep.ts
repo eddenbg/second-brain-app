@@ -64,8 +64,13 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
     }
     if (m.notebook?.strokes) m.notebook = compactNotebook(m.notebook);
 
-    // 3. Still too big (very long lecture with lots of writing): move the
-    //    biggest parts to this device
+    // 3. Still too big: move the biggest parts to this device (the photo of a
+    //    scanned page first, then drawings / timeline of a very long lecture)
+    if (cloudSize(m) > MAX_CLOUD_BYTES && isDataUrl(m.imageDataUrl)) {
+        await putLocal(localKey(id, 'image'), m.imageDataUrl).catch(() => {});
+        delete m.imageDataUrl;
+        m.localImage = true;
+    }
     if (cloudSize(m) > MAX_CLOUD_BYTES && m.notebook) {
         await putLocal(localKey(id, 'notebook'), m.notebook).catch(() => {});
         delete m.notebook;

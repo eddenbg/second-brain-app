@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import DocumentPhoto from './DocumentPhoto';
 import RecordingExtras from './RecordingExtras';
 import VoiceInputButton from './VoiceInputButton';
 import {
@@ -844,13 +845,7 @@ const PersonalView: React.FC<PersonalViewProps> = ({
                     )}
                     {selectedItem.type === 'document' && (
                         <div className="space-y-5">
-                            {(selectedItem as DocumentMemory).imageDataUrl && (
-                                <img
-                                    src={(selectedItem as DocumentMemory).imageDataUrl}
-                                    className="w-full rounded-2xl border-2 border-white/20"
-                                    alt={selectedItem.title}
-                                />
-                            )}
+                            <DocumentPhoto memory={selectedItem} />
                             <p className="text-xl leading-relaxed whitespace-pre-wrap">
                                 {(selectedItem as DocumentMemory).extractedText}
                             </p>
