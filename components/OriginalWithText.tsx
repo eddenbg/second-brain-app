@@ -1,25 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { X, FileText, Loader2 } from 'lucide-react';
 import type { AnyMemory } from '../types';
 import { getLocal, localKey } from '../utils/mediaStore';
-import { safeSetItem } from '../utils/safeStorage';
 
-// The original page(s) next to the text read from them, so it's easy to
-// follow along on the real page and to spot reading mistakes.
-// - Photo scan: the photo, then its text.
-// - PDF: each page as a picture, followed by that page's text.
-// Three layouts: page above text (phones), side by side (tablets), text only.
-
-type Layout = 'above' | 'side' | 'text';
-const LAYOUT_KEY = 'sb-document-layout';
-
-const loadLayout = (): Layout => {
-    try {
-        const v = localStorage.getItem(LAYOUT_KEY);
-        if (v === 'above' || v === 'side' || v === 'text') return v;
-    } catch { /* storage unavailable */ }
-    return typeof window !== 'undefined' && window.innerWidth >= 768 ? 'side' : 'above';
-};
+// The original on top, in its own scrollable preview window (all pages of a
+// PDF, one under the other), and the recognised text underneath — so it's
+// easy to follow along on the real page and to spot reading mistakes.
 
 // pdf.js is large: load it only when a PDF is shown
 const PDFJS_VERSION = '4.10.38';
@@ -35,25 +21,6 @@ const loadPdfJs = () => {
         }).catch(e => { pdfjsPromise = null; throw e; });
     }
     return pdfjsPromise;
-};
-
-/** Split extracted text on its "Page N" lines → page number → text. */
-export const splitTextByPage = (text: string): Map<number, string> => {
-    const pages = new Map<number, string>();
-    let current = 1;
-    let buffer: string[] = [];
-    const flush = () => {
-        const t = buffer.join('\n').trim();
-        if (t) pages.set(current, pages.has(current) ? `${pages.get(current)}\n${t}` : t);
-        buffer = [];
-    };
-    for (const line of text.split('\n')) {
-        const m = line.match(/^\s*(?:\*\*)?(?:Page|עמוד)\s+(\d+)(?:\*\*)?\s*:?\s*$/i);
-        if (m) { flush(); current = Number(m[1]); }
-        else buffer.push(line);
-    }
-    flush();
-    return pages;
 };
 
 const FullScreenImage: React.FC<{ src: string; alt: string; onClose: () => void }> = ({ src, alt, onClose }) => (
@@ -93,7 +60,7 @@ const OriginalImage: React.FC<{ src: string | null; alt: string; loading?: boole
                 className="block w-full p-0 bg-transparent border-0"
                 style={{ minHeight: 'unset' }}
             >
-                <img src={src} alt={alt} className="w-full max-h-[80vh] object-contain rounded-2xl border-2 border-white/20 bg-white" />
+                <img src={src} alt={alt} className="w-full h-auto rounded-xl bg-white" />
             </button>
             {open && <FullScreenImage src={src} alt={alt} onClose={() => setOpen(false)} />}
         </>
@@ -101,7 +68,7 @@ const OriginalImage: React.FC<{ src: string | null; alt: string; loading?: boole
 };
 
 /** One PDF page, drawn only when it scrolls near the screen. */
-const PdfPageImage: React.FC<{ doc: any; pageNumber: number }> = ({ doc, pageNumber }) => {
+const PdfPageImage: React.FC<{ doc: any; pageNumber: number; numPages: number; root: HTMLElement | null }> = ({ doc, pageNumber, numPages, root }) => {
     const holder = useRef<HTMLDivElement>(null);
     const [src, setSrc] = useState<string | null>(null);
     const [visible, setVisible] = useState(false);
@@ -112,10 +79,10 @@ const PdfPageImage: React.FC<{ doc: any; pageNumber: number }> = ({ doc, pageNum
         if (typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
         const io = new IntersectionObserver(entries => {
             if (entries.some(e => e.isIntersecting)) { setVisible(true); io.disconnect(); }
-        }, { rootMargin: '800px 0px' });
+        }, { root, rootMargin: '600px 0px' });
         io.observe(el);
         return () => io.disconnect();
-    }, [visible]);
+    }, [visible, root]);
 
     useEffect(() => {
         if (!visible) return;
@@ -150,8 +117,9 @@ const PdfPageImage: React.FC<{ doc: any; pageNumber: number }> = ({ doc, pageNum
     }, [visible, doc, pageNumber]);
 
     return (
-        <div ref={holder}>
-            <OriginalImage src={src} alt={`Original page ${pageNumber}`} loading={visible} />
+        <div ref={holder} className="space-y-1">
+            <OriginalImage src={src} alt={`Original page ${pageNumber} of ${numPages}`} loading={visible} />
+            <p className="text-center text-white/60 text-xs font-black uppercase tracking-widest">Page {pageNumber} of {numPages}</p>
         </div>
     );
 };
@@ -166,17 +134,11 @@ const OriginalWithText: React.FC<{
     imageSrc?: string | null;
     textClassName?: string;
 }> = ({ text, title, memory, pdf, imageSrc, textClassName = 'text-xl leading-relaxed' }) => {
-    const [layout, setLayout] = useState<Layout>(loadLayout);
     const [image, setImage] = useState<string | null>(imageSrc || (memory as any)?.imageDataUrl || null);
     const [pdfBlob, setPdfBlob] = useState<Blob | null>(pdf || null);
     const [pdfDoc, setPdfDoc] = useState<any>(null);
     const [pdfState, setPdfState] = useState<'none' | 'loading' | 'ready' | 'error' | 'elsewhere'>('none');
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-
-    const chooseLayout = (l: Layout) => {
-        setLayout(l);
-        safeSetItem(LAYOUT_KEY, l);
-    };
 
     // Photo
     useEffect(() => {
@@ -243,95 +205,60 @@ const OriginalWithText: React.FC<{
         };
     }, [pdfBlob]);
 
-    const textByPage = useMemo(() => splitTextByPage(text || ''), [text]);
+    const [scrollBox, setScrollBox] = useState<HTMLDivElement | null>(null);
     const hasOriginal = !!image || pdfState !== 'none';
 
-    const textBlock = (t: string | undefined, key?: React.Key) => (
-        <p key={key} className={`${textClassName} whitespace-pre-wrap`} dir="auto">
-            {t || <span className="text-white/40 text-base">No text on this page.</span>}
-        </p>
-    );
-
-    const pair = (original: React.ReactNode, t: string | undefined, label?: string, key?: React.Key) => (
-        <section key={key} className="space-y-2">
-            {label && <h3 className="text-[#60A5FA] font-black text-sm uppercase tracking-widest">{label}</h3>}
-            <div className={layout === 'side' ? 'grid grid-cols-2 gap-4 items-start' : 'space-y-4'}>
-                <div>{original}</div>
-                <div>{textBlock(t)}</div>
-            </div>
-        </section>
-    );
-
-    const layoutButton = (l: Layout, label: string) => (
-        <button
-            type="button"
-            onClick={() => chooseLayout(l)}
-            aria-pressed={layout === l}
-            className={`flex-1 py-3 rounded-xl text-sm font-black uppercase border-2 ${layout === l ? 'bg-white text-[#001F3F] border-white' : 'bg-transparent text-white border-white/30'}`}
-            style={{ minHeight: 'unset' }}
-        >
-            {label}
-        </button>
-    );
-
-    let body: React.ReactNode;
-    if (!hasOriginal || layout === 'text') {
-        body = textBlock(text);
-    } else if (image) {
-        body = pair(<OriginalImage src={image} alt={`Original photo: ${title}`} />, text);
+    let original: React.ReactNode = null;
+    if (image) {
+        original = <OriginalImage src={image} alt={`Original photo: ${title}`} />;
     } else if (pdfState === 'ready' && pdfDoc) {
         const numPages: number = pdfDoc.numPages;
-        // Text that doesn't belong to any page of the file (unexpected numbering)
-        const extra = [...textByPage.entries()].filter(([n]) => n < 1 || n > numPages).map(([, t]) => t).join('\n\n');
-        body = (
-            <div className="space-y-8">
+        original = (
+            <div className="space-y-4">
                 {Array.from({ length: numPages }, (_, k) => k + 1).map(n =>
-                    pair(<PdfPageImage doc={pdfDoc} pageNumber={n} />, textByPage.get(n), `Page ${n} of ${numPages}`, n))}
-                {extra && textBlock(extra)}
+                    <PdfPageImage key={n} doc={pdfDoc} pageNumber={n} numPages={numPages} root={scrollBox} />)}
             </div>
         );
     } else if (pdfState === 'loading') {
-        body = (
-            <div className="space-y-4">
-                <p className="flex items-center gap-2 text-white/70 font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Opening the original PDF…</p>
-                {textBlock(text)}
-            </div>
-        );
-    } else {
-        body = (
-            <div className="space-y-4">
-                <p className="text-white/60 text-sm font-bold">
-                    {pdfState === 'elsewhere'
-                        ? 'The original PDF is saved on the device it was added on.'
-                        : 'The original PDF could not be shown here — use "Open original PDF".'}
-                </p>
-                {textBlock(text)}
-            </div>
-        );
+        original = <p className="flex items-center justify-center gap-2 py-10 text-white/70 font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Opening the original PDF…</p>;
+    } else if (pdfState === 'elsewhere') {
+        original = <p className="py-6 text-center text-white/60 text-sm font-bold">The original PDF is saved on the device it was added on.</p>;
+    } else if (pdfState === 'error') {
+        original = <p className="py-6 text-center text-white/60 text-sm font-bold">The original PDF can’t be shown here — use “Open original PDF”.</p>;
     }
 
     return (
         <div className="space-y-4">
             {hasOriginal && (
-                <div className="space-y-3">
-                    <div className="flex gap-2" role="group" aria-label="How to show the original">
-                        {layoutButton('above', 'Page above text')}
-                        {layoutButton('side', 'Side by side')}
-                        {layoutButton('text', 'Text only')}
+                <section className="space-y-2" aria-label="Original">
+                    <div className="flex items-center justify-between gap-2">
+                        <h3 className="text-[#60A5FA] font-black text-sm uppercase tracking-widest">
+                            Original{pdfDoc && pdfDoc.numPages > 1 ? ` · ${pdfDoc.numPages} pages — scroll inside` : ''}
+                        </h3>
+                        {pdfUrl && (
+                            <a
+                                href={pdfUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white/10 border-2 border-white/20 text-white font-black text-xs uppercase"
+                            >
+                                <FileText className="w-4 h-4" /> Open PDF
+                            </a>
+                        )}
                     </div>
-                    {pdfUrl && (
-                        <a
-                            href={pdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/10 border-2 border-white/20 text-white font-black text-sm uppercase"
-                        >
-                            <FileText className="w-5 h-5" /> Open original PDF
-                        </a>
-                    )}
-                </div>
+                    {/* Its own scroll window, so the text below stays in place */}
+                    <div
+                        ref={setScrollBox}
+                        className="max-h-[55vh] overflow-y-auto overscroll-contain rounded-2xl border-2 border-white/20 bg-black/30 p-2"
+                    >
+                        {original}
+                    </div>
+                </section>
             )}
-            {body}
+            <section className="space-y-2" aria-label="Recognised text">
+                {hasOriginal && <h3 className="text-[#60A5FA] font-black text-sm uppercase tracking-widest">Recognised text</h3>}
+                <p className={`${textClassName} whitespace-pre-wrap`} dir="auto">{text}</p>
+            </section>
         </div>
     );
 };
