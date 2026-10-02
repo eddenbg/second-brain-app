@@ -5,7 +5,7 @@ import { generateTitleForContent, extractTextFromImage } from '../services/gemin
 import { getCurrentLocation } from '../utils/location';
 import { XIcon, Loader2Icon, CheckIcon } from './Icons';
 import ReadAloudButton from './ReadAloudButton';
-import { Camera, SwitchCamera, Image } from 'lucide-react';
+import { Camera, SwitchCamera, Image, Cloud } from 'lucide-react';
 import { prepareImageForOcr, createThumbnail, createThumbnailFromCanvas, splitDataUrl, resizeImage } from '../utils/image';
 import { withTimeout, fallbackTitle, isPlaceholderTitle } from '../utils/timeout';
 
@@ -39,7 +39,10 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    // Two pickers: the phone's photo picker (default — photos on the device,
+    // fastest) and Android's full file chooser (Google Photos, Drive, …)
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const cloudInputRef = useRef<HTMLInputElement>(null);
 
     const stopCamera = useCallback(() => {
         if (stream) {
@@ -148,20 +151,16 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         }
     };
 
-    // Read the newly selected file with a fresh FileReader every time.
-    const readFileAsDataUrl = (file: File): Promise<string> =>
-        new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-        });
-
     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         // Reset so onChange fires again even if the same file is picked twice
         e.target.value = '';
         if (!file) return;
+        if (file.type && !file.type.startsWith('image/')) {
+            setPhase('error');
+            setStatusMessage('That file isn\'t a photo. Choose a photo of the page (PDFs aren\'t supported yet).');
+            return;
+        }
 
         // New selection: drop any previous image/preview before processing
         const selectionId = ++selectionIdRef.current;
@@ -171,10 +170,9 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         let ocrImage: string;
         let thumbnail: string | null = null;
         try {
-            // The full-size data URL only lives inside this function; it is
-            // downscaled for OCR and then discarded (never stored).
-            const rawDataUrl = await readFileAsDataUrl(file);
-            ocrImage = await prepareImageForOcr(rawDataUrl);
+            // Decode the newly picked file directly and shrink it — much faster
+            // than first turning a multi-MB photo into one huge text string.
+            ocrImage = await prepareImageForOcr(file);
             thumbnail = await createThumbnail(ocrImage).catch(() => null);
         } catch {
             if (selectionId !== selectionIdRef.current) return;
@@ -189,6 +187,12 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
         if (fileInputRef.current) fileInputRef.current.value = '';
         setPreviewUrl(null);
         fileInputRef.current?.click();
+    };
+
+    const startCloudUpload = () => {
+        if (cloudInputRef.current) cloudInputRef.current.value = '';
+        setPreviewUrl(null);
+        cloudInputRef.current?.click();
     };
 
     const capture = async () => {
@@ -221,6 +225,16 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 className="hidden"
                 aria-label="Choose image from gallery"
             />
+            {/* A non-image type makes Android open its full file chooser, which
+                lists Google Photos and Drive as sources */}
+            <input
+                ref={cloudInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={handleFileSelect}
+                className="hidden"
+                aria-label="Choose image from Google Photos or Drive"
+            />
 
             {/* Full-screen preview */}
             <div className="relative flex-grow bg-black overflow-hidden" onClick={phase === 'camera' && stream ? capture : undefined}>
@@ -247,6 +261,14 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                             >
                                 <Image className="w-6 h-6" strokeWidth={2.5} />
                                 Browse Gallery
+                            </button>
+
+                            <button
+                                onClick={startCloudUpload}
+                                className="w-full py-4 bg-white/10 text-white rounded-2xl font-black text-sm uppercase flex items-center justify-center gap-2 border-2 border-white/20 transition-all active:scale-95"
+                            >
+                                <Cloud className="w-5 h-5" strokeWidth={2.5} />
+                                Google Photos / Drive
                             </button>
                         </div>
                     </div>
@@ -330,6 +352,13 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                             >
                                 <Image className="w-6 h-6" strokeWidth={2.5} />
                                 Choose from Gallery
+                            </button>
+                            <button
+                                onClick={() => { setPreviewUrl(null); startCloudUpload(); }}
+                                className="w-full py-4 bg-white/10 text-white font-black rounded-2xl text-sm uppercase flex items-center justify-center gap-2 border-2 border-white/20"
+                            >
+                                <Cloud className="w-5 h-5" strokeWidth={2.5} />
+                                Google Photos / Drive
                             </button>
                             <button
                                 onClick={() => { setPreviewUrl(null); setPhase('camera'); startCamera(facingMode); }}
