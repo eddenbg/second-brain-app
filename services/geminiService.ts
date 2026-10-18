@@ -165,7 +165,7 @@ export async function extractTextFromImage(base64Data: string, mimeType: string)
             contents: { 
                 parts: [
                     { inlineData: { mimeType, data: base64Data } }, 
-                    { text: `Extract all text from this image exactly as written. Support both printed and handwritten text in Hebrew or English. Preserve line breaks and original layout. Return only the text. If there is no readable text, return nothing.` }
+                    { text: `Extract all text from this image exactly as written. Support both printed and handwritten text in Hebrew or English. The speech and text are ONLY ever in Hebrew and English (often mixed in one sentence); never output Arabic or any other language — anything that sounds or looks like Arabic is Hebrew. Preserve line breaks and original layout. Return only the text. If there is no readable text, return nothing.` }
                 ] 
             },
         });
@@ -434,7 +434,7 @@ export async function extractHandwritingFromImage(base64Data: string): Promise<s
                 {
                     parts: [
                         { inlineData: { mimeType: 'image/png', data: base64Data } },
-                        { text: `Extract all handwritten text from this image. Support both Hebrew (RTL) and English. Return the text exactly as written, preserving line breaks and layout when possible. If there are multiple sections, separate them with line breaks. Return ONLY the extracted text, no explanations.` }
+                        { text: `Extract all handwritten text from this image. Support both Hebrew (RTL) and English. The speech and text are ONLY ever in Hebrew and English (often mixed in one sentence); never output Arabic or any other language — anything that sounds or looks like Arabic is Hebrew. Return the text exactly as written, preserving line breaks and layout when possible. If there are multiple sections, separate them with line breaks. Return ONLY the extracted text, no explanations.` }
                     ]
                 }
             ]
@@ -476,7 +476,7 @@ export async function transcribeAudioFile(
                 {
                     parts: [
                         { inlineData: { mimeType, data: encodedData } },
-                        { text: 'Transcribe this audio file completely and accurately. Support both Hebrew (RTL) and English. Return the full transcript, preserving all spoken words and natural pauses. Do not add interpretations, only transcribed speech.' }
+                        { text: 'Transcribe this audio file completely and accurately. Support both Hebrew (RTL) and English. The speech and text are ONLY ever in Hebrew and English (often mixed in one sentence); never output Arabic or any other language — anything that sounds or looks like Arabic is Hebrew. Return the full transcript, preserving all spoken words and natural pauses. Do not add interpretations, only transcribed speech.' }
                     ]
                 }
             ]

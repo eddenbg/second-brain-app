@@ -40,6 +40,7 @@ const prompt = (from: number, to: number) =>
 - For each image, chart or diagram, add one short line: [Figure: brief description].
 - Write math in words or plain symbols that a screen reader can say.
 - Do not summarize, translate or add commentary.
+- The document is in Hebrew and/or English only; never output Arabic — anything that looks like Arabic is Hebrew.
 - Begin each page with a line "Page N", numbering from ${from}.`;
 
 async function readChunk(bytes: Uint8Array, from: number, to: number): Promise<string> {

@@ -142,6 +142,12 @@ export default async (req: Request, context: Context) => {
     if (classification) {
         finalUrl += `&classification=${classification}`;
     }
+    // Calendar date range (Moodle's options[...] parameters)
+    const timestart = url.searchParams.get("timestart");
+    const timeend = url.searchParams.get("timeend");
+    if (timestart && /^\d+$/.test(timestart)) finalUrl += `&options[timestart]=${timestart}`;
+    if (timeend && /^\d+$/.test(timeend)) finalUrl += `&options[timeend]=${timeend}`;
+    if (wsfunction === 'core_calendar_get_calendar_events') finalUrl += `&options[userevents]=1&options[siteevents]=1`;
 
     console.log(`Proxying Moodle Request: ${wsfunction}`);
     const response = await fetch(finalUrl);

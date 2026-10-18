@@ -86,7 +86,7 @@ class DictationSession {
                 config: {
                     responseModalities: [Modality.AUDIO],
                     inputAudioTranscription: {},
-                    systemInstruction: 'You are a dictation helper. The user is dictating text into a form field, possibly switching between Hebrew and English mid-sentence. Do not respond; just listen.',
+                    systemInstruction: 'You are a dictation helper. The user is dictating text into a form field, possibly switching between Hebrew and English mid-sentence. The speech and text are ONLY ever in Hebrew and English (often mixed in one sentence); never output Arabic or any other language — anything that sounds or looks like Arabic is Hebrew. Do not respond; just listen.',
                 },
             });
             this.sessionPromise.catch(() => {

@@ -52,7 +52,10 @@ export const testMoodleConnection = async (token: string): Promise<boolean> => {
 export const fetchMoodleEvents = async (token: string): Promise<CalendarEvent[]> => {
     if (!token) return [];
     try {
-        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events`;
+        // Without a date range Moodle answers with no events at all
+        const now = Math.floor(Date.now() / 1000);
+        const range = `&timestart=${now - 30 * 86400}&timeend=${now + 120 * 86400}`;
+        const url = `/api/moodleProxy?token=${encodeURIComponent(token)}&wsfunction=core_calendar_get_calendar_events${range}`;
         console.log(`[MoodleService] Fetching events...`);
         const response = await fetch(url);
         

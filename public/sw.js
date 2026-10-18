@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v47';
+const CACHE_NAME = 'second-brain-v48';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -40,6 +40,22 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Fetch the fresh copy and keep it for offline use; use the cached one if the
+// network fails or takes longer than `timeoutMs`.
+function networkFirst(cacheKey, timeoutMs) {
+  const fresh = fetch(cacheKey, { cache: 'no-cache' }).then((response) => {
+    if (response && response.ok) {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(cacheKey, clone));
+    }
+    return response;
+  });
+  const timeout = new Promise((resolve) => setTimeout(resolve, timeoutMs));
+  return Promise.race([fresh, timeout.then(() => caches.match(cacheKey))])
+    .then((response) => response || fresh)
+    .catch(() => caches.match(cacheKey).then((cached) => cached || fresh));
+}
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -50,10 +66,15 @@ self.addEventListener('fetch', (event) => {
 
   // Navigation requests (page loads, share target activations) — serve index.html
   // so query params (title, url, text) are preserved for the React app to read.
+  // Network first (so a new deploy shows up on the next open), falling back
+  // to the cached copy when offline or the network is slow.
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      caches.match('./index.html').then((cached) => cached || fetch(event.request))
-    );
+    event.respondWith(networkFirst('./index.html', 4000));
+    return;
+  }
+  // The manifest too, so home-screen / share-menu changes reach installed apps
+  if (url.pathname.endsWith('/manifest.json')) {
+    event.respondWith(networkFirst('./manifest.json', 4000));
     return;
   }
 

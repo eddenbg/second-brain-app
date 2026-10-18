@@ -56,6 +56,9 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
     const [privacyMode, setPrivacyMode] = useState(false);
     const [notebookData, setNotebookData] = useState<NotebookData | null>(null);
     const [recordingTime, setRecordingTime] = useState(0);
+    // True once a recording has been made, so it can be saved even when live
+    // transcription produced nothing (the audio and notes still matter)
+    const [hasRecorded, setHasRecorded] = useState(false);
 
     const sessionPromiseRef = useRef<Promise<Session> | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -143,6 +146,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
 
             setStream(mediaStream);
             setIsRecording(true);
+            setHasRecorded(true);
 
             const chunks: Blob[] = [];
             mediaRecorderRef.current = new MediaRecorder(mediaStream, { mimeType: captureMode === 'remote' ? 'audio/webm' : 'video/webm' });
@@ -251,7 +255,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                 config: {
                     responseModalities: [Modality.AUDIO],
                     inputAudioTranscription: {},
-                    systemInstruction: `You are a real-time lecture assistant for a visually impaired student. Your primary job is to transcribe the lecture accurately. 
+                    systemInstruction: `You are a real-time lecture assistant for a visually impaired student. Your primary job is to transcribe the lecture accurately. The speech and text are ONLY ever in Hebrew and English (often mixed in one sentence); never output Arabic or any other language — anything that sounds or looks like Arabic is Hebrew. 
                     IN ADDITION, you will receive video frames from the lecture. Analyze these frames for key visual information. 
                     When you see something important, like a math equation on a whiteboard, a diagram, code on a screen, or a specific action the professor is demonstrating, you MUST insert a descriptive note into the transcript. 
                     Prefix these notes with "VISUAL NOTE:". For example: "VISUAL NOTE: The professor just wrote the quadratic formula, x = [-b ± sqrt(b^2-4ac)]/2a, on the board." or "VISUAL NOTE: A diagram of a plant cell is now on the screen, showing the nucleus and chloroplasts."
@@ -373,20 +377,37 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
         setIsProcessing(true);
         const transcript = transcriptRef.current || transcriptState;
         const structuredTranscript = structuredTranscriptRef.current.length > 0 ? structuredTranscriptRef.current : structuredTranscriptState;
-        const videoDataUrl = recordedMedia !== undefined ? recordedMedia : videoDataUrlState;
+        // Wait for the recording to finish encoding (long lectures take a few
+        // seconds) so the audio is never dropped by tapping Save quickly
+        let media = recordedMedia;
+        if (media === undefined) {
+            media = videoDataUrlState ?? (recordedMediaRef.current
+                ? await Promise.race([
+                    recordedMediaRef.current,
+                    new Promise<null>(r => setTimeout(() => r(null), 30_000)),
+                ])
+                : null);
+        }
+        const videoDataUrl = media;
+        const hasText = !!transcript.trim();
         // AI calls are bounded so "Saving..." can never hang: title falls back
         // to the first words of the transcript (or "Recording <date>").
         const defaultTitle = fallbackTitle(transcript, 'Recording');
         try {
+            // No transcript (transcription failed): save audio + notes without AI analysis
             const [analysis, location, lectureAnalysis] = await Promise.all([
-                withTimeout(analyzeVoiceNote(transcript), TITLE_TIMEOUT_MS)
-                    .catch(() => ({ title: defaultTitle, actionItems: [] as string[] })),
+                hasText
+                    ? withTimeout(analyzeVoiceNote(transcript), TITLE_TIMEOUT_MS)
+                        .catch(() => ({ title: defaultTitle, actionItems: [] as string[] }))
+                    : Promise.resolve({ title: defaultTitle, actionItems: [] as string[] }),
                 getCurrentLocation(),
-                withTimeout(summarizeLectureTranscript(transcript), SUMMARY_TIMEOUT_MS)
-                    .catch((summaryError) => {
-                        console.warn('Could not generate lecture summary', summaryError);
-                        return { summary: '', actionItems: [] as Array<{ text: string; done: boolean }> };
-                    }),
+                hasText
+                    ? withTimeout(summarizeLectureTranscript(transcript), SUMMARY_TIMEOUT_MS)
+                        .catch((summaryError) => {
+                            console.warn('Could not generate lecture summary', summaryError);
+                            return { summary: '', actionItems: [] as Array<{ text: string; done: boolean }> };
+                        })
+                    : Promise.resolve({ summary: '', actionItems: [] as Array<{ text: string; done: boolean }> }),
             ]);
 
             const summary = lectureAnalysis.summary;
@@ -432,6 +453,12 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
             ])
             : null;
         if (!transcriptRef.current.trim()) {
+            // A real recording whose transcription failed: keep the audio
+            if (media && Date.now() - startTimeRef.current > 3000) {
+                await handleSave(media);
+                setError('Saved the audio, but no transcript was captured. / ההקלטה נשמרה, אך לא התקבל תמלול.');
+                return;
+            }
             setIsProcessing(false);
             setError('No speech detected — tap the microphone and try again. / לא זוהה דיבור — הקש על המיקרופון ונסה שוב.');
             return;
@@ -615,7 +642,7 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                  </button>
                  <button
                     onClick={() => handleSave()}
-                    disabled={isRecording || isProcessing || !transcript}
+                    disabled={isRecording || isProcessing || !hasRecorded}
                     aria-label={isProcessing ? "Saving recording" : "Save recording"}
                     className="px-10 py-5 bg-yellow-500 rounded-2xl text-[#001f3f] disabled:bg-gray-700 disabled:text-gray-400 active:scale-95 transition-transform flex items-center gap-4 font-black text-2xl uppercase shadow-xl"
                 >
@@ -655,6 +682,12 @@ const Recorder: React.FC<RecorderProps> = ({ onSave, onCancel, titlePlaceholder,
                         />
                     </div>
                 </div>
+             )}
+
+             {!isRecording && hasRecorded && !transcript && !isProcessing && (
+                <p role="status" className="text-center text-yellow-300 font-bold bg-yellow-900/20 p-4 rounded-2xl" dir="auto">
+                    No transcript was captured for this recording. Tap Save — the audio and your notes are kept.
+                </p>
              )}
 
              {/* Transcript appears only after stopping */}

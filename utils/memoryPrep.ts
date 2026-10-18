@@ -102,7 +102,18 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
         await putLocal(`${id}:extractedText`, m.extractedText).catch(() => {});
         m.extractedText = m.extractedText.slice(0, 250_000) + '\n\n[The rest of this document is on the device it was added on.]';
     }
-    // Firestore rejects `undefined` values
-    for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k];
-    return m as AnyMemory;
+    // Firestore rejects `undefined` values anywhere in the document (e.g. a
+    // notebook with no background image), failing the whole save
+    return stripUndefined(m) as AnyMemory;
+};
+
+/** Copy of `value` without undefined fields, at any depth (Blobs etc. kept as is). */
+const stripUndefined = (value: any): any => {
+    if (Array.isArray(value)) return value.filter(v => v !== undefined).map(stripUndefined);
+    if (value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
+        const out: Record<string, any> = {};
+        for (const [k, v] of Object.entries(value)) if (v !== undefined) out[k] = stripUndefined(v);
+        return out;
+    }
+    return value;
 };
