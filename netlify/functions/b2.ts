@@ -16,7 +16,7 @@ import { createLocalJWKSet, jwtVerify, type JSONWebKeySet } from "jose";
 //   B2_BUCKET                      – bucket name
 //   B2_ENDPOINT                    – e.g. s3.eu-central-003.backblazeb2.com
 //   B2_PREFIX (optional)           – folder inside the bucket, default "second-brain"
-//   ALLOWED_EMAILS (optional)      – comma-separated Google accounts allowed to use storage
+//   ALLOWED_EMAILS                 – comma-separated Google account(s) allowed to use storage
 
 const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "my-second-brain-app-10dfe";
 const JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
@@ -35,8 +35,11 @@ const getJwks = async (refresh = false) => {
 // Keys the app may use, relative to its user folder
 const KEY_PATTERN = /^(db|media)\/[A-Za-z0-9._:\-\/]{1,400}$/;
 const PREFIX_PATTERN = /^(db|media)\/[A-Za-z0-9._:\-\/]*$/;
-// Response budget for getMany (function responses are capped at ~6 MB)
-const GET_MANY_BUDGET = 4_000_000;
+// Response budget for getMany, in bytes of JSON (function responses are capped
+// at ~6 MB) and in time (sync functions stop after ~10 s; the app asks again
+// for whatever wasn't returned)
+const GET_MANY_BYTES = 4_000_000;
+const GET_MANY_MS = 6_000;
 const MAX_BIN_BYTES = 4_500_000;
 
 const json = (body: unknown, status = 200) =>
@@ -83,11 +86,15 @@ async function verifyUser(req: Request): Promise<{ uid: string } | Response> {
       if (e?.code !== "ERR_JWKS_NO_MATCHING_KEY") throw e;
       ({ payload } = await jwtVerify(token, await getJwks(true), options));
     }
+    // Only Google accounts on the allow-list (the bucket is private storage)
     const provider = (payload as any).firebase?.sign_in_provider;
-    if (provider === "anonymous") return json({ error: "Sign in with Google to sync.", code: "sign-in-required" }, 403);
+    if (provider !== "google.com") return json({ error: "Sign in with Google to sync.", code: "sign-in-required" }, 403);
     const allowed = (process.env.ALLOWED_EMAILS || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (!allowed.length) return json({ error: "Cloud storage isn't set up yet (ALLOWED_EMAILS missing in Netlify).", code: "not-configured" }, 503);
     const email = String((payload as any).email || "").toLowerCase();
-    if (allowed.length && !allowed.includes(email)) return json({ error: "This account isn't allowed to use storage.", code: "not-allowed" }, 403);
+    if ((payload as any).email_verified !== true || !allowed.includes(email)) {
+      return json({ error: "This Google account isn't allowed to use this app's storage.", code: "not-allowed" }, 403);
+    }
     if (!payload.sub) return json({ error: "Invalid sign-in.", code: "token-invalid" }, 401);
     return { uid: payload.sub };
   } catch (e: any) {
@@ -192,11 +199,12 @@ export default async (req: Request, _context: Context) => {
     if (op === "getMany") {
       // Text objects (JSON records). Stops early if the response would get too big;
       // the app asks again for whatever is missing.
-      const keys: unknown[] = Array.isArray(body.keys) ? body.keys.slice(0, 500) : [];
+      const keys: unknown[] = Array.isArray(body.keys) ? body.keys.slice(0, 200) : [];
       const items: Record<string, string | null> = {};
       let used = 0;
-      for (let i = 0; i < keys.length && used < GET_MANY_BUDGET; i += 8) {
-        const batch = keys.slice(i, i + 8).filter(validKey) as string[];
+      const started = Date.now();
+      for (let i = 0; i < keys.length && used < GET_MANY_BYTES && Date.now() - started < GET_MANY_MS; i += 16) {
+        const batch = keys.slice(i, i + 16).filter(validKey) as string[];
         const results = await Promise.all(batch.map(async (key) => {
           const res = await cfg.client.fetch(objectUrl(cfg, userRoot + key));
           if (res.status === 404) return [key, null] as const;
@@ -204,9 +212,10 @@ export default async (req: Request, _context: Context) => {
           return [key, await res.text()] as const;
         }));
         for (const [key, text] of results) {
-          if (text && used + text.length > GET_MANY_BUDGET && used > 0) break;
+          const bytes = text ? Buffer.byteLength(JSON.stringify(text)) : 4;
+          if (used + bytes > GET_MANY_BYTES && used > 0) break;
           items[key] = text;
-          used += text?.length || 0;
+          used += bytes;
         }
       }
       return json({ items });

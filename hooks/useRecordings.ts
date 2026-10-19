@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { AnyMemory, Task, CalendarEvent } from '../types';
 import { auth } from '../utils/firebase';
 import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
@@ -6,7 +6,7 @@ import { googleProvider } from '../utils/firebase';
 import { safeSetItem, isNearQuota, stripMediaForCache } from '../utils/safeStorage';
 import { prepareMemoryForCloud } from '../utils/memoryPrep';
 import { deleteLocalFor, getLocal } from '../utils/mediaStore';
-import { syncEngine, MediaField, SyncState } from '../utils/cloudSync';
+import { syncEngine, MediaField, SyncState, Snapshot } from '../utils/cloudSync';
 
 // All data lives in Backblaze B2 (via utils/cloudSync.ts), with a full copy on
 // this device so the app opens instantly and works offline. Firebase is used
@@ -42,12 +42,19 @@ export const useRecordings = () => {
     const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
     const [syncState, setSyncState] = useState<SyncState>({ status: 'starting', pending: 0, ready: false });
 
+    // The last session's quick copy (shown until this account's data is ready)
+    const quickCopyRef = useRef<{ memories: AnyMemory[]; tasks: Task[]; events: CalendarEvent[]; courses: string[]; moodleToken: string | null } | null>(null);
+
     // 1. Quick first paint from the last session's copy
     useEffect(() => {
         try {
             const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
             if (stored) {
                 const data = JSON.parse(stored);
+                quickCopyRef.current = {
+                    memories: data.memories || [], tasks: data.tasks || [], events: data.events || [],
+                    courses: data.courses || [], moodleToken: data.moodleToken || null,
+                };
                 setMemories(data.memories || []);
                 setTasks(data.tasks || []);
                 setSavedCourses(data.courses || []);
@@ -124,35 +131,41 @@ export const useRecordings = () => {
     // 3. Open this account's data and keep it in sync with B2
     useEffect(() => {
         if (!user) return;
+        let cancelled = false;
         let unsubData: (() => void) | undefined;
         let unsubState: (() => void) | undefined;
-        void syncEngine.start(user.uid, !user.isAnonymous).then(() => {
-            unsubState = syncEngine.subscribeState(setSyncState);
-            unsubData = syncEngine.subscribe((snap) => {
-                // Until the first sync has finished, don't replace the quick
-                // copy with an empty device database
-                const empty = snap.memories.length === 0 && snap.tasks.length === 0 && snap.events.length === 0;
-                if (empty && !syncEngine.isReady()) return;
+
+        const show = (snap: Snapshot) => {
+            const quick = quickCopyRef.current;
+            if (syncEngine.isReady() || !quick) {
                 setMemories(snap.memories);
                 setTasks(snap.tasks);
                 setCalendarEvents(snap.events);
                 setSavedCourses(snap.settings.courses || []);
                 setMoodleToken(snap.settings.moodleToken || null);
-            });
-        }).catch(e => console.error('Could not open device storage', e));
-        return () => { unsubData?.(); unsubState?.(); };
-    }, [user]);
+                return;
+            }
+            // Still loading this account's data: the quick copy, plus anything newer
+            const withQuick = <T extends { id: string }>(fresh: T[], old: T[]) =>
+                [...fresh, ...old.filter(o => !fresh.some(f => f.id === o.id))];
+            setMemories(withQuick(snap.memories, quick.memories)
+                .sort((a, b) => (b.date || '').localeCompare(a.date || '')));
+            setTasks(withQuick(snap.tasks, quick.tasks));
+            setCalendarEvents(withQuick(snap.events, quick.events));
+            setSavedCourses(Array.from(new Set([...(snap.settings.courses || []), ...quick.courses])));
+            setMoodleToken(snap.settings.moodleToken || quick.moodleToken);
+        };
 
-    // When the first sync finishes, show whatever it produced (even if empty)
-    useEffect(() => {
-        if (!syncState.ready) return;
-        const snap = syncEngine.getSnapshot();
-        setMemories(snap.memories);
-        setTasks(snap.tasks);
-        setCalendarEvents(snap.events);
-        setSavedCourses(snap.settings.courses || []);
-        setMoodleToken(snap.settings.moodleToken || null);
-    }, [syncState.ready]);
+        void syncEngine.start(user.uid, !user.isAnonymous).then(() => {
+            if (cancelled) return;
+            unsubState = syncEngine.subscribeState((st) => {
+                setSyncState(st);
+                if (st.ready) show(syncEngine.getSnapshot());
+            });
+            unsubData = syncEngine.subscribe(show);
+        }).catch(e => console.error('Could not open device storage', e));
+        return () => { cancelled = true; unsubData?.(); unsubState?.(); };
+    }, [user]);
 
     // 4. Derived courses from memories + savedCourses
     useEffect(() => {
@@ -171,6 +184,8 @@ export const useRecordings = () => {
     // 5. Small copy for the next quick start (media stripped; the full data is
     //    in the device database). Best-effort: trimmed if storage is tight.
     useEffect(() => {
+        // Only a complete picture is worth keeping
+        if (!syncState.ready) return;
         let cached = memories.map(m => stripMediaForCache(m)).slice(0, 300);
         const serialize = () => JSON.stringify({ memories: cached, tasks, courses: savedCourses, moodleToken, events: calendarEvents });
         let payload = serialize();
@@ -179,7 +194,7 @@ export const useRecordings = () => {
             payload = serialize();
         }
         safeSetItem(LOCAL_STORAGE_KEY, payload);
-    }, [memories, tasks, savedCourses, moodleToken, calendarEvents]);
+    }, [memories, tasks, savedCourses, moodleToken, calendarEvents, syncState.ready]);
 
     // --- Changes ---
     const performSync = useCallback(async () => { await syncEngine.syncNow(true); }, []);

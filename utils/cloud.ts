@@ -67,7 +67,7 @@ export const cloud = {
         const out: Record<string, string | null> = {};
         let remaining = [...keys];
         for (let round = 0; remaining.length > 0 && round < 1000; round++) {
-            const { items } = await op<{ items: Record<string, string | null> }>({ op: 'getMany', keys: remaining.slice(0, 200) });
+            const { items } = await op<{ items: Record<string, string | null> }>({ op: 'getMany', keys: remaining.slice(0, 50) });
             const got = Object.keys(items);
             if (got.length === 0) throw new CloudError('Storage returned nothing.', 502);
             Object.assign(out, items);

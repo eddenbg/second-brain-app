@@ -1,9 +1,10 @@
 import type { AnyMemory, Task, CalendarEvent } from '../types';
 import { db } from './firebase';
-import { listPending } from './mediaStore';
 
 // One-time read of everything the app stored in Firestore before moving to
 // B2 (see cloudSync.migrateIfNeeded). Firestore is never written again.
+// Reads come from the server only: a partial offline cache must never be
+// copied over as if it were complete (it throws instead, and is retried).
 
 export interface FirestoreData {
     memories: AnyMemory[];
@@ -14,22 +15,26 @@ export interface FirestoreData {
 
 export async function readFirestoreData(uid: string): Promise<FirestoreData> {
     if (!db || (db as any).type === 'mock') return { memories: [], tasks: [], events: [], settings: null };
-    const { collection, getDocs, doc, getDoc } = await import('firebase/firestore');
+    const { collection, getDocsFromServer, doc, getDocFromServer } = await import('firebase/firestore');
     const read = async <T>(name: string): Promise<T[]> => {
-        const snap = await getDocs(collection(db, 'users', uid, name));
+        const snap = await getDocsFromServer(collection(db, 'users', uid, name));
         return snap.docs.map(d => ({ ...d.data(), id: d.id })) as T[];
     };
-    const [memories, tasks, events, settingsSnap] = await Promise.all([
-        read<AnyMemory>('memories'),
-        read<Task>('tasks'),
-        read<CalendarEvent>('events'),
-        getDoc(doc(db, 'users', uid, 'settings', 'general')),
-    ]);
-    // Saves that had failed under the old setup and were kept on this device
-    const pending = (await listPending()) as AnyMemory[];
-    const known = new Set(memories.map(m => m.id));
-    for (const p of pending) if (p?.id && !known.has(p.id)) memories.push(p);
-
+    let results;
+    try {
+        results = await Promise.all([
+            read<AnyMemory>('memories'),
+            read<Task>('tasks'),
+            read<CalendarEvent>('events'),
+            getDocFromServer(doc(db, 'users', uid, 'settings', 'general')),
+        ]);
+    } catch (e: any) {
+        // This account can't read anything there (never used Firestore): nothing to copy.
+        // Any other error (offline, server busy) is thrown, and the copy is retried.
+        if (e?.code === 'permission-denied') return { memories: [], tasks: [], events: [], settings: null };
+        throw e;
+    }
+    const [memories, tasks, events, settingsSnap] = results;
     const s = settingsSnap.exists() ? (settingsSnap.data() as any) : null;
     return {
         memories,
