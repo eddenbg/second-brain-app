@@ -6,7 +6,7 @@ import { googleProvider } from '../utils/firebase';
 import { safeSetItem, isNearQuota, stripMediaForCache } from '../utils/safeStorage';
 import { prepareMemoryForCloud } from '../utils/memoryPrep';
 import { deleteLocalFor, getLocal } from '../utils/mediaStore';
-import { syncEngine, MediaField, SyncState, Snapshot } from '../utils/cloudSync';
+import { syncEngine, MediaField, SyncState, Snapshot, rememberGuest } from '../utils/cloudSync';
 
 // All data lives in Backblaze B2 (via utils/cloudSync.ts), with a full copy on
 // this device so the app opens instantly and works offline. Firebase is used
@@ -43,7 +43,7 @@ export const useRecordings = () => {
     const [syncState, setSyncState] = useState<SyncState>({ status: 'starting', pending: 0, ready: false });
 
     // The last session's quick copy (shown until this account's data is ready)
-    const quickCopyRef = useRef<{ memories: AnyMemory[]; tasks: Task[]; events: CalendarEvent[]; courses: string[]; moodleToken: string | null } | null>(null);
+    const quickCopyRef = useRef<{ uid?: string; memories: AnyMemory[]; tasks: Task[]; events: CalendarEvent[]; courses: string[]; moodleToken: string | null } | null>(null);
 
     // 1. Quick first paint from the last session's copy
     useEffect(() => {
@@ -52,6 +52,7 @@ export const useRecordings = () => {
             if (stored) {
                 const data = JSON.parse(stored);
                 quickCopyRef.current = {
+                    uid: data.uid,
                     memories: data.memories || [], tasks: data.tasks || [], events: data.events || [],
                     courses: data.courses || [], moodleToken: data.moodleToken || null,
                 };
@@ -136,7 +137,9 @@ export const useRecordings = () => {
         let unsubState: (() => void) | undefined;
 
         const show = (snap: Snapshot) => {
-            const quick = quickCopyRef.current;
+            // Another account's quick copy is never shown
+            const quick = quickCopyRef.current && (!quickCopyRef.current.uid || quickCopyRef.current.uid === user.uid)
+                ? quickCopyRef.current : null;
             if (syncEngine.isReady() || !quick) {
                 setMemories(snap.memories);
                 setTasks(snap.tasks);
@@ -187,14 +190,14 @@ export const useRecordings = () => {
         // Only a complete picture is worth keeping
         if (!syncState.ready) return;
         let cached = memories.map(m => stripMediaForCache(m)).slice(0, 300);
-        const serialize = () => JSON.stringify({ memories: cached, tasks, courses: savedCourses, moodleToken, events: calendarEvents });
+        const serialize = () => JSON.stringify({ uid: user?.uid, memories: cached, tasks, courses: savedCourses, moodleToken, events: calendarEvents });
         let payload = serialize();
         while (cached.length > 0 && isNearQuota(LOCAL_STORAGE_KEY, payload)) {
             cached = cached.slice(0, Math.floor(cached.length * 0.75));
             payload = serialize();
         }
         safeSetItem(LOCAL_STORAGE_KEY, payload);
-    }, [memories, tasks, savedCourses, moodleToken, calendarEvents, syncState.ready]);
+    }, [memories, tasks, savedCourses, moodleToken, calendarEvents, syncState.ready, user]);
 
     // --- Changes ---
     const performSync = useCallback(async () => { await syncEngine.syncNow(true); }, []);
@@ -240,7 +243,19 @@ export const useRecordings = () => {
         })();
     }, []);
 
+    // While this account's data is still loading, the list on screen comes
+    // partly from the quick copy: keep it in step with changes
+    const patchQuickCopy = (kind: 'memories' | 'tasks', id: string, updates: Record<string, unknown> | null) => {
+        const quick = quickCopyRef.current;
+        if (!quick || syncEngine.isReady()) return;
+        const list = quick[kind] as any[];
+        quick[kind] = (updates ? list.map(x => x.id === id ? { ...x, ...updates } : x) : list.filter(x => x.id !== id)) as any;
+        const apply = (prev: any[]) => updates ? prev.map(x => x.id === id ? { ...x, ...updates } : x) : prev.filter(x => x.id !== id);
+        if (kind === 'memories') setMemories(prev => apply(prev)); else setTasks(prev => apply(prev));
+    };
+
     const deleteMemory = useCallback(async (id: string) => {
+        patchQuickCopy('memories', id, null);
         await syncEngine.remove('memories', id);
         void syncEngine.deleteMedia(id);
         void deleteLocalFor(id);
@@ -248,6 +263,7 @@ export const useRecordings = () => {
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
         for (const id of ids) {
+            patchQuickCopy('memories', id, null);
             await syncEngine.remove('memories', id);
             void syncEngine.deleteMedia(id);
             void deleteLocalFor(id);
@@ -255,6 +271,7 @@ export const useRecordings = () => {
     }, []);
 
     const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
+        patchQuickCopy('memories', id, updates as Record<string, unknown>);
         await syncEngine.update('memories', id, updates as Record<string, unknown>);
     }, []);
 
@@ -264,10 +281,12 @@ export const useRecordings = () => {
     }, []);
 
     const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
+        patchQuickCopy('tasks', id, updates as Record<string, unknown>);
         await syncEngine.update('tasks', id, updates as Record<string, unknown>);
     }, []);
 
     const deleteTask = useCallback(async (id: string) => {
+        patchQuickCopy('tasks', id, null);
         await syncEngine.remove('tasks', id);
     }, []);
 
@@ -309,6 +328,8 @@ export const useRecordings = () => {
     const signInWithGoogle = useCallback(async () => {
         if (!auth) throw new Error('Firebase not configured');
         if (auth.currentUser?.isAnonymous) {
+            // So anything made as a guest moves into the account after the redirect
+            rememberGuest(auth.currentUser.uid);
             // Link so the anonymous session's data carries over to the Google account
             await linkWithRedirect(auth.currentUser, googleProvider);
         } else {

@@ -29,9 +29,10 @@ export async function readFirestoreData(uid: string): Promise<FirestoreData> {
             getDocFromServer(doc(db, 'users', uid, 'settings', 'general')),
         ]);
     } catch (e: any) {
-        // This account can't read anything there (never used Firestore): nothing to copy.
-        // Any other error (offline, server busy) is thrown, and the copy is retried.
-        if (e?.code === 'permission-denied') return { memories: [], tasks: [], events: [], settings: null };
+        // Never treat an error as "nothing to copy" — the copy is retried later
+        if (e?.code === 'permission-denied') {
+            throw new Error('Couldn’t read your old data (Firebase refused access). It will be tried again.');
+        }
         throw e;
     }
     const [memories, tasks, events, settingsSnap] = results;

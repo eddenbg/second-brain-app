@@ -216,6 +216,11 @@ export class SyncEngine {
     private syncSoonTimer: ReturnType<typeof setTimeout> | null = null;
     private mediaDownloads = new Map<string, Promise<unknown>>();
     private mediaSynced = new Set<string>();
+    private mediaFailures = new Map<string, number>();
+    private migrating: Promise<void> | null = null;
+    private migrateFailures = 0;
+    private nextMigrateAt = 0;
+    private needsVersionBump = false;
     private startToken = 0;
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
@@ -239,10 +244,26 @@ export class SyncEngine {
             this.mediaSynced = new Set((await this.getMeta<string[]>('mediaSynced')) || []);
             this.migrated = !!(await this.getMeta<boolean>('migrated'));
             this.lastFullCheck = 0;
+            this.mediaFailures.clear();
+            this.migrateFailures = 0;
+            this.nextMigrateAt = 0;
             await this.loadSnapshot();
-            // Things made as a guest before signing in move into this account
             if (previous && cloudEnabled) await this.adoptGuestData(previous.db, previous.name);
             else previous?.db.close();
+        }
+        // Things made as a guest before signing in (the page reloads for
+        // Google sign-in, so the guest's id was remembered) move into this account
+        if (cloudEnabled && token === this.startToken) {
+            const guestUid = readRememberedGuest();
+            if (guestUid && guestUid !== uid) {
+                try {
+                    const guestName = `${this.dbPrefix}-${guestUid}`;
+                    await this.adoptGuestData(await openAccountDb(guestName), guestName);
+                } catch (e) {
+                    console.warn('Could not open guest data', e);
+                }
+            }
+            if (guestUid) forgetRememberedGuest();
         }
         if (token !== this.startToken) return;
         this.canUseCloud = cloudEnabled;
@@ -439,9 +460,15 @@ export class SyncEngine {
             // Not loaded yet (first start offline): keep the change and apply it
             // once the record arrives
             if (!this.db) return;
-            const patches = (await this.getMeta<Record<string, any>>('patches')) || {};
-            patches[key] = { ...(patches[key] || {}), ...changes };
-            await this.setMeta('patches', patches);
+            await tx(this.db, META, 'readwrite', t => {
+                const store = t.objectStore(META);
+                const req = store.get('patches');
+                req.onsuccess = () => {
+                    const patches = req.result || {};
+                    patches[key] = { ...(patches[key] || {}), ...changes };
+                    store.put(patches, 'patches');
+                };
+            });
             return;
         }
         return this.writeRecord(key, stripUndefined({ ...current, ...changes }), Object.keys(changes));
@@ -493,11 +520,13 @@ export class SyncEngine {
         const patches = (await this.getMeta<Record<string, any>>('patches')) || {};
         const keys = Object.keys(patches);
         if (!keys.length) return;
+        const left: Record<string, any> = {};
         for (const key of keys) {
             const current = this.recordFromSnapshot(key);
             if (current) await this.writeRecord(key, stripUndefined({ ...current, ...patches[key] }), Object.keys(patches[key]));
+            else left[key] = patches[key];
         }
-        await this.setMeta('patches', {});
+        await this.setMeta('patches', left);
     }
 
     // ── Sending records ────────────────────────────────────────────────────
@@ -513,7 +542,7 @@ export class SyncEngine {
             .map(([, v]) => v as OutboxEntry)
             .filter(e => e.type === 'put' || e.type === 'delete' || e.type === 'deleteMedia')
             .sort((a, b) => a.seq - b.seq);
-        if (entries.length === 0) return;
+        if (entries.length === 0 && !this.needsVersionBump) return;
         this.setState({ status: 'syncing' });
 
         const records = entries.filter(e => e.type === 'put' || e.type === 'delete');
@@ -562,11 +591,18 @@ export class SyncEngine {
             }
             for (const k of deletes) delete this.etags[k];
             await this.removeSent(records);
-            await this.bumpVersion();
             await this.setMeta('etags', this.etags);
+            this.needsVersionBump = true;
+        }
+        if (this.needsVersionBump) {
+            await this.bumpVersion();
+            this.needsVersionBump = false;
         }
 
-        for (const e of entries.filter(e => e.type === 'deleteMedia')) {
+        const mediaDeletes = entries.filter(e => e.type === 'deleteMedia');
+        // Let a running upload notice the deletion and stop first
+        if (mediaDeletes.length && this.mediaFlushing) await this.mediaFlushing.catch(() => {});
+        for (const e of mediaDeletes) {
             await cloud.deletePrefix(`media/${e.memoryId}/`);
             for (const f of MEDIA_FIELDS) this.mediaSynced.delete(`${e.memoryId}:${f}`);
             await this.setMeta('mediaSynced', [...this.mediaSynced]);
@@ -594,13 +630,26 @@ export class SyncEngine {
             if (!text) continue;
             let theirs: any;
             try { theirs = JSON.parse(text); } catch { continue; }
-            const ours = await tx<any>(db, RECORDS, 'readonly', t => t.objectStore(RECORDS).get(e.key!));
-            if (!ours) continue;
-            const merged: any = { ...theirs };
-            for (const f of e.fields!) merged[f] = ours[f];
-            await tx(db, RECORDS, 'readwrite', t => { t.objectStore(RECORDS).put(stripUndefined(merged), e.key!); });
-            this.applyLocal(e.key!, merged);
-            this.etags[e.key!] = remote.get(e.key!)!;
+            // Read ours and write the merge in one go; if another edit landed
+            // meanwhile (newer outbox entry), leave it for the next round
+            await tx(db, [RECORDS, OUTBOX], 'readwrite', t => {
+                const records = t.objectStore(RECORDS);
+                const entryReq = t.objectStore(OUTBOX).get(e.id);
+                entryReq.onsuccess = () => {
+                    if (!entryReq.result || entryReq.result.seq !== e.seq) return;
+                    const oursReq = records.get(e.key!);
+                    oursReq.onsuccess = () => {
+                        const ours = oursReq.result;
+                        if (!ours) return;
+                        const merged: any = { ...theirs };
+                        for (const f of e.fields!) merged[f] = ours[f];
+                        const clean = stripUndefined(merged);
+                        records.put(clean, e.key!);
+                        this.applyLocal(e.key!, clean);
+                        this.etags[e.key!] = remote.get(e.key!)!;
+                    };
+                };
+            });
         }
         this.emit();
     }
@@ -638,16 +687,32 @@ export class SyncEngine {
     }
 
     private async doFlushMedia() {
+        let lastError: unknown = null;
         for (;;) {
+            // Oldest first, skipping any that keep failing this session (so one
+            // problem file can't hold up every later recording)
             const next = (await getAllWithKeys(this.db!, OUTBOX))
                 .map(([, v]) => v as OutboxEntry)
-                .filter(e => e.type === 'media')
+                .filter(e => e.type === 'media' && (this.mediaFailures.get(e.id) || 0) < 3)
                 .sort((a, b) => a.seq - b.seq)[0];
-            if (!next || !this.canUseCloud) return;
-            await this.uploadMedia(next);
-            await this.removeSent([next]);
+            if (!next || !this.canUseCloud) break;
+            try {
+                await this.uploadMedia(next);
+                await this.removeSent([next]);
+                this.mediaFailures.delete(next.id);
+            } catch (e) {
+                this.mediaFailures.set(next.id, (this.mediaFailures.get(next.id) || 0) + 1);
+                lastError = e;
+                if (typeof navigator !== 'undefined' && navigator.onLine === false) break;
+            }
             await this.refreshPending();
         }
+        if (lastError) throw lastError;
+    }
+
+    private async outboxHas(entry: OutboxEntry): Promise<boolean> {
+        const cur = await tx<OutboxEntry | undefined>(this.db!, OUTBOX, 'readonly', t => t.objectStore(OUTBOX).get(entry.id));
+        return !!cur && cur.seq === entry.seq;
     }
 
     private async uploadMedia(entry: OutboxEntry) {
@@ -660,6 +725,8 @@ export class SyncEngine {
         const base = mediaBase(memoryId, field);
         const parts = Math.max(1, Math.ceil(up.blob.size / MEDIA_PIECE_BYTES));
         for (let p = entry.partsDone || 0; p < parts; p++) {
+            // Stop if the memory was deleted meanwhile
+            if (!(await this.outboxHas(entry))) return;
             await cloud.putBin(partKey(base, p), up.blob.slice(p * MEDIA_PIECE_BYTES, (p + 1) * MEDIA_PIECE_BYTES), 'application/octet-stream');
             // Remember progress, so an interrupted upload resumes here
             await tx(this.db!, OUTBOX, 'readwrite', t => {
@@ -671,6 +738,7 @@ export class SyncEngine {
             });
         }
         // The index goes last: a reader only sees complete files
+        if (!(await this.outboxHas(entry))) return;
         await cloud.putText([{ key: `${base}/index.json`, text: JSON.stringify({ kind: up.kind, type: up.type, size: up.blob.size, parts }) }]);
         this.mediaSynced.add(`${memoryId}:${field}`);
         await this.setMeta('mediaSynced', [...this.mediaSynced]);
@@ -749,7 +817,9 @@ export class SyncEngine {
         const { [VERSION_KEY]: version } = remote.some(i => i.key === VERSION_KEY) ? await cloud.getMany([VERSION_KEY]) : { [VERSION_KEY]: null };
 
         const texts = toFetch.length ? await cloud.getMany(toFetch) : {};
+        if (db !== this.db) return; // account changed meanwhile
         let changed = false;
+        let restoreMarker = false;
         const reupload: string[] = [];
 
         // One transaction over records + outbox: a change made on this device
@@ -784,6 +854,16 @@ export class SyncEngine {
                     delete this.etags[key];
                 };
             }
+            // Storage location empty or changed (new bucket / prefix, wiped):
+            // this device's copy is put back there
+            if (!sentinel && this.migrated && this.hasData()) {
+                for (const key of [...this.allLocalKeys()]) {
+                    reupload.push(key);
+                    mergeOutboxPut(outbox, key, null);
+                }
+                this.etags = {};
+                restoreMarker = true;
+            }
             // Seen in the cloud before, now missing without a marker: the cloud
             // lost it (wrong settings, manual cleanup). Keep ours and upload again.
             if (sentinel) {
@@ -803,13 +883,45 @@ export class SyncEngine {
         await this.setMeta('etags', this.etags);
         if (changed) this.emit();
         await this.refreshPending();
+        if (restoreMarker) {
+            this.setState({ status: 'syncing', message: 'Cloud storage was empty — uploading this device’s copy…' });
+            await this.flush();
+            await cloud.putText([{ key: MIGRATED_KEY, text: JSON.stringify({ at: new Date().toISOString(), restoredFromDevice: true }) }]);
+            this.setState({ message: undefined });
+            return;
+        }
         if (reupload.length) this.syncSoon();
         this.setState({ status: this.state.pending ? 'syncing' : 'synced', message: undefined, lastSynced: new Date().toISOString() });
     }
 
+    private *allLocalKeys(): Generator<string> {
+        for (const c of ['memories', 'tasks', 'events'] as Collection[]) for (const r of this.snapshot[c] as any[]) yield recordKey(c, r.id);
+        yield SETTINGS_KEY;
+    }
+
     // ── Moving in from the old setup ───────────────────────────────────────
     /** One-time copy of the old Firestore data (by whichever device opens first). */
-    private async migrateIfNeeded() {
+    private migrateIfNeeded(): Promise<void> {
+        if (this.migrated) return Promise.resolve();
+        if (this.migrating) return this.migrating;
+        if (Date.now() < this.nextMigrateAt) {
+            return Promise.reject(new Error('Couldn’t copy your old data yet — will try again in a few minutes.'));
+        }
+        this.migrating = this.doMigrate()
+            .then(() => { this.migrateFailures = 0; })
+            .catch((e) => {
+                // Back off (5, 15, then 60 minutes) so a lasting problem doesn't
+                // re-read all of the old database every minute
+                const minutes = [5, 15, 60][Math.min(this.migrateFailures, 2)];
+                this.migrateFailures++;
+                this.nextMigrateAt = Date.now() + minutes * 60_000;
+                throw e;
+            })
+            .finally(() => { this.migrating = null; });
+        return this.migrating;
+    }
+
+    private async doMigrate() {
         if (this.migrated) return;
         const marker = await cloud.getMany([MIGRATED_KEY]);
         if (marker[MIGRATED_KEY]) {
@@ -888,6 +1000,13 @@ export class SyncEngine {
         }
     }
 }
+
+// The guest (anonymous) account id is remembered before the Google sign-in
+// redirect, so its data can be moved into the account after the page reloads
+const GUEST_KEY = 'second-brain-guest-uid';
+export const rememberGuest = (uid: string) => { try { localStorage.setItem(GUEST_KEY, uid); } catch { /* unavailable */ } };
+const readRememberedGuest = (): string | null => { try { return localStorage.getItem(GUEST_KEY); } catch { return null; } };
+const forgetRememberedGuest = () => { try { localStorage.removeItem(GUEST_KEY); } catch { /* unavailable */ } };
 
 /** Copy without undefined fields at any depth (B2 stores JSON; keeps records tidy). */
 export const stripUndefined = (value: any): any => {
