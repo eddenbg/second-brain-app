@@ -1,7 +1,8 @@
-// Device-local storage (IndexedDB) for things too large for Firestore.
-// Firestore documents are capped at 1 MB, so recorded audio (and, for very
-// long lectures, drawings) are kept here instead, keyed by memory id. Also
-// holds a backup of any memory whose cloud save failed, so nothing is lost.
+// Device storage (IndexedDB) for a memory's large parts: recorded audio,
+// photos, PDFs and very long drawings, keyed "<memoryId>:<field>". They are
+// also uploaded to cloud storage (utils/cloudSync.ts); on another device they
+// are downloaded on first use and kept here. The "pending" store is from the
+// old Firestore setup (saves that had failed); its items are moved over once.
 
 const DB_NAME = 'second-brain-media';
 const DB_VERSION = 1;
@@ -40,8 +41,26 @@ const run = async <T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObject
 export const putLocal = (key: string, value: unknown): Promise<void> =>
     run<IDBValidKey>(MEDIA_STORE, 'readwrite', s => s.put(value, key)).then(() => undefined);
 
-export const getLocal = <T = unknown>(key: string): Promise<T | undefined> =>
-    run<T | undefined>(MEDIA_STORE, 'readonly', s => s.get(key)).catch(() => undefined);
+const MEDIA_KEY = /^(.+):(audio|image|pdf|notebook|structuredTranscript|transcript|extractedText)$/;
+
+/**
+ * Read an item kept on this device. A memory's media (recording, photo, PDF,
+ * big drawings) that isn't here yet is fetched from cloud storage and kept
+ * here from then on — unless `localOnly` is set.
+ */
+export const getLocal = async <T = unknown>(key: string, opts: { localOnly?: boolean } = {}): Promise<T | undefined> => {
+    const here = await run<T | undefined>(MEDIA_STORE, 'readonly', s => s.get(key)).catch(() => undefined);
+    if (here !== undefined || opts.localOnly) return here;
+    const m = key.match(MEDIA_KEY);
+    if (!m) return undefined;
+    try {
+        const { syncEngine } = await import('./cloudSync');
+        return (await syncEngine.fetchMedia(m[1], m[2] as any)) as T | undefined;
+    } catch (e) {
+        console.warn('Could not fetch from cloud storage', key, e);
+        return undefined;
+    }
+};
 
 export const deleteLocalFor = async (memoryId: string): Promise<void> => {
     try {

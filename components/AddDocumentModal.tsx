@@ -44,7 +44,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     // Two pickers: the phone's photo picker (default — photos on the device,
-    // fastest) and Android's full file chooser (Google Photos, Drive, …)
+    // fastest) and Android's full file chooser (other apps: Files, Photos, …)
     const fileInputRef = useRef<HTMLInputElement>(null);
     const cloudInputRef = useRef<HTMLInputElement>(null);
     const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -158,7 +158,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
     };
 
     // PDF (lecture slides, handouts): read every page's text so it can be
-    // listened to and asked about. The file itself is kept on this device.
+    // listened to and asked about. The file itself is kept with it (on this device and in cloud storage).
     const processPdf = async (file: File, selectionId: number) => {
         const isCurrent = () => selectionId === selectionIdRef.current;
         setPreviewUrl(null);
@@ -299,14 +299,14 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                 aria-label="Choose image from gallery"
             />
             {/* A non-image type makes Android open its full file chooser, which
-                lists Google Photos and Drive as sources */}
+                lists other apps (Files, Photos, …) as sources */}
             <input
                 ref={cloudInputRef}
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={handleFileSelect}
                 className="hidden"
-                aria-label="Choose image from Google Photos or Drive"
+                aria-label="Choose image or PDF from other apps"
             />
             <input
                 ref={pdfInputRef}
@@ -357,7 +357,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                                 className="w-full py-4 bg-white/10 text-white rounded-2xl font-black text-sm uppercase flex items-center justify-center gap-2 border-2 border-white/20 transition-all active:scale-95"
                             >
                                 <Cloud className="w-5 h-5" strokeWidth={2.5} />
-                                Google Photos / Drive
+                                Other apps (Files, Photos…)
                             </button>
                         </div>
                     </div>
@@ -450,7 +450,7 @@ const AddDocumentModal: React.FC<AddDocumentModalProps> = ({ course, onSave, onC
                                 className="w-full py-4 bg-white/10 text-white font-black rounded-2xl text-sm uppercase flex items-center justify-center gap-2 border-2 border-white/20"
                             >
                                 <Cloud className="w-5 h-5" strokeWidth={2.5} />
-                                Google Photos / Drive
+                                Other apps (Files, Photos…)
                             </button>
                             <button
                                 onClick={() => { setPreviewUrl(null); setPhase('camera'); startCamera(facingMode); }}

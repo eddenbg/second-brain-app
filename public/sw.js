@@ -1,4 +1,4 @@
-const CACHE_NAME = 'second-brain-v48';
+const CACHE_NAME = 'second-brain-v49';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -61,6 +61,8 @@ self.addEventListener('fetch', (event) => {
 
   if (event.request.method !== 'GET') return;
   if (url.pathname.startsWith('/.netlify/')) return;
+  // App API (cloud storage, Moodle): always live, never cached
+  if (url.pathname.startsWith('/api/')) return;
   // Firebase Auth helper pages (Google sign-in redirect) must hit the network
   if (url.pathname.startsWith('/__/')) return;
 

@@ -13,8 +13,6 @@ import { safeSetItem } from './utils/safeStorage';
 import { fetchMoodleEvents, fetchMoodleCourses, fetchCourseContents } from './services/moodleService';
 import { processSharedUrl } from './services/geminiService';
 import { saveNotionToken, getStoredNotionClientId, getStoredNotionClientSecret } from './services/notionService';
-import { getStoredToken, fetchGoogleCalendarEvents } from './services/googleCalendarService';
-import { refreshGoogleToken, watchGoogleTokenExpiry, GOOGLE_TOKEN_REFRESHED_EVENT } from './services/googleAuthService';
 import type { AnyMemory, WebMemory, CalendarEvent, Task, FileMemory } from './types';
 import { Settings, Loader2, Brain, Calendar } from 'lucide-react';
 
@@ -47,7 +45,6 @@ function App() {
     (localStorage.getItem('font_size') as 'normal' | 'large' | 'xlarge') || 'normal'
   );
   const [moodleEvents, setMoodleEvents] = useState<CalendarEvent[]>([]);
-  const [googleEvents, setGoogleEvents] = useState<CalendarEvent[]>([]);
   const [sharedContent, setSharedContent] = useState<{ url: string; title: string } | null>(null);
   const [isProcessingShare, setIsProcessingShare] = useState(false);
   const [isSyncingMoodle, setIsSyncingMoodle] = useState(false);
@@ -134,14 +131,14 @@ function App() {
     moodleToken, saveMoodleToken,
     signInWithGoogle, signOut: signOutUser,
     storageWarning,
-    authError, clearAuthError,
+    authError, clearAuthError, syncState, performSync,
     calendarEvents, addCalendarEvent: saveCalendarEvent, deleteCalendarEvent: removeCalendarEvent,
   } = useRecordings();
 
   // A memory couldn't reach the cloud — it's kept on the device and retried
   useEffect(() => {
     const onFailed = () => {
-      setToast('Saved on this device only for now — will upload when back online.');
+      setToast('Couldn’t save — this device’s storage refused it. Try again; if it keeps happening, free up space on the phone.');
       setTimeout(() => setToast(null), 6000);
     };
     window.addEventListener(MEMORY_SAVE_FAILED_EVENT, onFailed);
@@ -360,58 +357,14 @@ function App() {
       }
   };
 
-  // Google API token (Calendar/Drive) expiry: detected via onAuthStateChanged,
-  // visibility changes, a 1-minute check, and 401 responses from API calls.
-  const [googleExpired, setGoogleExpired] = useState(false);
-  const [googleTokenVersion, setGoogleTokenVersion] = useState(0);
-  const [isReconnectingGoogle, setIsReconnectingGoogle] = useState(false);
-
-  useEffect(() => watchGoogleTokenExpiry(setGoogleExpired), []);
-
-  useEffect(() => {
-    const onRefreshed = () => {
-      setGoogleExpired(false);
-      setGoogleTokenVersion(v => v + 1);
-    };
-    window.addEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
-    return () => window.removeEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
-  }, []);
-
-  const reconnectGoogle = useCallback(async () => {
-    setIsReconnectingGoogle(true);
-    try {
-      const ok = await refreshGoogleToken(true);
-      if (ok) {
-        setToast('Google reconnected');
-        setTimeout(() => setToast(null), 3000);
-      }
-    } catch (e: any) {
-      if (e?.code !== 'auth/popup-closed-by-user') {
-        setToast('Could not reconnect Google. Try again.');
-        setTimeout(() => setToast(null), 5000);
-      }
-    } finally {
-      setIsReconnectingGoogle(false);
-    }
-  }, []);
-
-  // Load Google Calendar events (again after every token refresh)
-  useEffect(() => {
-    const token = getStoredToken();
-    if (!token) return;
-    fetchGoogleCalendarEvents(token)
-      .then(events => setGoogleEvents(events))
-      .catch(() => setGoogleEvents([]));
-  }, [googleTokenVersion]);
-
   const allCalendarEvents = useMemo(() => {
     const seen = new Set<string>();
-    return [...calendarEvents, ...moodleEvents, ...googleEvents].filter(e => {
+    return [...calendarEvents, ...moodleEvents].filter(e => {
       if (seen.has(e.id)) return false;
       seen.add(e.id);
       return true;
     }).sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-  }, [calendarEvents, moodleEvents, googleEvents]);
+  }, [calendarEvents, moodleEvents]);
 
   // hardware back button / browser back handling
   useEffect(() => {
@@ -483,10 +436,6 @@ function App() {
             onUpdate={updateMemory}
             backHandlerRef={filesBackHandlerRef}
             moodleToken={moodleToken}
-            isGoogleUser={!!user && !user.isAnonymous}
-            googleExpired={googleExpired}
-            googleTokenVersion={googleTokenVersion}
-            onReconnectGoogle={reconnectGoogle}
           />
         );
       default:
@@ -556,22 +505,6 @@ function App() {
         </div>
       </header>
 
-      {/* Google token expired banner */}
-      {googleExpired && (
-        <div role="alert" className="flex-shrink-0 bg-yellow-500 text-[#001F3F] px-4 py-2 flex items-center justify-between gap-3 z-10">
-          <p className="font-black text-xs uppercase tracking-widest">Google connection expired.</p>
-          <button
-            onClick={reconnectGoogle}
-            disabled={isReconnectingGoogle}
-            className="flex items-center gap-2 px-4 py-2 bg-[#001F3F] text-white rounded-xl font-black text-xs uppercase tracking-widest active:scale-95 transition-transform disabled:opacity-60"
-            style={{ minHeight: 'unset' }}
-          >
-            {isReconnectingGoogle && <Loader2 className="animate-spin" size={14} strokeWidth={3} />}
-            {isReconnectingGoogle ? 'Reconnecting…' : 'Reconnect'}
-          </button>
-        </div>
-      )}
-
       {/* Main content */}
       <main className="flex-grow overflow-hidden relative">
         <div className="max-w-4xl mx-auto h-full overflow-y-auto no-scrollbar p-4">{renderView()}</div>
@@ -595,6 +528,8 @@ function App() {
           onToggleHighContrast={toggleHighContrast}
           fontSize={fontSize}
           onCycleFontSize={cycleFontSize}
+          syncState={syncState}
+          onSyncNow={() => { void performSync(); }}
         />
       )}
       {showSchedule && (

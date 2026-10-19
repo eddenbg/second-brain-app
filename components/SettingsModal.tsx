@@ -3,19 +3,10 @@ import { User } from 'firebase/auth';
 import {
     XIcon, LinkIcon, Loader2Icon, BrainCircuitIcon, GlobeIcon
 } from './Icons';
-import { Calendar } from 'lucide-react';
 import ReadAloudSettings from './ReadAloudSettings';
 import { testMoodleConnection, loginWithCredentials } from '../services/moodleService';
-import {
-    disconnectGoogleCalendar,
-    getStoredToken,
-} from '../services/googleCalendarService';
-import {
-    disconnectGoogleDrive,
-    getStoredDriveToken
-} from '../services/googleDriveService';
 import { auth } from '../utils/firebase';
-import { refreshGoogleToken, GOOGLE_TOKEN_REFRESHED_EVENT } from '../services/googleAuthService';
+import type { SyncState } from '../utils/cloudSync';
 
 declare const __BUILD_DATE__: string;
 
@@ -23,7 +14,6 @@ interface SettingsModalProps {
     onClose: () => void;
     moodleToken: string | null;
     onSaveMoodleToken: (token: string) => void;
-    onGoogleConnected?: () => void;
     user?: User | null;
     onSignIn?: () => Promise<void>;
     onSignOut?: () => Promise<void>;
@@ -33,7 +23,24 @@ interface SettingsModalProps {
     onToggleHighContrast?: () => void;
     fontSize?: 'normal' | 'large' | 'xlarge';
     onCycleFontSize?: () => void;
+    syncState?: SyncState;
+    onSyncNow?: () => void;
 }
+
+// Cloud storage (Backblaze B2) status, in plain words
+const describeSync = (s?: SyncState): { label: string; detail: string; tone: 'ok' | 'busy' | 'warn' } => {
+    if (!s) return { label: '', detail: '', tone: 'ok' };
+    const waiting = s.pending > 0 ? ` ${s.pending} change${s.pending === 1 ? '' : 's'} waiting to upload.` : '';
+    switch (s.status) {
+        case 'synced': return { label: 'Synced ✓', detail: `Everything is saved in cloud storage (B2).${s.lastSynced ? ` Last checked ${new Date(s.lastSynced).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` : ''}`, tone: 'ok' };
+        case 'syncing':
+        case 'starting': return { label: 'Syncing…', detail: (s.message || 'Saving to cloud storage (B2)…') + waiting, tone: 'busy' };
+        case 'offline': return { label: 'Offline', detail: 'Saved on this device. It uploads by itself when you’re back online.' + waiting, tone: 'warn' };
+        case 'not-configured': return { label: 'Not set up', detail: 'Cloud storage isn’t connected yet (B2 keys missing in Netlify). Everything is kept on this device until it is.', tone: 'warn' };
+        case 'signed-out': return { label: 'Not syncing', detail: s.message || 'Sign in with Google to sync.', tone: 'warn' };
+        default: return { label: 'Retrying', detail: (s.message || 'Sync problem — retrying.') + waiting, tone: 'warn' };
+    }
+};
 
 const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) => {
     const [copied, setCopied] = useState(false);
@@ -54,17 +61,6 @@ const CopyButton: React.FC<{ text: string; label: string }> = ({ text, label }) 
     );
 };
 
-const DRIVE_LOGO = (
-    <svg viewBox="0 0 87.3 78" className="w-7 h-7 sm:w-8 sm:h-8 shrink-0">
-        <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
-        <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 48.6C.4 50 0 51.55 0 53.1h27.5z" fill="#00AC47"/>
-        <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.85l5.9 11.9z" fill="#EA4335"/>
-        <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.95 0H34.35c-1.55 0-3.1.4-4.45 1.2z" fill="#00832D"/>
-        <path d="M59.85 53.1H27.5L13.75 76.9c1.35.8 2.9 1.1 4.45 1.1h50.9c1.55 0 3.1-.4 4.45-1.2z" fill="#2684FC"/>
-        <path d="M73.4 26.85l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.2 28.1H87.3c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/>
-    </svg>
-);
-
 const GOOGLE_LOGO = (
     <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0">
         <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -74,7 +70,7 @@ const GOOGLE_LOGO = (
     </svg>
 );
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, onGoogleConnected, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onSaveMoodleToken, user, onSignIn, onSignOut, isDarkMode = false, onToggleDarkMode, isHighContrast = false, onToggleHighContrast, fontSize = 'normal', onCycleFontSize, syncState, onSyncNow }) => {
 
     const [isSigningIn, setIsSigningIn] = useState(false);
     const [isSigningOut, setIsSigningOut] = useState(false);
@@ -84,10 +80,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
     const [moodlePassword, setMoodlePassword] = useState('');
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [moodleLoginError, setMoodleLoginError] = useState<string | null>(null);
-    const [isGoogleConnected, setIsGoogleConnected] = useState(!!getStoredToken());
-    const [isDriveConnected, setIsDriveConnected] = useState(!!getStoredDriveToken());
-    const [isRefreshing, setIsRefreshing] = useState<'calendar' | 'drive' | null>(null);
-    const [refreshError, setRefreshError] = useState<string | null>(null);
     const [firebaseUID, setFirebaseUID] = useState<string>('');
     const [refreshToken, setRefreshToken] = useState<string>('');
     const [showMCPSetup, setShowMCPSetup] = useState(false);
@@ -105,14 +97,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                 setRefreshToken(rt);
             }
         });
-        const onRefreshed = () => {
-            setIsGoogleConnected(!!getStoredToken());
-            setIsDriveConnected(!!getStoredDriveToken());
-        };
-        window.addEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
         return () => {
             unsubscribe?.();
-            window.removeEventListener(GOOGLE_TOKEN_REFRESHED_EVENT, onRefreshed);
         };
     }, []);
 
@@ -134,16 +120,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         }
     };
 
-    const handleDisconnectGoogle = () => {
-        disconnectGoogleCalendar();
-        setIsGoogleConnected(false);
-    };
-
-    const handleDisconnectDrive = () => {
-        disconnectGoogleDrive();
-        setIsDriveConnected(false);
-    };
-
     const handleSignOut = async () => {
         if (!onSignOut || isSigningOut) return;
         setIsSigningOut(true);
@@ -163,8 +139,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
         setSignInError(null);
         try {
             await onSignIn();
-            setIsGoogleConnected(!!getStoredToken());
-            setIsDriveConnected(!!getStoredDriveToken());
         } catch (e: any) {
             if (e.code === 'auth/unauthorized-domain') {
                 setSignInError('Domain not authorized. Go to Firebase Console → Authentication → Settings → Authorized domains and add eddenbg-second-brain.netlify.app');
@@ -174,23 +148,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
             console.error('Google sign-in error', e.code, e.message);
         } finally {
             setIsSigningIn(false);
-        }
-    };
-
-    // Refresh the Google access token for the signed-in account (no sign-out needed)
-    const handleRefreshGoogle = async (which: 'calendar' | 'drive') => {
-        setIsRefreshing(which);
-        setRefreshError(null);
-        try {
-            await refreshGoogleToken(true);
-        } catch (e: any) {
-            if (e?.code !== 'auth/popup-closed-by-user') {
-                setRefreshError(e?.message || 'Could not refresh the Google connection. Please try again.');
-            }
-        } finally {
-            setIsGoogleConnected(!!getStoredToken());
-            setIsDriveConnected(!!getStoredDriveToken());
-            setIsRefreshing(null);
         }
     };
 
@@ -300,14 +257,24 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                                 {GOOGLE_LOGO}
                             </div>
                             <p className="text-base sm:text-lg font-black text-white uppercase">Account &amp; Sync</p>
-                            {user?.isAnonymous === false && <div className="ml-auto bg-blue-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Syncing ✓</div>}
+                            {user?.isAnonymous === false && describeSync(syncState).label && (
+                                <div className={`ml-auto px-3 py-1 rounded-full text-[9px] font-black uppercase ${describeSync(syncState).tone === 'warn' ? 'bg-yellow-500 text-black' : 'bg-blue-600 text-white'}`}>{describeSync(syncState).label}</div>
+                            )}
                         </div>
                         {user?.isAnonymous === false ? (
                             <>
                                 <p className="text-white font-black text-sm mb-1">{user.email}</p>
-                                <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                    Your data syncs automatically across all signed-in devices.
+                                <p role="status" aria-live="polite" className="text-gray-400 font-bold text-xs mb-3 leading-relaxed">
+                                    {describeSync(syncState).detail || 'Your data syncs automatically across all signed-in devices.'}
                                 </p>
+                                {onSyncNow && (
+                                    <button
+                                        onClick={onSyncNow}
+                                        className="w-full py-3 mb-3 rounded-2xl font-black text-sm uppercase bg-blue-600 text-white active:scale-95"
+                                    >
+                                        Sync now
+                                    </button>
+                                )}
                                 <button
                                     onClick={handleSignOut}
                                     disabled={isSigningOut}
@@ -322,7 +289,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
                         ) : (
                             <>
                                 <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">
-                                    Sign in with Google to sync your notes, recordings, and tasks in real time across all your devices.
+                                    Sign in with Google to sync your notes, recordings and tasks between your devices (stored in your Backblaze B2).
                                 </p>
                                 <button
                                     onClick={handleSignIn}
@@ -339,72 +306,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, moodleToken, onS
 
                     <div className="space-y-4 sm:space-y-6">
                         <h3 className="text-blue-400 font-black text-xs uppercase tracking-widest px-2">External Connections</h3>
-
-                        {/* Google Calendar */}
-                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${isGoogleConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
-                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
-                                <Calendar className={`w-7 h-7 sm:w-8 sm:h-8 ${isGoogleConnected ? 'text-green-400' : 'text-gray-500'}`} />
-                                <p className="text-base sm:text-lg font-black text-white uppercase">Google Calendar</p>
-                                {isGoogleConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
-                            </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connects automatically when you sign in with Google. Your calendar events appear in the monthly view.</p>
-                            {isGoogleConnected ? (
-                                <button
-                                    onClick={handleDisconnectGoogle}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
-                                >
-                                    Disconnect
-                                </button>
-                            ) : user?.isAnonymous === false ? (
-                                <>
-                                    <p className="text-yellow-400 font-bold text-xs mb-3">Connection expired. Tap below to refresh it — no need to sign out.</p>
-                                    <button
-                                        onClick={() => handleRefreshGoogle('calendar')}
-                                        disabled={isRefreshing !== null}
-                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
-                                    >
-                                        {isRefreshing === 'calendar' ? <Loader2Icon className="w-5 h-5 animate-spin" /> : <Calendar className="w-5 h-5" />}
-                                        {isRefreshing === 'calendar' ? 'Refreshing…' : 'Refresh Calendar'}
-                                    </button>
-                                    {refreshError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{refreshError}</p>}
-                                </>
-                            ) : (
-                                <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Calendar automatically.</p>
-                            )}
-                        </div>
-
-                        {/* Google Drive */}
-                        <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${isDriveConnected ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>
-                            <div className="flex items-center gap-3 sm:gap-4 mb-3">
-                                {DRIVE_LOGO}
-                                <p className="text-base sm:text-lg font-black text-white uppercase">Google Drive</p>
-                                {isDriveConnected && <div className="ml-auto bg-green-600 text-white px-3 py-1 rounded-full text-[9px] font-black uppercase">Active</div>}
-                            </div>
-                            <p className="text-gray-400 font-bold text-xs mb-4 leading-relaxed">Connects automatically when you sign in with Google. Browse and import files from Drive into the Files Vault.</p>
-                            {isDriveConnected ? (
-                                <button
-                                    onClick={handleDisconnectDrive}
-                                    className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl transition-all active:scale-95 flex items-center justify-center gap-3 bg-gray-700 text-white"
-                                >
-                                    Disconnect Drive
-                                </button>
-                            ) : user?.isAnonymous === false ? (
-                                <>
-                                    <p className="text-yellow-400 font-bold text-xs mb-3">Connection expired. Tap below to refresh it — no need to sign out.</p>
-                                    <button
-                                        onClick={() => handleRefreshGoogle('drive')}
-                                        disabled={isRefreshing !== null}
-                                        className="w-full py-3 rounded-2xl font-black text-sm uppercase shadow-xl active:scale-95 flex items-center justify-center gap-3 bg-blue-600 text-white disabled:opacity-60"
-                                    >
-                                        {isRefreshing === 'drive' ? <Loader2Icon className="w-5 h-5 animate-spin" /> : null}
-                                        {isRefreshing === 'drive' ? 'Refreshing…' : 'Refresh Drive'}
-                                    </button>
-                                    {refreshError && <p className="text-red-400 text-xs font-bold mt-2 text-center">{refreshError}</p>}
-                                </>
-                            ) : (
-                                <p className="text-gray-500 font-bold text-xs">Sign in with Google above to connect Drive automatically.</p>
-                            )}
-                        </div>
 
                         {/* Moodle */}
                         <div className={`p-5 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem] border-2 transition-all ${moodleToken ? 'bg-green-900/20 border-green-700' : 'bg-gray-900 border-gray-700'}`}>

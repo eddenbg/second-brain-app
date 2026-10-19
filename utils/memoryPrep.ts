@@ -1,12 +1,14 @@
 import type { AnyMemory, NotebookData, TranscriptSegment } from '../types';
 import { putLocal, localKey } from './mediaStore';
 
-// Firestore rejects documents over 1 MB (a few minutes of recorded audio
-// already exceeds that). Before a memory goes to the cloud, large parts are
-// moved to device storage and the rest is compacted, so saving never fails
-// because of size.
+// Before a memory is saved, its large parts (recorded audio, PDF, photo, very
+// long drawings) are moved to the device media store; from there they are
+// uploaded to B2 as separate files (utils/cloudSync.ts). The record itself
+// stays small, so syncing it between devices is quick.
 
 const MAX_CLOUD_BYTES = 900_000;
+// Text is only trimmed for truly huge records (the full text is kept as a file)
+const MAX_TEXT_BYTES = 3_000_000;
 // Timestamped transcript pieces are merged into chunks of about this length
 const SEGMENT_MERGE_SECONDS = 5;
 
@@ -41,7 +43,7 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
     const m: any = { ...memory };
     const id = m.id as string;
 
-    // 1. Recorded audio/video never goes to the cloud — keep it on this device
+    // 1. Recorded audio/video: a separate file
     for (const field of ['videoDataUrl', 'audioDataUrl'] as const) {
         if (isDataUrl(m[field]) && m.type !== 'item') {
             try {
@@ -58,7 +60,7 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
         m.voiceNote = rest;
     }
 
-    // 1b. An uploaded PDF file stays on this device (the text goes to the cloud)
+    // 1b. An uploaded PDF: a separate file (the text stays in the record)
     if (typeof Blob !== 'undefined' && m.pdfBlob instanceof Blob) {
         try {
             await putLocal(localKey(id, 'pdf'), m.pdfBlob);
@@ -92,18 +94,18 @@ export const prepareMemoryForCloud = async (memory: AnyMemory): Promise<AnyMemor
         delete m.structuredTranscript;
         m.localStructuredTranscript = true;
     }
-    if (cloudSize(m) > MAX_CLOUD_BYTES && typeof m.transcript === 'string') {
-        // Extremely long transcript: keep the full text on device, the cloud copy is trimmed
+    if (cloudSize(m) > MAX_TEXT_BYTES && typeof m.transcript === 'string') {
+        // Extremely long transcript: the full text is kept as a file, the record is trimmed
         await putLocal(`${id}:transcript`, m.transcript).catch(() => {});
-        m.transcript = m.transcript.slice(0, 250_000) + '\n\n[Transcript continues on the device it was recorded on.]';
+        m.transcript = m.transcript.slice(0, 250_000) + '\n\n[Transcript trimmed here — it was too long to show in full.]';
     }
-    if (cloudSize(m) > MAX_CLOUD_BYTES && typeof m.extractedText === 'string') {
-        // Very long PDF: full text stays on this device, the cloud copy is trimmed
+    if (cloudSize(m) > MAX_TEXT_BYTES && typeof m.extractedText === 'string') {
+        // Extremely long PDF: the full text is kept as a file, the record is trimmed
         await putLocal(`${id}:extractedText`, m.extractedText).catch(() => {});
-        m.extractedText = m.extractedText.slice(0, 250_000) + '\n\n[The rest of this document is on the device it was added on.]';
+        m.extractedText = m.extractedText.slice(0, 250_000) + '\n\n[Text trimmed here — the document was too long to show in full.]';
     }
-    // Firestore rejects `undefined` values anywhere in the document (e.g. a
-    // notebook with no background image), failing the whole save
+    // Drop `undefined` values anywhere in the record (e.g. a notebook with no
+    // background image)
     return stripUndefined(m) as AnyMemory;
 };
 

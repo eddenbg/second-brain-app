@@ -58,10 +58,10 @@ const RecordingExtras: React.FC<{ memory: AnyMemory }> = ({ memory }) => {
                 <audio ref={setAudioEl} src={audioSrc} controls className="w-full" aria-label="Recording playback" />
             )}
             {audioMissing && (
-                <p className="text-white/50 text-sm font-bold">The audio is saved on the device you recorded on.</p>
+                <p className="text-white/50 text-sm font-bold">The audio couldn’t be loaded yet — it may still be uploading from the device you recorded on. Check your connection and open it again.</p>
             )}
             {!notebook && memory.localNotebook && (
-                <p className="text-white/50 text-sm font-bold">The notes you drew are saved on the device you recorded on.</p>
+                <p className="text-white/50 text-sm font-bold">The notes you drew couldn’t be loaded yet — they may still be uploading from the device you recorded on.</p>
             )}
             {hasDrawings && (
                 <div className="space-y-2">

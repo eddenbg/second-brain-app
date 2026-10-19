@@ -5,7 +5,6 @@ import { decode, decodeAudioData } from '../utils/audio';
 import { prepareImageForOcr } from '../utils/image';
 import { AlertCircle } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
-import { getStoredDriveUploadToken, connectGoogleDriveUpload, uploadFileToDrive } from '../services/googleDriveService';
 import { getStoredNotionToken, searchNotionPages, createScanPage } from '../services/notionService';
 import type { NotionPage } from '../services/notionService';
 import QASession from './QASession';
@@ -32,8 +31,7 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
     const [isExporting, setIsExporting] = useState(false);
     const [exportStatus, setExportStatus] = useState<string | null>(null);
     const [exportError, setExportError] = useState<string | null>(null);
-    const [driveLink, setDriveLink] = useState<string | null>(null);
-    const [driveUploadToken, setDriveUploadToken] = useState<string | null>(null);
+    const [savedLink, setSavedLink] = useState<string | null>(null);
     const [showNotionPicker, setShowNotionPicker] = useState(false);
     const [notionPages, setNotionPages] = useState<NotionPage[]>([]);
     const [isLoadingNotionPages, setIsLoadingNotionPages] = useState(false);
@@ -44,7 +42,6 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        setDriveUploadToken(getStoredDriveUploadToken());
         return () => {
             audioSourceRef.current?.stop();
             audioContextRef.current?.close();
@@ -176,30 +173,6 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
         }
     }, [imageDataUrl, buildPDFBlob]);
 
-    const handleSaveToDrive = useCallback(async () => {
-        if (!imageDataUrl) return;
-        setIsExporting(true);
-        setExportError(null);
-        setExportStatus(null);
-        setDriveLink(null);
-        try {
-            let token = driveUploadToken;
-            if (!token) {
-                token = await connectGoogleDriveUpload();
-                setDriveUploadToken(token);
-            }
-            const blob = await buildPDFBlob();
-            const link = await uploadFileToDrive(token!, `scan-${Date.now()}.pdf`, blob);
-            setExportStatus('Saved to Drive!');
-            setDriveLink(link);
-        } catch (e: any) {
-            setExportError(e.message || 'Drive upload failed.');
-            setDriveUploadToken(null);
-        } finally {
-            setIsExporting(false);
-        }
-    }, [imageDataUrl, buildPDFBlob, driveUploadToken]);
-
     const handleOpenNotionPicker = async () => {
         const token = getStoredNotionToken();
         if (!token) { setExportError('Connect Notion in Settings first.'); return; }
@@ -229,7 +202,7 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
             const title = `Scan — ${new Date().toLocaleDateString()}`;
             const url = await createScanPage(token, title, extractedText || '(No text extracted)', parentPageId);
             setExportStatus('Saved to Notion!');
-            setDriveLink(url);
+            setSavedLink(url);
         } catch (e: any) {
             setExportError(e.message || 'Notion save failed.');
         } finally {
@@ -307,14 +280,6 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
                                     <DownloadIcon className="w-4 h-4"/> PDF
                                 </button>
                                 <button
-                                    onClick={handleSaveToDrive}
-                                    disabled={isExporting}
-                                    className="px-3 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 disabled:opacity-50"
-                                >
-                                    {isExporting ? <Loader2Icon className="w-4 h-4 animate-spin"/> : <UploadIcon className="w-4 h-4"/>}
-                                    {driveUploadToken ? 'Save to Drive' : 'Connect & Save to Drive'}
-                                </button>
-                                <button
                                     onClick={handleOpenNotionPicker}
                                     disabled={isExporting || !notionToken}
                                     title={notionToken ? 'Save to Notion' : 'Connect Notion in Settings first'}
@@ -331,7 +296,7 @@ const TemporaryScanView: React.FC<TemporaryScanViewProps> = ({ onClose }) => {
                             {exportStatus && (
                                 <p className="text-xs text-green-400 flex items-center gap-2">
                                     {exportStatus}
-                                    {driveLink && <a href={driveLink} target="_blank" rel="noopener noreferrer" className="underline text-blue-400">Open</a>}
+                                    {savedLink && <a href={savedLink} target="_blank" rel="noopener noreferrer" className="underline text-blue-400">Open</a>}
                                 </p>
                             )}
                             {exportError && <p className="text-xs text-red-400">{exportError}</p>}

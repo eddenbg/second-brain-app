@@ -525,7 +525,7 @@ const CollegeView: React.FC<CollegeViewProps> = ({
                         {(selectedItem.type === 'document' || selectedItem.type === 'file') && (
                             <div className="space-y-5">
                                 {selectedItem.type === 'file' ? (
-                                    <FileTextPanel memory={selectedItem} onUpdate={onUpdate} />
+                                    <FileTextPanel memory={selectedItem} />
                                 ) : (
                                     <>
                                         {/* Read Aloud above the text, so long PDFs don't need scrolling first */}

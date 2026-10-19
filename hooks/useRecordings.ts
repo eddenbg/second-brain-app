@@ -1,35 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AnyMemory, WebMemory, Task, CalendarEvent } from '../types';
-import { db, auth } from '../utils/firebase';
-import { 
-    collection, 
-    doc, 
-    writeBatch,
-    query,
-    orderBy,
-    onSnapshot
-} from 'firebase/firestore';
-import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut, OAuthCredential } from 'firebase/auth';
-import { saveGoogleToken } from '../services/googleCalendarService';
-import { saveDriveToken } from '../services/googleDriveService';
+import { useState, useEffect, useCallback } from 'react';
+import type { AnyMemory, Task, CalendarEvent } from '../types';
+import { auth } from '../utils/firebase';
+import { onAuthStateChanged, User, signInAnonymously, linkWithRedirect, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { googleProvider } from '../utils/firebase';
-import { safeSetItem, isNearQuota, stripMediaForCache, alertStorageFull } from '../utils/safeStorage';
-import { GOOGLE_TOKEN_REFRESHED_EVENT } from '../services/googleAuthEvents';
+import { safeSetItem, isNearQuota, stripMediaForCache } from '../utils/safeStorage';
 import { prepareMemoryForCloud } from '../utils/memoryPrep';
-import { savePending, listPending, removePending, deleteLocalFor } from '../utils/mediaStore';
+import { deleteLocalFor, getLocal } from '../utils/mediaStore';
+import { syncEngine, MediaField, SyncState } from '../utils/cloudSync';
+
+// All data lives in Backblaze B2 (via utils/cloudSync.ts), with a full copy on
+// this device so the app opens instantly and works offline. Firebase is used
+// only for Google sign-in (to know whose data to load).
 
 export const MEMORY_SAVE_FAILED_EVENT = 'second-brain:memory-save-failed';
 
 export const SIGN_IN_FAILED_MESSAGE = 'Sign-in failed — please try again';
-
-/** Store the Google API token from a sign-in and tell the app it's fresh. */
-const storeGoogleAccessToken = (credential: OAuthCredential | null) => {
-    const token = credential?.accessToken;
-    if (!token) return;
-    saveGoogleToken(token);
-    saveDriveToken(token);
-    try { window.dispatchEvent(new Event(GOOGLE_TOKEN_REFRESHED_EVENT)); } catch { /* non-browser */ }
-};
 
 export interface StoredData {
     memories: AnyMemory[];
@@ -38,7 +23,11 @@ export interface StoredData {
     moodleToken?: string;
 }
 
+// Lightweight copy shown while the device database opens (and before the very
+// first sync after updating from the Firestore version)
 const LOCAL_STORAGE_KEY = 'second_brain_local_data';
+
+const newId = () => `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
 export const useRecordings = () => {
     const [memories, setMemories] = useState<AnyMemory[]>([]);
@@ -46,20 +35,14 @@ export const useRecordings = () => {
     const [moodleToken, setMoodleToken] = useState<string | null>(null);
     const [savedCourses, setSavedCourses] = useState<string[]>([]);
     const [courses, setCourses] = useState<string[]>([]);
-    
+
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-    const [syncError, setSyncError] = useState<string | null>(null);
-    const [storageWarning, setStorageWarning] = useState<string | null>(null);
     const [authError, setAuthError] = useState<string | null>(null);
     const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+    const [syncState, setSyncState] = useState<SyncState>({ status: 'starting', pending: 0, ready: false });
 
-    const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const pendingTaskIdsRef = useRef<Set<string>>(new Set());
-
-    // 1. Initial Load from LocalStorage (for speed)
+    // 1. Quick first paint from the last session's copy
     useEffect(() => {
         try {
             const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -69,6 +52,7 @@ export const useRecordings = () => {
                 setTasks(data.tasks || []);
                 setSavedCourses(data.courses || []);
                 setMoodleToken(data.moodleToken || null);
+                setCalendarEvents(data.events || []);
             }
         } catch (e) {
             console.error("Failed to read local storage", e);
@@ -88,12 +72,10 @@ export const useRecordings = () => {
             // Google sign-in uses a full-page redirect (popups are blocked in
             // installed PWAs). On every load, collect the redirect result
             // FIRST — before the auth listener runs and before any sign-in UI
-            // shows — so the returning user and their Google token are applied
-            // without a manual reload.
+            // shows — so the returning user is applied without a manual reload.
             try {
                 const result = await getRedirectResult(auth);
                 if (result?.user) {
-                    storeGoogleAccessToken(GoogleAuthProvider.credentialFromResult(result));
                     setUser(result.user);
                 }
             } catch (e: any) {
@@ -103,7 +85,6 @@ export const useRecordings = () => {
                     if (credential) {
                         try {
                             const signedIn = await signInWithCredential(auth, credential);
-                            storeGoogleAccessToken(credential);
                             setUser(signedIn.user);
                         } catch (inner) {
                             console.error('Google sign-in failed', inner);
@@ -116,7 +97,7 @@ export const useRecordings = () => {
                 }
             }
 
-            // Now set up the auth state listener — token is guaranteed to be stored
+            // Now set up the auth state listener
             authUnsubscribe = onAuthStateChanged(auth, async (currentUser) => {
                 if (currentUser) {
                     setUser(currentUser);
@@ -140,87 +121,38 @@ export const useRecordings = () => {
         return () => authUnsubscribe?.();
     }, []);
 
-    // 3. Real-time Listeners for Memories and Tasks
+    // 3. Open this account's data and keep it in sync with B2
     useEffect(() => {
-        if (!user || !db || (db as any).type === 'mock') return;
-
-        // Memories Listener
-        const memoriesRef = collection(db, 'users', user.uid, 'memories');
-        const qMemories = query(memoriesRef, orderBy('date', 'desc'));
-        const unsubMemories = onSnapshot(qMemories, (snapshot) => {
-            const remoteMemories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as AnyMemory[];
-            setMemories(remoteMemories);
-        });
-
-        // Tasks Listener
-        const tasksRef = collection(db, 'users', user.uid, 'tasks');
-        const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
-            const remoteTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
-            setTasks(prev => {
-                const pendingIds = pendingTaskIdsRef.current;
-                if (pendingIds.size === 0) return remoteTasks;
-                // Merge: keep optimistic tasks not yet confirmed in remote snapshot
-                const remoteIds = new Set(remoteTasks.map(t => t.id));
-                const stillPending = prev.filter(t => pendingIds.has(t.id) && !remoteIds.has(t.id));
-                return [...remoteTasks, ...stillPending];
+        if (!user) return;
+        let unsubData: (() => void) | undefined;
+        let unsubState: (() => void) | undefined;
+        void syncEngine.start(user.uid, !user.isAnonymous).then(() => {
+            unsubState = syncEngine.subscribeState(setSyncState);
+            unsubData = syncEngine.subscribe((snap) => {
+                // Until the first sync has finished, don't replace the quick
+                // copy with an empty device database
+                const empty = snap.memories.length === 0 && snap.tasks.length === 0 && snap.events.length === 0;
+                if (empty && !syncEngine.isReady()) return;
+                setMemories(snap.memories);
+                setTasks(snap.tasks);
+                setCalendarEvents(snap.events);
+                setSavedCourses(snap.settings.courses || []);
+                setMoodleToken(snap.settings.moodleToken || null);
             });
-        });
-
-        // Calendar events added by hand (previously lost on reload)
-        const eventsRef = collection(db, 'users', user.uid, 'events');
-        const unsubEvents = onSnapshot(eventsRef, (snapshot) => {
-            const remote = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as CalendarEvent[];
-            setCalendarEvents(remote.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
-        }, (e) => console.warn('Calendar events listener failed', e));
-
-        return () => {
-            unsubMemories();
-            unsubTasks();
-            unsubEvents();
-        };
+        }).catch(e => console.error('Could not open device storage', e));
+        return () => { unsubData?.(); unsubState?.(); };
     }, [user]);
 
-    // 3a. Retry any saves that failed earlier (kept on this device)
+    // When the first sync finishes, show whatever it produced (even if empty)
     useEffect(() => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        let cancelled = false;
-        const retry = async () => {
-            const pending = await listPending();
-            if (pending.length === 0 || cancelled) return;
-            const { setDoc } = await import('firebase/firestore');
-            for (const mem of pending) {
-                try {
-                    await setDoc(doc(db, 'users', user.uid, 'memories', mem.id), mem);
-                    await removePending(mem.id);
-                } catch (e) {
-                    console.warn('Retry of saved-on-device item failed', e);
-                }
-            }
-        };
-        void retry();
-        window.addEventListener('online', retry);
-        return () => { cancelled = true; window.removeEventListener('online', retry); };
-    }, [user]);
-
-    // 3b. Separate Real-time Listener for Settings to ensure cross-device sync
-    useEffect(() => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        
-        const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-        const unsubSettings = onSnapshot(settingsRef, (doc) => {
-            if (doc.exists()) {
-                const data = doc.data();
-                setSavedCourses(data.courses || []);
-                setMoodleToken(data.moodleToken || null);
-            } else {
-                setSavedCourses([]);
-                setMoodleToken(null);
-            }
-        });
-
-        return () => unsubSettings();
-
-    }, [user]);
+        if (!syncState.ready) return;
+        const snap = syncEngine.getSnapshot();
+        setMemories(snap.memories);
+        setTasks(snap.tasks);
+        setCalendarEvents(snap.events);
+        setSavedCourses(snap.settings.courses || []);
+        setMoodleToken(snap.settings.moodleToken || null);
+    }, [syncState.ready]);
 
     // 4. Derived courses from memories + savedCourses
     useEffect(() => {
@@ -232,208 +164,130 @@ export const useRecordings = () => {
         const uniqueCourses = Array.from(new Set([...extracted, ...savedCourses]))
             .filter(c => c !== 'General')
             .sort();
-            
+
         setCourses(uniqueCourses);
     }, [memories, savedCourses]);
 
-    // 5. Save to local storage for offline persistent cache.
-    // Media (images/audio/video) is stripped — it lives in Firestore only.
-    // If the cache is full, the oldest 3 memories are dropped from the local
-    // copy (they remain in Firestore) and the write is retried; the user is
-    // told once. A failed write never throws.
+    // 5. Small copy for the next quick start (media stripped; the full data is
+    //    in the device database). Best-effort: trimmed if storage is tight.
     useEffect(() => {
-        const serialize = (mems: AnyMemory[]) =>
-            JSON.stringify({ memories: mems, tasks, courses: savedCourses, moodleToken });
-
-        // Newest first, so trimming from the end drops the oldest entries
-        let cached = memories
-            .map(m => stripMediaForCache(m))
-            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        let payload = serialize(cached);
-        let evicted = false;
-
-        const shrink = () => {
-            // Drop the oldest 3 first; fall back to bigger cuts if still too large
-            const next = cached.length > 12 && evicted
-                ? Math.floor(cached.length * 0.75)
-                : Math.max(0, cached.length - 3);
-            cached = cached.slice(0, next);
-            payload = serialize(cached);
-            evicted = true;
-        };
-
-        while (cached.length > 0 && isNearQuota(LOCAL_STORAGE_KEY, payload)) shrink();
-
-        let saved = safeSetItem(LOCAL_STORAGE_KEY, payload);
-        while (!saved && cached.length > 0) {
-            shrink();
-            saved = safeSetItem(LOCAL_STORAGE_KEY, payload);
+        let cached = memories.map(m => stripMediaForCache(m)).slice(0, 300);
+        const serialize = () => JSON.stringify({ memories: cached, tasks, courses: savedCourses, moodleToken, events: calendarEvents });
+        let payload = serialize();
+        while (cached.length > 0 && isNearQuota(LOCAL_STORAGE_KEY, payload)) {
+            cached = cached.slice(0, Math.floor(cached.length * 0.75));
+            payload = serialize();
         }
+        safeSetItem(LOCAL_STORAGE_KEY, payload);
+    }, [memories, tasks, savedCourses, moodleToken, calendarEvents]);
 
-        if (evicted && saved) alertStorageFull();
-        setStorageWarning(saved ? null : 'Offline storage is full. Your data is still saved to the cloud.');
-    }, [memories, tasks, savedCourses, moodleToken]);
-
-    // --- Cloud Sync Action ---
-    const performSync = useCallback(async () => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        setIsSyncing(true);
-        setSyncError(null);
-        try {
-            const batch = writeBatch(db);
-            
-            for (const mem of memories) {
-                const docRef = doc(db, 'users', user.uid, 'memories', mem.id);
-                batch.set(docRef, mem);
-            }
-
-            for (const task of tasks) {
-                const docRef = doc(db, 'users', user.uid, 'tasks', task.id);
-                batch.set(docRef, task);
-            }
-
-            const settingsRef = doc(db, 'users', user.uid, 'settings', 'general');
-            batch.set(settingsRef, { courses: savedCourses, moodleToken }, { merge: true });
-
-            await batch.commit();
-        } catch (e) {
-            console.error('Sync failed', e);
-            setSyncError('Sync failed. Please try again.');
-        } finally {
-            setIsSyncing(false);
-        }
-    }, [user, memories, tasks, savedCourses, moodleToken]);
+    // --- Changes ---
+    const performSync = useCallback(async () => { await syncEngine.syncNow(true); }, []);
 
     const addMemory = useCallback(async (memoryData: Omit<AnyMemory, 'id' | 'date'>) => {
-        if (!user || !db || (db as any).type === 'mock') return;
         const newMemory = {
             ...memoryData,
             // Suffix keeps ids unique when several items are saved in the same millisecond
-            id: `${Date.now()}${Math.random().toString(36).slice(2, 6)}`,
+            id: newId(),
             date: new Date().toISOString(),
         } as AnyMemory;
-        // Move audio/oversized parts to device storage so the save can't fail on size
-        const cloudMemory = await prepareMemoryForCloud(newMemory);
-        const { setDoc } = await import('firebase/firestore');
-        const write = setDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), cloudMemory);
-        write.catch(async (e) => {
-            // Keep a copy on this device and retry later — nothing is lost
-            console.error('Cloud save failed; kept on device for retry', e);
-            await savePending(newMemory.id, cloudMemory).catch(() => {});
+        // Large parts (audio, PDF, photo, long drawings) go to the device store,
+        // and from there to B2 as separate files
+        const record = await prepareMemoryForCloud(newMemory);
+        try {
+            await syncEngine.put('memories', record);
+        } catch (e) {
+            console.error('Saving failed', e);
             window.dispatchEvent(new CustomEvent(MEMORY_SAVE_FAILED_EVENT));
-        });
-        // Offline, Firestore queues the write and only resolves once it reaches
-        // the server — don't make the UI wait for that.
-        await Promise.race([write.catch(() => {}), new Promise(r => setTimeout(r, 5000))]);
-        // Fire-and-forget: generate AI topic tags and patch the document
+            return;
+        }
+        const r = record as any;
+        const media: MediaField[] = [];
+        if (r.localMedia) media.push('audio');
+        if (r.localImage) media.push('image');
+        if (r.localPdf) media.push('pdf');
+        if (r.localNotebook) media.push('notebook');
+        if (r.localStructuredTranscript) media.push('structuredTranscript');
+        for (const f of ['transcript', 'extractedText'] as MediaField[]) {
+            if (await getLocal(`${newMemory.id}:${f}`, { localOnly: true }) !== undefined) media.push(f);
+        }
+        if (media.length) void syncEngine.queueMedia(newMemory.id, media);
+        // Fire-and-forget: generate AI topic tags
         (async () => {
             try {
                 const { generateTopicsForMemory } = await import('../services/geminiService');
-                const { updateDoc } = await import('firebase/firestore');
                 const content = (newMemory as any).transcript || (newMemory as any).extractedText ||
                                (newMemory as any).content || (newMemory as any).description ||
                                (newMemory as any).summary || '';
                 const topics = await generateTopicsForMemory(newMemory.title, content);
-                if (topics.length > 0) {
-                    await updateDoc(doc(db, 'users', user.uid, 'memories', newMemory.id), { topics } as any);
-                }
+                if (topics.length > 0) await syncEngine.update('memories', newMemory.id, { topics });
             } catch { /* topic generation is best-effort */ }
         })();
-    }, [user]);
+    }, []);
 
     const deleteMemory = useCallback(async (id: string) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'users', user.uid, 'memories', id));
+        await syncEngine.remove('memories', id);
+        void syncEngine.deleteMedia(id);
         void deleteLocalFor(id);
-        void removePending(id);
-    }, [user]);
+    }, []);
 
     const bulkDeleteMemories = useCallback(async (ids: string[]) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { deleteDoc } = await import('firebase/firestore');
-        await Promise.all(ids.map(id => deleteDoc(doc(db, 'users', user.uid, 'memories', id))));
-    }, [user]);
+        for (const id of ids) {
+            await syncEngine.remove('memories', id);
+            void syncEngine.deleteMedia(id);
+            void deleteLocalFor(id);
+        }
+    }, []);
 
     const updateMemory = useCallback(async (id: string, updates: Partial<AnyMemory>) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { updateDoc } = await import('firebase/firestore');
-        await updateDoc(doc(db, 'users', user.uid, 'memories', id), updates as any);
-    }, [user]);
+        await syncEngine.update('memories', id, updates as Record<string, unknown>);
+    }, []);
 
     const addTask = useCallback(async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
-        const newTask: Task = { ...taskData, id: Date.now().toString(), createdAt: new Date().toISOString() };
-        pendingTaskIdsRef.current.add(newTask.id);
-        setTasks(prev => [...prev, newTask]); // optimistic — shows immediately
-        if (!user || !db || (db as any).type === 'mock') {
-            pendingTaskIdsRef.current.delete(newTask.id);
-            return;
-        }
-        try {
-            const { setDoc } = await import('firebase/firestore');
-            await setDoc(doc(db, 'users', user.uid, 'tasks', newTask.id), newTask);
-        } catch (err) {
-            console.error('addTask failed:', err);
-            setTasks(prev => prev.filter(t => t.id !== newTask.id)); // rollback on error
-        } finally {
-            pendingTaskIdsRef.current.delete(newTask.id);
-        }
-    }, [user]);
+        const newTask: Task = { ...taskData, id: newId(), createdAt: new Date().toISOString() };
+        await syncEngine.put('tasks', newTask).catch(err => console.error('addTask failed:', err));
+    }, []);
 
     const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { updateDoc } = await import('firebase/firestore');
-        await updateDoc(doc(db, 'users', user.uid, 'tasks', id), updates as any);
-    }, [user]);
+        await syncEngine.update('tasks', id, updates as Record<string, unknown>);
+    }, []);
 
     const deleteTask = useCallback(async (id: string) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'users', user.uid, 'tasks', id));
-    }, [user]);
+        await syncEngine.remove('tasks', id);
+    }, []);
 
     const addCalendarEvent = useCallback(async (event: Omit<CalendarEvent, 'id'>) => {
         const newEvent: CalendarEvent = { ...event, id: `manual-${Date.now()}`, source: 'manual' };
-        setCalendarEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()));
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { setDoc } = await import('firebase/firestore');
-        const clean = Object.fromEntries(Object.entries(newEvent).filter(([, v]) => v !== undefined));
-        await setDoc(doc(db, 'users', user.uid, 'events', newEvent.id), clean).catch(e => console.error('Saving event failed', e));
-    }, [user]);
+        await syncEngine.put('events', newEvent).catch(e => console.error('Saving event failed', e));
+    }, []);
 
     const deleteCalendarEvent = useCallback(async (eventId: string) => {
-        setCalendarEvents(prev => prev.filter(e => e.id !== eventId));
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { deleteDoc } = await import('firebase/firestore');
-        await deleteDoc(doc(db, 'users', user.uid, 'events', eventId)).catch(e => console.error('Deleting event failed', e));
-    }, [user]);
+        await syncEngine.remove('events', eventId).catch(e => console.error('Deleting event failed', e));
+    }, []);
 
-    // Accepts one or several names; arrayUnion avoids overwriting courses added moments earlier
+    // Accepts one or several names
     const addCourse = useCallback(async (courseName: string | string[]) => {
-        if (!user || !db || (db as any).type === 'mock') return;
         const names = (Array.isArray(courseName) ? courseName : [courseName]).map(n => n.trim()).filter(Boolean);
         if (names.length === 0) return;
-        const { setDoc, arrayUnion } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: arrayUnion(...names) }, { merge: true });
-    }, [user]);
+        const current = syncEngine.getSnapshot().settings.courses || [];
+        await syncEngine.putSettings({ courses: Array.from(new Set([...current, ...names])) });
+    }, []);
 
     const deleteCourse = useCallback(async (courseName: string) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { setDoc, deleteDoc } = await import('firebase/firestore');
-        // Remove from savedCourses
-        const updatedCourses = savedCourses.filter(c => c !== courseName);
-        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: updatedCourses, moodleToken }, { merge: true });
+        const current = syncEngine.getSnapshot().settings.courses || [];
+        await syncEngine.putSettings({ courses: current.filter(c => c !== courseName) });
         // Delete all memories belonging to this course
-        const courseMemories = memories.filter(m => m.category === 'college' && (m as any).course === courseName);
-        await Promise.all(courseMemories.map(m => deleteDoc(doc(db, 'users', user.uid, 'memories', m.id))));
-    }, [user, savedCourses, moodleToken, memories]);
+        const courseMemories = syncEngine.getSnapshot().memories.filter(m => m.category === 'college' && (m as any).course === courseName);
+        for (const m of courseMemories) {
+            await syncEngine.remove('memories', m.id);
+            void syncEngine.deleteMedia(m.id);
+            void deleteLocalFor(m.id);
+        }
+    }, []);
 
     const saveMoodleToken = useCallback(async (token: string | null) => {
-        if (!user || !db || (db as any).type === 'mock') return;
-        const { setDoc } = await import('firebase/firestore');
-        await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), { courses: savedCourses, moodleToken: token }, { merge: true });
-        setMoodleToken(token);
-    }, [user, savedCourses]);
+        await syncEngine.putSettings({ moodleToken: token });
+    }, []);
 
     // Full-page redirect to Google. The result is picked up by
     // getRedirectResult when the app loads again (see the auth effect above).
@@ -460,7 +314,12 @@ export const useRecordings = () => {
         memories, tasks, courses, moodleToken,
         addMemory, deleteMemory, bulkDeleteMemories, updateMemory,
         addTask, updateTask, deleteTask, addCourse, deleteCourse, saveMoodleToken,
-        user, loading, isSyncing, hasUnsavedChanges, syncError, storageWarning, performSync,
+        user, loading, performSync,
+        isSyncing: syncState.status === 'syncing',
+        syncState,
+        syncError: syncState.status === 'error' ? syncState.message || 'Sync failed' : null,
+        storageWarning: null as string | null,
+        hasUnsavedChanges: syncState.pending > 0,
         authError, clearAuthError,
         fetchFromCloud: performSync,
         signInWithGoogle, signOut,

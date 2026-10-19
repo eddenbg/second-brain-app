@@ -15,10 +15,7 @@ import { generateSpeechFromText, generateStudyOverview } from '../services/gemin
 import { decode, decodeAudioData } from '../utils/audio';
 import { AlertCircle, Pause, Play } from 'lucide-react';
 import { useTextToSpeech } from '../hooks/useTextToSpeech';
-import DrivePickerModal from './DrivePickerModal';
 import MoodlePickerModal from './MoodlePickerModal';
-import type { DriveFile } from '../services/googleDriveService';
-import { getStoredDriveToken, listDriveFiles } from '../services/googleDriveService';
 import { testMoodleConnection } from '../services/moodleService';
 import type { MoodleContent } from '../types';
 
@@ -29,15 +26,11 @@ interface FilesViewProps {
     onUpdate: (id: string, updates: Partial<AnyMemory>) => void;
     backHandlerRef?: React.MutableRefObject<(() => boolean) | null>;
     moodleToken?: string | null;
-    isGoogleUser?: boolean;
-    googleExpired?: boolean;
-    googleTokenVersion?: number;
-    onReconnectGoogle?: () => void;
 }
 
 // TODO(deferred): AI semantic search in Files (search currently matches titles only).
 
-type VaultFilter = 'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'drive' | 'hidden';
+type VaultFilter = 'all' | 'audio' | 'image' | 'doc' | 'moodle' | 'hidden';
 
 /** Stored preview image for a memory, if any (thumbnail preferred over full photo). */
 const getPreviewImage = (m: AnyMemory): string | undefined => {
@@ -110,9 +103,9 @@ const MediaPreviewDrawer: React.FC<{
                             <div className="bg-indigo-900/30 p-10 rounded-full border-4 border-indigo-500 shadow-2xl">
                                 <FileTextIcon className="w-20 h-20 text-indigo-400" />
                             </div>
-                            {/* Reads the file's text (fetched once from Drive), with Read Aloud */}
+                            {/* Shows the file's saved text, with Read Aloud */}
                             <div className="w-full">
-                                <FileTextPanel memory={memory} onUpdate={onUpdate} />
+                                <FileTextPanel memory={memory} />
                             </div>
                             <a href={(memory as FileMemory).fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 font-black uppercase underline tracking-widest">
                                 {(memory as FileMemory).sourceType === 'drive' ? 'Open in Drive' : 'Download Original'}
@@ -159,54 +152,18 @@ const DRIVE_BADGE = (
     </div>
 );
 
-const DRIVE_BUTTON_ICON = (
-    <svg viewBox="0 0 87.3 78" className="w-4 h-4 shrink-0">
-        <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066DA"/>
-        <path d="M43.65 25L29.9 1.2C28.55 2 27.4 3.1 26.6 4.5L1.2 48.6C.4 50 0 51.55 0 53.1h27.5z" fill="#00AC47"/>
-        <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.85l5.9 11.9z" fill="#EA4335"/>
-        <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.95 0H34.35c-1.55 0-3.1.4-4.45 1.2z" fill="#00832D"/>
-        <path d="M59.85 53.1H27.5L13.75 76.9c1.35.8 2.9 1.1 4.45 1.1h50.9c1.55 0 3.1-.4 4.45-1.2z" fill="#2684FC"/>
-        <path d="M73.4 26.85l-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25l16.2 28.1H87.3c0-1.55-.4-3.1-1.2-4.5z" fill="#FFBA00"/>
-    </svg>
-);
-
 // ── Files View ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef, moodleToken, isGoogleUser = false, googleExpired = false, googleTokenVersion = 0, onReconnectGoogle }) => {
+const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpdate, backHandlerRef, moodleToken }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [filter, setFilter] = useState<VaultFilter>('all');
-    const [driveFiles, setDriveFiles] = useState<DriveFile[]>([]);
-    const [driveStatus, setDriveStatus] = useState<'idle' | 'loading' | 'loaded' | 'expired' | 'error'>('idle');
     const [moodleStatus, setMoodleStatus] = useState<'unknown' | 'checking' | 'ok' | 'failed'>('unknown');
 
-    // A service's tab is only shown when it's connected. Drive counts as
-    // connected for Google-signed-in users even while the token is expired
-    // (the tab then offers to reconnect).
-    const isDriveConnected = isGoogleUser || !!getStoredDriveToken();
+    // A service's tab is only shown when it's connected.
     const isMoodleConnected = !!moodleToken;
 
     useEffect(() => {
-        if ((filter === 'drive' && !isDriveConnected) || (filter === 'moodle' && !isMoodleConnected)) setFilter('all');
-    }, [filter, isDriveConnected, isMoodleConnected]);
-
-    // DRIVE filter: list recently modified files from the connected Drive
-    useEffect(() => {
-        if (filter !== 'drive') return;
-        const token = getStoredDriveToken();
-        if (!token) { setDriveStatus('expired'); return; }
-        let cancelled = false;
-        setDriveStatus('loading');
-        listDriveFiles(token)
-            .then(files => { if (!cancelled) { setDriveFiles(files); setDriveStatus('loaded'); } })
-            .catch((e: any) => {
-                if (cancelled) return;
-                setDriveStatus(String(e?.message || '').includes('401') ? 'expired' : 'error');
-            });
-        return () => { cancelled = true; };
-    }, [filter, googleTokenVersion]);
-
-    useEffect(() => {
-        if (googleExpired && filter === 'drive') setDriveStatus('expired');
-    }, [googleExpired, filter]);
+        if (filter === 'moodle' && !isMoodleConnected) setFilter('all');
+    }, [filter, isMoodleConnected]);
 
     // MOODLE filter: verify the stored token actually works
     useEffect(() => {
@@ -223,7 +180,6 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
     const [summaryInitialType, setSummaryInitialType] = useState<'written' | 'audio' | 'video' | 'research'>('written');
     const [isGeneratingMulti, setIsGeneratingMulti] = useState(false);
     const [activeStudyHub, setActiveStudyHub] = useState<{ type: any; content: string; title: string; videoUri?: string } | null>(null);
-    const [showDrivePicker, setShowDrivePicker] = useState(false);
     const [showMoodlePicker, setShowMoodlePicker] = useState(false);
 
     useEffect(() => {
@@ -231,18 +187,12 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
         backHandlerRef.current = () => {
             if (activeStudyHub) { setActiveStudyHub(null); return true; }
             if (showSummaryPrompt) { setShowSummaryPrompt(false); return true; }
-            if (showDrivePicker) { setShowDrivePicker(false); return true; }
             if (showMoodlePicker) { setShowMoodlePicker(false); return true; }
             if (previewMemory) { setPreviewMemory(null); return true; }
             return false;
         };
         return () => { if (backHandlerRef) backHandlerRef.current = null; };
-    }, [backHandlerRef, activeStudyHub, showSummaryPrompt, showDrivePicker, showMoodlePicker, previewMemory]);
-
-    const importedDriveIds = useMemo(
-        () => new Set(memories.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive').map(m => (m as FileMemory).driveId || '')),
-        [memories]
-    );
+    }, [backHandlerRef, activeStudyHub, showSummaryPrompt, showMoodlePicker, previewMemory]);
 
     const importedMoodleUrls = useMemo(
         () => new Set(memories.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'moodle').map(m => (m as FileMemory).fileUrl)),
@@ -263,25 +213,12 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
         } as Omit<FileMemory, 'id' | 'date'>);
     };
 
-    const handleImportFromDrive = (file: DriveFile) => {
-        onSave({
-            type: 'file',
-            title: file.name,
-            fileUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
-            mimeType: file.mimeType,
-            sourceType: 'drive',
-            driveId: file.id,
-            category: 'personal',
-        } as Omit<FileMemory, 'id' | 'date'>);
-    };
-
     const filteredMemories = useMemo(() => {
         let results = memories;
         if (filter === 'audio') results = results.filter(m => m.type === 'voice');
         if (filter === 'image') results = results.filter(hasPhoto);
         if (filter === 'doc') results = results.filter(m => m.type === 'document');
         if (filter === 'moodle') results = results.filter(isMoodleFile);
-        if (filter === 'drive') results = results.filter(m => m.type === 'file' && (m as FileMemory).sourceType === 'drive');
         if (filter === 'hidden') results = results.filter(m => m.isHidden);
         else results = results.filter(m => !m.isHidden);
 
@@ -333,14 +270,6 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
             {previewMemory && <MediaPreviewDrawer memory={previewMemory} onUpdate={onUpdate} onClose={() => { if (window.history.state?.filesModal === 'preview') window.history.back(); setPreviewMemory(null); }} />}
             {showSummaryPrompt && <SummaryFocusModal onClose={() => { if (window.history.state?.filesModal === 'studyPrompt') window.history.back(); setShowSummaryPrompt(false); }} onGenerate={handleMultiStudy} isGenerating={isGeneratingMulti} initialType={summaryInitialType} />}
             {activeStudyHub && <StudyHubOverlay overview={activeStudyHub} memories={memories} onClose={() => { if (window.history.state?.filesModal === 'studyHub') window.history.back(); setActiveStudyHub(null); }} />}
-            {showDrivePicker && (
-                <DrivePickerModal
-                    onClose={() => { if (window.history.state?.filesModal === 'drive') window.history.back(); setShowDrivePicker(false); }}
-                    onImport={handleImportFromDrive}
-                    importedIds={importedDriveIds}
-                    onReconnect={isGoogleUser ? onReconnectGoogle : undefined}
-                />
-            )}
             {showMoodlePicker && moodleToken && (
                 <MoodlePickerModal
                     token={moodleToken}
@@ -365,14 +294,6 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                         />
                     </div>
                     <VoiceInputButton value={searchQuery} onChange={setSearchQuery} label="vault search" />
-                    <button
-                        onClick={() => { window.history.pushState({ filesModal: 'drive' }, ''); setShowDrivePicker(true); }}
-                        aria-label="Import from Google Drive"
-                        className="px-4 py-4 rounded-2xl font-black text-xs uppercase border-2 bg-white/10 text-gray-400 border-white/10 flex items-center gap-1.5 shrink-0"
-                    >
-                        {DRIVE_BUTTON_ICON}
-                        Drive
-                    </button>
                     {moodleToken && (
                         <button
                             onClick={() => { window.history.pushState({ filesModal: 'moodle' }, ''); setShowMoodlePicker(true); }}
@@ -397,7 +318,6 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                 {([
                     'all', 'audio', 'image', 'doc',
                     ...(isMoodleConnected ? ['moodle' as const] : []),
-                    ...(isDriveConnected ? ['drive' as const] : []),
                 ] as VaultFilter[]).map(id => (
                     <button
                         key={id}
@@ -405,7 +325,7 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                         aria-label={`Filter by ${id}`}
                         className={`px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all shadow-md flex-shrink-0 ${filter === id ? 'bg-yellow-500 text-[#001f3f]' : 'bg-white/10 text-gray-400 hover:text-gray-200'}`}
                     >
-                        {id === 'moodle' ? 'Moodle' : id === 'drive' ? 'Drive' : id}
+                        {id === 'moodle' ? 'Moodle' : id}
                     </button>
                 ))}
                 {/* Archived sits apart from the content filters */}
@@ -439,24 +359,11 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                         <FolderIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
                         <p className="text-xs text-gray-400 font-black uppercase tracking-widest px-6">Moodle not connected — go to Settings to connect</p>
                     </div>
-                ) : filter === 'drive' && driveStatus === 'expired' && filteredMemories.length === 0 ? (
-                    <div className="text-center py-20 bg-white/5 rounded-[2rem] border-4 border-dashed border-white/10 flex flex-col items-center gap-4 px-6">
-                        <FolderIcon className="w-16 h-16 mx-auto text-gray-600" />
-                        <p className="text-xs text-gray-400 font-black uppercase tracking-widest">Google Drive connection expired</p>
-                        {onReconnectGoogle && (
-                            <button
-                                onClick={onReconnectGoogle}
-                                className="px-6 py-3 bg-yellow-500 text-[#001f3f] rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95"
-                            >
-                                Reconnect
-                            </button>
-                        )}
-                    </div>
-                ) : filteredMemories.length === 0 && !(filter === 'drive' && (driveStatus === 'loading' || driveFiles.length > 0)) ? (
+                ) : filteredMemories.length === 0 ? (
                     <div className="text-center py-20 bg-white/5 rounded-[2rem] border-4 border-dashed border-white/10 opacity-50">
                         <FolderIcon className="w-16 h-16 mx-auto text-gray-600 mb-4" />
                         <p className="text-xs text-gray-500 font-black uppercase tracking-widest">
-                            {filter === 'drive' && driveStatus === 'error' ? 'Could not load Drive files' : 'Vault Empty'}
+                            Vault Empty
                         </p>
                     </div>
                 ) : (
@@ -508,42 +415,6 @@ const FilesView: React.FC<FilesViewProps> = ({ memories, onSave, onDelete, onUpd
                     </div>
                 )}
 
-                {/* Recent files straight from the connected Google Drive */}
-                {filter === 'drive' && driveStatus !== 'expired' && (driveStatus === 'loading' || driveFiles.length > 0) && (
-                    <section className="pt-4 space-y-2">
-                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Recent in Google Drive</h3>
-                        {driveStatus === 'loading' ? (
-                            <div className="flex justify-center py-8"><Loader2Icon className="w-8 h-8 text-white animate-spin" /></div>
-                        ) : driveFiles.filter(f => !searchQuery.trim() || f.name.toLowerCase().includes(searchQuery.toLowerCase())).map(file => {
-                            const imported = importedDriveIds.has(file.id);
-                            return (
-                                <div key={file.id} className="bg-white/5 p-3 rounded-2xl border-2 border-white/10 flex items-center gap-3">
-                                    <div className="p-3 bg-black/20 rounded-xl relative shrink-0">
-                                        <FileTextIcon className="w-5 h-5 text-yellow-500" />
-                                        {DRIVE_BADGE}
-                                    </div>
-                                    <a
-                                        href={file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex-grow min-w-0"
-                                    >
-                                        <p className="text-sm font-black text-white truncate">{file.name}</p>
-                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{new Date(file.modifiedTime).toLocaleDateString()}</p>
-                                    </a>
-                                    <button
-                                        onClick={() => handleImportFromDrive(file)}
-                                        disabled={imported}
-                                        className="px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest bg-yellow-500 text-[#001f3f] disabled:bg-white/10 disabled:text-gray-400 shrink-0"
-                                        style={{ minHeight: 'unset' }}
-                                    >
-                                        {imported ? 'Saved' : 'Save'}
-                                    </button>
-                                </div>
-                            );
-                        })}
-                    </section>
-                )}
             </main>
 
             {isSelectMode && selectedIds.size > 0 && (

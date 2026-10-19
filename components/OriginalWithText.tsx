@@ -127,7 +127,7 @@ const PdfPageImage: React.FC<{ doc: any; pageNumber: number; numPages: number; r
 const OriginalWithText: React.FC<{
     text: string;
     title: string;
-    /** Saved item (loads the photo / PDF kept on this device) */
+    /** Saved item (loads its photo / PDF from this device or cloud storage) */
     memory?: AnyMemory;
     /** Use these directly (e.g. right after scanning, before saving finishes) */
     pdf?: Blob | null;
@@ -151,7 +151,7 @@ const OriginalWithText: React.FC<{
         return () => { cancelled = true; };
     }, [memory?.id, imageSrc]);
 
-    // PDF file: given directly, or kept on this device
+    // PDF file: given directly, or from this device / cloud storage
     useEffect(() => {
         let cancelled = false;
         if (pdf) { setPdfBlob(pdf); return; }
@@ -222,7 +222,7 @@ const OriginalWithText: React.FC<{
     } else if (pdfState === 'loading') {
         original = <p className="flex items-center justify-center gap-2 py-10 text-white/70 font-bold"><Loader2 className="w-5 h-5 animate-spin" /> Opening the original PDF…</p>;
     } else if (pdfState === 'elsewhere') {
-        original = <p className="py-6 text-center text-white/60 text-sm font-bold">The original PDF is saved on the device it was added on.</p>;
+        original = <p className="py-6 text-center text-white/60 text-sm font-bold">The original PDF couldn’t be loaded yet — it may still be uploading from the device it was added on.</p>;
     } else if (pdfState === 'error') {
         original = <p className="py-6 text-center text-white/60 text-sm font-bold">The original PDF can’t be shown here — use “Open original PDF”.</p>;
     }
